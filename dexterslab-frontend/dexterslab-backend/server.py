@@ -57,7 +57,7 @@ app.add_middleware(
         "http://localhost:3000",
         "http://127.0.0.1:3000",
         "https://dexterslab.cclottaaworld.com",
-        "https://api.dexterslab.cclottaaworld.com",
+        "https://dexterslab-api.cclottaaworld.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
