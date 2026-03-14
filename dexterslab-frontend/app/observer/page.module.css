@@ -1,0 +1,370 @@
+/* ═══════════════════════════════════════════
+   OBSERVER HUB — 80s Retro-Futuristic Hub
+   ═══════════════════════════════════════════ */
+
+.container {
+  width: 100vw;
+  height: 100vh;
+  background: var(--color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-family: var(--font-mono);
+}
+
+/* ── Circular Hub ── */
+.hub {
+  width: 95vmin;
+  height: 95vmin;
+  max-width: 1060px;
+  max-height: 1060px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, #0e0e1c 0%, var(--color-bg) 70%);
+  border: 3px solid var(--color-ring);
+  box-shadow:
+    0 0 40px rgba(0, 232, 208, 0.12),
+    0 0 80px rgba(255, 45, 149, 0.06),
+    inset 0 0 60px rgba(0, 0, 0, 0.7);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6%;
+}
+
+/* ── Decorative Rings ── */
+.ringInner {
+  position: absolute;
+  top: 4px; left: 4px; right: 4px; bottom: 4px;
+  border-radius: 50%;
+  border: 1px solid var(--color-ring2);
+  pointer-events: none;
+  z-index: 1;
+  animation: ringPulse 3s ease-in-out infinite;
+}
+
+.ringMid {
+  position: absolute;
+  top: 14px; left: 14px; right: 14px; bottom: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--color-text-dim);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── Grid Overlay ── */
+.gridOverlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 50%;
+  background-image:
+    repeating-linear-gradient(90deg, transparent, transparent 7.5%, rgba(22, 32, 64, 0.25) 7.5%, rgba(22, 32, 64, 0.25) 7.6%),
+    repeating-linear-gradient(0deg, transparent, transparent 7.5%, rgba(22, 32, 64, 0.25) 7.5%, rgba(22, 32, 64, 0.25) 7.6%);
+  pointer-events: none;
+  z-index: 2;
+}
+
+/* ── CRT scanlines ── */
+.crtOverlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 50%;
+  background-image: repeating-linear-gradient(
+    0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.10) 2px, rgba(0, 0, 0, 0.10) 4px
+  );
+  pointer-events: none;
+  z-index: 22;
+}
+
+/* ── Animated scan line ── */
+.scanline {
+  position: absolute;
+  left: 5%; right: 5%;
+  height: 3px;
+  background: linear-gradient(
+    90deg, transparent, rgba(0, 255, 224, 0.12) 30%, rgba(0, 255, 224, 0.2) 50%,
+    rgba(0, 255, 224, 0.12) 70%, transparent
+  );
+  pointer-events: none;
+  z-index: 23;
+  transition: top 50ms linear;
+}
+
+/* ── Vignette ── */
+.vignette {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 50%, rgba(0, 0, 0, 0.5) 80%, rgba(0, 0, 0, 0.9) 100%);
+  pointer-events: none;
+  z-index: 21;
+}
+
+/* ═══ Content Sections ═══ */
+.section {
+  z-index: 10;
+  width: 100%;
+}
+
+/* ── Header ── */
+.header {
+  text-align: center;
+  margin-bottom: 1.5%;
+  z-index: 10;
+}
+
+.headerTitle {
+  font-family: var(--font-title);
+  font-size: clamp(20px, 3.8vmin, 34px);
+  font-weight: 900;
+  color: var(--color-cyan);
+  letter-spacing: 5px;
+  text-shadow: 0 0 12px var(--color-cyan), 0 0 40px rgba(0, 255, 224, 0.2);
+  animation: textFlicker 8s infinite;
+}
+
+.headerSub {
+  font-size: clamp(8px, 1.4vmin, 11px);
+  color: var(--color-text-dim);
+  letter-spacing: 3px;
+  margin-top: 2px;
+  font-family: var(--font-display);
+}
+
+.versionRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 6px;
+  font-size: clamp(9px, 1.6vmin, 13px);
+}
+
+.versionDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.versionDotActive {
+  animation: blink80s 2s infinite;
+}
+
+/* ── Diagnostics Row ── */
+.diagnosticsRow {
+  display: flex;
+  gap: 3%;
+  width: 85%;
+  margin: 0 auto 2%;
+  z-index: 10;
+}
+
+.panel {
+  flex: 1;
+  padding: 3% 4%;
+  background: rgba(10, 10, 20, 0.8);
+}
+
+.panelActive {
+  border: 1px solid var(--color-text-dim);
+}
+
+.panelInactive {
+  border: 1px solid #331122;
+}
+
+.panelHeader {
+  font-size: clamp(9px, 1.4vmin, 11px);
+  color: var(--color-label);
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+}
+
+.panelValue {
+  font-size: clamp(11px, 2vmin, 15px);
+  font-weight: bold;
+  margin-bottom: 4px;
+}
+
+.panelDetail {
+  font-size: clamp(8px, 1.3vmin, 10px);
+  line-height: 1.8;
+}
+
+/* ── System Log ── */
+.logContainer {
+  width: 85%;
+  margin: 0 auto 2%;
+  padding: 2% 3%;
+  background: rgba(8, 8, 16, 0.85);
+  border: 1px solid var(--color-grid);
+  z-index: 10;
+  min-height: clamp(80px, 18vmin, 160px);
+}
+
+.logHeader {
+  font-size: clamp(9px, 1.3vmin, 10px);
+  color: var(--color-label);
+  letter-spacing: 2px;
+  margin-bottom: 4px;
+}
+
+.logEntries {
+  font-size: clamp(8px, 1.2vmin, 10px);
+  line-height: 1.6;
+}
+
+.logEmpty {
+  color: #333;
+}
+
+/* ── Buttons Row ── */
+.buttonsRow {
+  width: 85%;
+  margin: 0 auto 2%;
+  display: flex;
+  gap: 2.5%;
+  z-index: 10;
+}
+
+.actionBtn {
+  flex: 1;
+  padding: clamp(6px, 1.5vmin, 12px) 0;
+  background: var(--color-btn-bg);
+  color: var(--color-btn-fg);
+  border: 1px solid var(--color-ring);
+  border-radius: 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-weight: bold;
+  font-size: clamp(10px, 1.8vmin, 14px);
+  letter-spacing: 2px;
+  text-shadow: 0 0 6px rgba(0, 255, 224, 0.25);
+  transition: all 0.12s ease;
+}
+
+.actionBtn:hover:not(:disabled) {
+  filter: brightness(1.4);
+  transform: scale(1.02);
+}
+
+.actionBtn:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.actionBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  color: #444;
+  border-color: #333;
+  text-shadow: none;
+}
+
+.killBtn {
+  background: #1a0a14;
+  color: var(--color-btn-kill);
+  border-color: var(--color-btn-kill);
+}
+
+.wifiBtn {
+  background: #0a1a14;
+  color: #66ffaa;
+  border-color: #44cc88;
+}
+
+/* ── Shutdown ── */
+.shutdownArea {
+  width: 85%;
+  margin: 0 auto;
+  z-index: 10;
+}
+
+.shutdownBtn {
+  width: 100%;
+  padding: clamp(6px, 1.5vmin, 12px) 0;
+  background: #1a0508;
+  color: var(--color-red);
+  border: 1px solid #662222;
+  border-radius: 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-weight: bold;
+  font-size: clamp(10px, 1.8vmin, 14px);
+  letter-spacing: 2px;
+  transition: all 0.12s ease;
+}
+
+.shutdownBtn:hover {
+  filter: brightness(1.4);
+  transform: scale(1.02);
+}
+
+.shutdownCountdown {
+  text-align: center;
+  padding: 2%;
+  background: rgba(40, 5, 5, 0.9);
+  border: 2px solid var(--color-red);
+  color: var(--color-red);
+  font-weight: bold;
+  font-size: clamp(13px, 2.5vmin, 20px);
+  animation: blink80s 0.5s infinite;
+}
+
+.shutdownConfirmRow {
+  display: flex;
+  gap: 3%;
+}
+
+.confirmBtn {
+  flex: 1;
+  padding: clamp(6px, 1.5vmin, 12px) 0;
+  border-radius: 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-weight: bold;
+  font-size: clamp(10px, 1.8vmin, 14px);
+  letter-spacing: 2px;
+  transition: all 0.12s ease;
+}
+
+.confirmYes {
+  background: #3a0000;
+  color: var(--color-red);
+  border: 1px solid var(--color-red);
+}
+
+.confirmNo {
+  background: var(--color-btn-bg);
+  color: #666;
+  border: 1px solid #333;
+}
+
+/* ── Voice Hint ── */
+.voiceHint {
+  margin-top: 1.5%;
+  z-index: 10;
+  font-size: clamp(7px, 1.1vmin, 9px);
+  color: var(--color-muted);
+  letter-spacing: 1px;
+  text-align: center;
+}
+
+/* ── Back button ── */
+.backLink {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 30;
+  font-size: 11px;
+  color: var(--color-muted);
+  text-decoration: none;
+  letter-spacing: 1px;
+  transition: color 0.15s ease;
+}
+
+.backLink:hover {
+  color: var(--color-cyan);
+}

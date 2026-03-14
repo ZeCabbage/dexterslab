@@ -1,0 +1,230 @@
+/* ═══════════════════════════════════════════════════════════════
+   DEXTER'S LAB — Global Design System
+   80s Retro-Futuristic Tech Aesthetic
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Google Fonts ── */
+@import url('https://fonts.googleapis.com/css2?family=VT323&family=Press+Start+2P&family=Orbitron:wght@400;700;900&display=swap');
+
+/* ── CSS Custom Properties ── */
+:root {
+  /* Primary palette */
+  --color-bg:          #06060e;
+  --color-bg-panel:    #0a0a14;
+  --color-bg-card:     rgba(10, 10, 20, 0.85);
+
+  /* Neon accents */
+  --color-cyan:        #00ffe0;
+  --color-cyan-dim:    #00e8d0;
+  --color-magenta:     #ff2d95;
+  --color-purple:      #9945ff;
+  --color-amber:       #ffaa00;
+  --color-green:       #00ff88;
+  --color-red:         #ff4466;
+  --color-blue:        #44ddff;
+
+  /* Text */
+  --color-text:        #33ffc4;
+  --color-text-dim:    #1a6050;
+  --color-label:       #6688aa;
+  --color-muted:       #2a3344;
+
+  /* Grid / structural */
+  --color-grid:        #162040;
+  --color-ring:        #00e8d0;
+  --color-ring2:       #ff2d95;
+
+  /* Buttons */
+  --color-btn-bg:      #0c1428;
+  --color-btn-fg:      #00ffe0;
+  --color-btn-kill:    #ff3366;
+
+  /* Typography */
+  --font-mono:         'Courier New', Courier, monospace;
+  --font-display:      'VT323', monospace;
+  --font-title:        'Orbitron', sans-serif;
+  --font-pixel:        'Press Start 2P', monospace;
+
+  /* Sizing */
+  --display-size:      1080px;
+}
+
+/* ── Reset ── */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--color-bg);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+body {
+  position: relative;
+}
+
+/* ── Scrollbar (dark themed) ── */
+::-webkit-scrollbar {
+  width: 4px;
+}
+::-webkit-scrollbar-track {
+  background: var(--color-bg);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--color-text-dim);
+  border-radius: 2px;
+}
+
+/* ── Neon Text Glow Utilities ── */
+.glow-cyan {
+  text-shadow: 0 0 8px var(--color-cyan), 0 0 30px rgba(0, 255, 224, 0.2);
+}
+
+.glow-magenta {
+  text-shadow: 0 0 8px var(--color-magenta), 0 0 30px rgba(255, 45, 149, 0.2);
+}
+
+.glow-amber {
+  text-shadow: 0 0 6px var(--color-amber), 0 0 20px rgba(255, 170, 0, 0.15);
+}
+
+/* ── Shared Animations ── */
+@keyframes blink80s {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+@keyframes ringPulse {
+  0%, 100% { opacity: 0.4; }
+  50% { opacity: 1; }
+}
+
+@keyframes scanMove {
+  0% { top: 0%; }
+  100% { top: 100%; }
+}
+
+@keyframes cursorBlink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes textFlicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.8; }
+  94% { opacity: 1; }
+  96% { opacity: 0.9; }
+  97% { opacity: 1; }
+}
+
+@keyframes glowPulse {
+  0%, 100% { filter: brightness(1); }
+  50% { filter: brightness(1.3); }
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ── CRT Scan Line Overlay ── */
+.crt-scanlines {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0, 0, 0, 0.1) 2px,
+    rgba(0, 0, 0, 0.1) 4px
+  );
+  pointer-events: none;
+  z-index: 100;
+}
+
+/* ── Perspective Grid Background ── */
+.grid-bg {
+  background-image:
+    repeating-linear-gradient(90deg, transparent, transparent 7.5%, rgba(22, 32, 64, 0.25) 7.5%, rgba(22, 32, 64, 0.25) 7.6%),
+    repeating-linear-gradient(0deg, transparent, transparent 7.5%, rgba(22, 32, 64, 0.25) 7.5%, rgba(22, 32, 64, 0.25) 7.6%);
+}
+
+/* ── Button Base ── */
+.btn-retro {
+  padding: clamp(8px, 1.5vmin, 14px) clamp(12px, 2vmin, 20px);
+  background: var(--color-btn-bg);
+  color: var(--color-btn-fg);
+  border: 1px solid var(--color-ring);
+  border-radius: 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-weight: bold;
+  font-size: clamp(10px, 1.8vmin, 14px);
+  letter-spacing: 2px;
+  text-shadow: 0 0 6px rgba(0, 255, 224, 0.25);
+  transition: all 0.12s ease;
+  outline: none;
+}
+
+.btn-retro:hover:not(:disabled) {
+  filter: brightness(1.4);
+  transform: scale(1.02);
+}
+
+.btn-retro:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.btn-retro:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  color: #444;
+  border-color: #333;
+  text-shadow: none;
+}
+
+.btn-danger {
+  background: #1a0a14;
+  color: var(--color-btn-kill);
+  border-color: var(--color-btn-kill);
+  text-shadow: 0 0 6px rgba(255, 51, 102, 0.25);
+}
+
+.btn-danger:hover:not(:disabled) {
+  background: #2a1020;
+}
+
+/* ── Panel Base ── */
+.panel {
+  padding: 3% 4%;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-text-dim);
+}
+
+.panel-header {
+  font-size: clamp(9px, 1.4vmin, 11px);
+  color: var(--color-label);
+  letter-spacing: 2px;
+  margin-bottom: 6px;
+}
+
+/* Links */
+a {
+  color: var(--color-cyan);
+  text-decoration: none;
+  transition: all 0.15s ease;
+}
+
+a:hover {
+  color: var(--color-magenta);
+  text-shadow: 0 0 8px var(--color-magenta);
+}

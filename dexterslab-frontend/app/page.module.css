@@ -1,0 +1,219 @@
+/* ═══════════════════════════════════════════
+   DEXTER'S LAB — Landing Page
+   ═══════════════════════════════════════════ */
+
+.container {
+  width: 100vw;
+  height: 100vh;
+  background: var(--color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.gridOverlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background-image:
+    repeating-linear-gradient(90deg, transparent, transparent 7.5%, rgba(22, 32, 64, 0.15) 7.5%, rgba(22, 32, 64, 0.15) 7.6%),
+    repeating-linear-gradient(0deg, transparent, transparent 7.5%, rgba(22, 32, 64, 0.15) 7.5%, rgba(22, 32, 64, 0.15) 7.6%);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.scanline {
+  position: absolute;
+  left: 0; right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, transparent, rgba(0, 255, 224, 0.08) 30%, rgba(0, 255, 224, 0.15) 50%, rgba(0, 255, 224, 0.08) 70%, transparent);
+  pointer-events: none;
+  z-index: 2;
+  transition: top 50ms linear;
+}
+
+.content {
+  position: relative;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 32px;
+  padding: 40px 20px;
+  max-width: 700px;
+  width: 100%;
+}
+
+/* Header */
+.header {
+  text-align: center;
+}
+
+.titleRow {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 16px;
+}
+
+.titleIcon {
+  font-size: clamp(24px, 4vmin, 36px);
+  color: var(--color-magenta);
+  animation: glowPulse 3s ease-in-out infinite;
+}
+
+.title {
+  font-family: var(--font-title);
+  font-size: clamp(28px, 5vmin, 48px);
+  font-weight: 900;
+  color: var(--color-cyan);
+  letter-spacing: 6px;
+  text-shadow:
+    0 0 12px var(--color-cyan),
+    0 0 40px rgba(0, 255, 224, 0.25),
+    0 0 80px rgba(0, 255, 224, 0.1);
+  animation: textFlicker 8s infinite;
+}
+
+.subtitle {
+  font-family: var(--font-display);
+  font-size: clamp(14px, 2.5vmin, 22px);
+  color: var(--color-text-dim);
+  letter-spacing: 6px;
+  margin-top: 4px;
+}
+
+.headerInfo {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 12px;
+  font-size: clamp(10px, 1.6vmin, 13px);
+}
+
+.clock {
+  color: var(--color-amber);
+  text-shadow: 0 0 6px rgba(255, 170, 0, 0.3);
+}
+
+.divider {
+  color: #333;
+}
+
+.expCount {
+  color: var(--color-label);
+}
+
+/* Experiment Cards */
+.experiments {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.card {
+  display: block;
+  padding: 16px 20px;
+  background: rgba(10, 10, 20, 0.85);
+  border: 1px solid var(--color-grid);
+  text-decoration: none;
+  color: var(--color-text);
+  transition: all 0.2s ease;
+  animation: fadeIn 0.5s ease both;
+  position: relative;
+  overflow: hidden;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 3px; height: 100%;
+  background: var(--color-cyan);
+  opacity: 0;
+  transition: opacity 0.2s ease;
+}
+
+.card:hover {
+  border-color: var(--color-cyan);
+  background: rgba(10, 15, 30, 0.9);
+  transform: translateX(4px);
+  box-shadow: 0 0 20px rgba(0, 255, 224, 0.08);
+  color: var(--color-text);
+  text-shadow: none;
+}
+
+.card:hover::before {
+  opacity: 1;
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.cardIcon {
+  font-size: clamp(16px, 2.5vmin, 22px);
+}
+
+.cardName {
+  font-family: var(--font-title);
+  font-size: clamp(13px, 2vmin, 17px);
+  font-weight: 700;
+  color: var(--color-cyan);
+  letter-spacing: 2px;
+  flex: 1;
+}
+
+.cardStatus {
+  font-size: clamp(8px, 1.2vmin, 10px);
+  letter-spacing: 2px;
+  font-weight: bold;
+}
+
+.cardDesc {
+  font-size: clamp(9px, 1.3vmin, 11px);
+  color: var(--color-label);
+  line-height: 1.5;
+  margin-bottom: 8px;
+}
+
+.cardFooter {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.cardRoute {
+  font-size: clamp(9px, 1.2vmin, 10px);
+  color: var(--color-muted);
+  font-family: var(--font-mono);
+}
+
+.cardArrow {
+  color: var(--color-cyan);
+  font-size: clamp(14px, 2vmin, 18px);
+  opacity: 0;
+  transform: translateX(-8px);
+  transition: all 0.2s ease;
+}
+
+.card:hover .cardArrow {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+/* Footer */
+.footer {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: clamp(8px, 1.2vmin, 10px);
+  color: var(--color-muted);
+  letter-spacing: 2px;
+}
