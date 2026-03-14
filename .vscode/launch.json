@@ -17,7 +17,7 @@
     },
     {
       "name": "Backend (Python)",
-      "type": "python",
+      "type": "debugpy",
       "request": "launch",
       "program": "server.py",
       "cwd": "${workspaceFolder}/dexterslab-frontend/dexterslab-backend",

@@ -113,7 +113,7 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:7777",
         "http://127.0.0.1:7777",
-        "https://thecabbagepatch.cclottaworld.com",
+        "https://dexterslab.cclottaaworld.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
