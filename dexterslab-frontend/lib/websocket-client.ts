@@ -61,7 +61,7 @@ export class WebSocketClient {
                 && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
             url = isLocal
                 ? 'ws://localhost:8888/ws'
-                : 'wss://dexterslab.cclottaaworld.com/ws';
+                : 'wss://api.dexterslab.cclottaaworld.com/ws';
         }
         this.url = url;
     }

@@ -113,7 +113,10 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:7777",
         "http://127.0.0.1:7777",
+        "http://localhost:3000",
+        "http://127.0.0.1:3000",
         "https://dexterslab.cclottaaworld.com",
+        "https://api.dexterslab.cclottaaworld.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],
