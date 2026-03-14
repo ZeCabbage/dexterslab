@@ -15,7 +15,8 @@
 
 import { useEffect, useState, useRef, useCallback } from 'react';
 import Link from 'next/link';
-import { BrowserSpeechRecognition, HUB_COMMANDS, matchCommand, SpeechStatus } from '@/lib/speech-recognition';
+import { HUB_COMMANDS } from '@/lib/speech-recognition';
+import { useVoiceListener } from '@/hooks/useVoiceListener';
 import styles from './page.module.css';
 
 // ═══ Types ═══
@@ -47,9 +48,6 @@ export default function ObserverHub() {
   const [time, setTime] = useState('');
   const [scanY, setScanY] = useState(0);
   const [cursorBlink, setCursorBlink] = useState(true);
-  const [localMic, setLocalMic] = useState<SpeechStatus>('off');
-
-  const speechRef = useRef<BrowserSpeechRecognition | null>(null);
 
   // ── Helpers ──
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -102,54 +100,38 @@ export default function ObserverHub() {
     return () => clearInterval(id);
   }, []);
 
-  // ── Auto-start Web Speech API ──
+  // ── Voice Listener (Web Speech API) ──
+  const voice = useVoiceListener({
+    commands: HUB_COMMANDS,
+    onCommand: (cmd) => {
+      const labels: Record<string, string> = {
+        start_v1: 'VOICE → LAUNCHING V1',
+        start_v2: 'VOICE → LAUNCHING V2',
+        kill: 'VOICE → KILL',
+      };
+      addLog(`VOICE CMD: ${cmd}`, 'command');
+      doAction(cmd, labels[cmd] || cmd);
+    },
+    onFinal: (text) => {
+      setLastVoice(text);
+      setVoicePartial('');
+      addLog(`💬 "${text}"`, 'heard');
+    },
+    onPartial: (text) => {
+      if (text) setVoicePartial(text);
+    },
+  });
+
+  // Sync voice status to UI
   useEffect(() => {
-    if (!BrowserSpeechRecognition.isSupported()) {
+    if (voice.status === 'listening') {
+      setVoiceStatus('online');
+      addLog('🎙️ Voice ACTIVE (browser)', 'success');
+    } else if (voice.status === 'error') {
+      setVoiceStatus('offline');
       addLog('Speech API not supported — use Chrome', 'error');
-      setLocalMic('error');
-      return;
     }
-
-    const speech = new BrowserSpeechRecognition({
-      onFinal: (text) => {
-        setLastVoice(text);
-        setVoicePartial('');
-        addLog(`💬 "${text}"`, 'heard');
-
-        // Check for hub voice commands
-        const cmd = matchCommand(text, HUB_COMMANDS);
-        if (cmd) {
-          const labels: Record<string, string> = {
-            start_v1: 'VOICE → LAUNCHING V1',
-            start_v2: 'VOICE → LAUNCHING V2',
-            kill: 'VOICE → KILL',
-          };
-          addLog(`VOICE CMD: ${cmd}`, 'command');
-          doAction(cmd, labels[cmd] || cmd);
-        }
-      },
-      onPartial: (text) => {
-        if (text) setVoicePartial(text);
-      },
-      onStatusChange: (status) => {
-        setLocalMic(status);
-        if (status === 'listening') {
-          setVoiceStatus('online');
-          addLog('🎙️ Voice ACTIVE (browser)', 'success');
-        } else if (status === 'error') {
-          setVoiceStatus('offline');
-        }
-      },
-    });
-
-    speechRef.current = speech;
-    speech.start();
-
-    return () => {
-      speech.stop();
-      speechRef.current = null;
-    };
-  }, [addLog]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [voice.status, addLog]);
 
   // ── Actions ──
   const doAction = async (action: string, label: string) => {
@@ -259,15 +241,15 @@ export default function ObserverHub() {
           </div>
 
           {/* Voice Panel */}
-          <div className={`${styles.panel} ${localMic === 'listening' ? styles.panelActive : styles.panelInactive}`}>
+          <div className={`${styles.panel} ${voice.isListening ? styles.panelActive : styles.panelInactive}`}>
             <div className={styles.panelHeader}>╔══ VOICE ════╗</div>
             <div className={styles.panelValue} style={{
-              color: localMic === 'listening' ? 'var(--color-green)'
+              color: voice.isListening ? 'var(--color-green)'
                 : voiceStatus === 'online' ? 'var(--color-green)' : 'var(--color-red)',
             }}>
-              {localMic === 'listening' ? '● LISTENING'
-                : localMic === 'starting' ? '◌ STARTING...'
-                : localMic === 'error' ? '✕ MIC ERROR'
+              {voice.isListening ? '● LISTENING'
+                : voice.status === 'starting' ? '◌ STARTING...'
+                : voice.status === 'error' ? '✕ MIC ERROR'
                 : '○ MIC OFF'}
             </div>
             <div className={styles.panelDetail}>

@@ -28,7 +28,8 @@ import { BlinkController, SaccadeController } from '@/lib/animation-controller';
 import { WebSocketClient, TrackingData, OracleEvent, VoiceCommandEvent, VoicePartialEvent } from '@/lib/websocket-client';
 import { isCircularDisplay, getDisplayConfig } from '@/lib/pi-display-config';
 import { PhoneAlertOverlay } from '@/lib/phone-alert-overlay';
-import { BrowserSpeechRecognition, OBSERVER_COMMANDS, matchCommand } from '@/lib/speech-recognition';
+import { OBSERVER_COMMANDS } from '@/lib/speech-recognition';
+import { useVoiceListener } from '@/hooks/useVoiceListener';
 import Link from 'next/link';
 
 // ── Configuration ──
@@ -547,43 +548,30 @@ export default function ObserverEye() {
   }, []);
 
   // ── Web Speech API ──
-  useEffect(() => {
-    if (!BrowserSpeechRecognition.isSupported()) return;
-
-    const speech = new BrowserSpeechRecognition({
-      onFinal: (text) => {
-        stateRef.current.lastVoiceText = text;
-
-        const cmd = matchCommand(text, OBSERVER_COMMANDS);
-        if (cmd) {
-          const s = stateRef.current;
-          if (cmd === 'sleep') { s.isSleeping = true; s.sleepTarget = 1; }
-          else if (cmd === 'wake') { s.isSleeping = false; s.sleepTarget = 0; }
-          else if (cmd === 'blush') { s.blushTarget = 1; s.blushEndTime = performance.now() / 1000 + 4.0; }
-          else if (cmd === 'goodboy') { s.goodBoyTarget = 1; s.goodBoyEndTime = performance.now() / 1000 + 5.0; }
-          else if (cmd === 'thankyou') { s.thankYouTarget = 1; s.thankYouEndTime = performance.now() / 1000 + 5.0; }
-          return;
+  useVoiceListener({
+    commands: OBSERVER_COMMANDS,
+    onCommand: (cmd) => {
+      const s = stateRef.current;
+      if (cmd === 'sleep') { s.isSleeping = true; s.sleepTarget = 1; }
+      else if (cmd === 'wake') { s.isSleeping = false; s.sleepTarget = 0; }
+      else if (cmd === 'blush') { s.blushTarget = 1; s.blushEndTime = performance.now() / 1000 + 4.0; }
+      else if (cmd === 'goodboy') { s.goodBoyTarget = 1; s.goodBoyEndTime = performance.now() / 1000 + 5.0; }
+      else if (cmd === 'thankyou') { s.thankYouTarget = 1; s.thankYouEndTime = performance.now() / 1000 + 5.0; }
+    },
+    onFinal: (text) => {
+      stateRef.current.lastVoiceText = text;
+      askOracle(text).then((result) => {
+        if (result?.response) {
+          const overlay = (window as any).__observerTextOverlay as TextOverlay | undefined;
+          if (overlay) overlay.forceShow(result.response, 4.0);
+          stateRef.current.lastOracleResponse = result.response;
         }
-
-        askOracle(text).then((result) => {
-          if (result?.response) {
-            const overlay = (window as any).__observerTextOverlay as TextOverlay | undefined;
-            if (overlay) overlay.forceShow(result.response, 4.0);
-            stateRef.current.lastOracleResponse = result.response;
-          }
-        });
-      },
-      onPartial: (text) => {
-        if (text) stateRef.current.lastVoiceText = text;
-      },
-      onStatusChange: (status) => {
-        console.log(`🎙️ Speech status: ${status}`);
-      },
-    });
-
-    speech.start();
-    return () => speech.stop();
-  }, []);
+      });
+    },
+    onPartial: (text) => {
+      if (text) stateRef.current.lastVoiceText = text;
+    },
+  });
 
   return (
     <div style={{
