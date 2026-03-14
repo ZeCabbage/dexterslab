@@ -1,0 +1,44 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Run Frontend",
+      "type": "shell",
+      "command": "npm run dev",
+      "options": {
+        "cwd": "${workspaceFolder}/dexterslab-frontend"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dexterslab"
+      },
+      "detail": "Starts Next.js dev server on port 7777"
+    },
+    {
+      "label": "Run Backend",
+      "type": "shell",
+      "command": "source venv/bin/activate && python server.py",
+      "options": {
+        "cwd": "${workspaceFolder}/dexterslab-frontend/dexterslab-backend"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "presentation": {
+        "reveal": "always",
+        "panel": "dedicated",
+        "group": "dexterslab"
+      },
+      "detail": "Starts Python FastAPI backend on port 8888"
+    },
+    {
+      "label": "Run All (Frontend + Backend)",
+      "dependsOn": ["Run Frontend", "Run Backend"],
+      "dependsOrder": "parallel",
+      "problemMatcher": [],
+      "detail": "Starts both frontend and backend together"
+    }
+  ]
+}
