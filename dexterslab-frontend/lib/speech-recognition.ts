@@ -146,9 +146,13 @@ export class BrowserSpeechRecognition {
     }
     if (this.recognition) {
       try {
-        this.recognition.stop();
+        this.recognition.abort(); // abort() immediately releases mic resources
       } catch {}
       this.recognition = null;
+    }
+    if (this.restartTimer) {
+      clearTimeout(this.restartTimer);
+      this.restartTimer = null;
     }
     this.options.onStatusChange?.('off');
   }
@@ -305,20 +309,39 @@ export class ServerSpeechRecognition {
     diagLog('ServerSTT: Starting...');
     this.options.onStatusChange?.('starting');
 
-    try {
-      diagLog('ServerSTT: Requesting getUserMedia...');
-      this.stream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          echoCancellation: true,
-          noiseSuppression: true,
-          autoGainControl: true,
-        },
-      });
-      diagLog(`ServerSTT: getUserMedia granted, tracks: ${this.stream.getAudioTracks().map(t => t.label).join(', ')}`);
+    // Retry logic: mic may be briefly locked by previous SpeechRecognition.
+    // Try up to 3 times with increasing delays.
+    const MAX_RETRIES = 3;
+    for (let attempt = 1; attempt <= MAX_RETRIES; attempt++) {
+      try {
+        diagLog(`ServerSTT: Requesting getUserMedia (attempt ${attempt})...`);
+        this.stream = await navigator.mediaDevices.getUserMedia({
+          audio: {
+            echoCancellation: true,
+            noiseSuppression: true,
+            autoGainControl: true,
+          },
+        });
+        diagLog(`ServerSTT: getUserMedia granted, tracks: ${this.stream.getAudioTracks().map(t => t.label).join(', ')}`);
+        break; // Success!
+      } catch (err) {
+        const e = err as Error;
+        diagLog(`ServerSTT: getUserMedia attempt ${attempt} failed - ${e?.name}: ${e?.message}`);
+        if (attempt < MAX_RETRIES) {
+          // Wait before retrying (mic may still be releasing)
+          await new Promise(resolve => setTimeout(resolve, 1000 * attempt));
+        } else {
+          diagLog(`ServerSTT: FAILED after ${MAX_RETRIES} attempts`);
+          this.options.onStatusChange?.('error');
+          return false;
+        }
+      }
+    }
 
+    try {
       // Set up AudioContext for VAD
       this.audioContext = new AudioContext();
-      const source = this.audioContext.createMediaStreamSource(this.stream);
+      const source = this.audioContext.createMediaStreamSource(this.stream!);
       this.analyser = this.audioContext.createAnalyser();
       this.analyser.fftSize = 512;
       this.analyser.smoothingTimeConstant = 0.3;
