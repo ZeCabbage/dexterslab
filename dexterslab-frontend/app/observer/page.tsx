@@ -136,12 +136,19 @@ export default function ObserverHub() {
   useEffect(() => {
     if (voice.status === 'listening') {
       setVoiceStatus('online');
-      addLog('🎙️ Voice ACTIVE (browser)', 'success');
+      const engineLabel = voice.engine === 'browser' ? 'browser' : voice.engine === 'server' ? 'server STT' : 'unknown';
+      addLog(`🎙️ Voice ACTIVE (${engineLabel})`, 'success');
     } else if (voice.status === 'error') {
       setVoiceStatus('offline');
-      addLog('Speech API not supported — use Chrome', 'error');
+      if (voice.engine === 'none') {
+        addLog('No speech engine — check browser', 'error');
+      } else {
+        addLog(`Mic error (${voice.engine}) — check permissions`, 'error');
+      }
+    } else if (voice.status === 'starting') {
+      addLog('🎙️ Mic starting...', 'info');
     }
-  }, [voice.status, addLog]);
+  }, [voice.status, voice.engine, addLog]);
 
   // ── Actions ──
   const doAction = async (action: string, label: string) => {

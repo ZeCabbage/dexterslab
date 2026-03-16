@@ -280,16 +280,21 @@ export class ServerSpeechRecognition {
   /** Check if MediaRecorder is available (all modern browsers including Chromium). */
   static isSupported(): boolean {
     if (typeof window === 'undefined') return false;
-    return !!(navigator.mediaDevices && window.MediaRecorder);
+    const hasMediaDevices = !!navigator.mediaDevices;
+    const hasMediaRecorder = !!window.MediaRecorder;
+    console.log(`🎙️ ServerSTT check: mediaDevices=${hasMediaDevices}, MediaRecorder=${hasMediaRecorder}`);
+    return hasMediaDevices && hasMediaRecorder;
   }
 
   /** Start continuous listening with VAD. */
   async start(): Promise<boolean> {
     if (this.running) return true;
 
+    console.log('🎙️ ServerSTT: Starting...');
     this.options.onStatusChange?.('starting');
 
     try {
+      console.log('🎙️ ServerSTT: Requesting getUserMedia...');
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -297,6 +302,7 @@ export class ServerSpeechRecognition {
           autoGainControl: true,
         },
       });
+      console.log('🎙️ ServerSTT: getUserMedia granted, tracks:', this.stream.getAudioTracks().map(t => t.label));
 
       // Set up AudioContext for VAD
       this.audioContext = new AudioContext();
@@ -305,16 +311,19 @@ export class ServerSpeechRecognition {
       this.analyser.fftSize = 512;
       this.analyser.smoothingTimeConstant = 0.3;
       source.connect(this.analyser);
+      console.log('🎙️ ServerSTT: AudioContext and VAD analyser ready');
 
       this.running = true;
       this.options.onStatusChange?.('listening');
 
       // Start VAD loop
       this._vadLoop();
+      console.log('🎙️ ServerSTT: VAD loop started, now listening');
 
       return true;
     } catch (err) {
-      console.warn('🎙️ Failed to access microphone:', err);
+      console.error('🎙️ ServerSTT: Failed to start:', err);
+      console.error('🎙️ ServerSTT: Error name:', (err as Error)?.name, 'message:', (err as Error)?.message);
       this.options.onStatusChange?.('error');
       return false;
     }
