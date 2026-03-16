@@ -45,6 +45,10 @@ export const HUB_COMMANDS: CommandPattern[] = [
   { pattern: /(?:kill|shut\s*(?:down|off)|close|stop|turn\s+off)\s+(?:the\s+)?observer/i, command: 'kill' },
   { pattern: /kill\s+it/i, command: 'kill' },
   { pattern: /shut\s+it\s+down/i, command: 'kill' },
+  // Code sync
+  { pattern: /(?:sync|pull|update)\s+(?:the\s+)?code/i, command: 'git_pull' },
+  { pattern: /pull\s+latest/i, command: 'git_pull' },
+  { pattern: /git\s+pull/i, command: 'git_pull' },
 ];
 
 // ── Navigation Commands (launch/kill applications) ──

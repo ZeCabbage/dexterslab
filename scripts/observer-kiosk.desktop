@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Observer Hub Kiosk
+Comment=Launch Observer Hub in fullscreen kiosk mode on boot
+Exec=/home/thecabbage/Desktop/dexterslab/scripts/observer-kiosk.sh
+Terminal=false
+X-GNOME-Autostart-enabled=true

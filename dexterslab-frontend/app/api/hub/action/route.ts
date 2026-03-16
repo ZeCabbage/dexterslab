@@ -174,6 +174,75 @@ export async function POST(request: Request) {
         }
       }
 
+      case 'git_pull': {
+        const repoDir = IS_MAC
+          ? '/Users/dexterholmes/Documents/GitHub/dexterslab'
+          : '/home/thecabbage/Desktop/dexterslab';
+
+        const results: string[] = [];
+
+        // 1. Git pull
+        try {
+          const { stdout, stderr } = await execAsync('git pull origin main', {
+            cwd: repoDir,
+            timeout: 30000,
+          });
+          const output = (stdout || '').trim();
+          results.push(`git pull: ${output || 'done'}`);
+          if (stderr && !stderr.includes('Already up to date')) {
+            results.push(`git stderr: ${stderr.trim()}`);
+          }
+        } catch (err: any) {
+          results.push(`git pull failed: ${err.message || 'unknown error'}`);
+          return NextResponse.json({
+            success: false,
+            message: `Git pull failed: ${err.message || 'unknown error'}`,
+            details: results,
+          });
+        }
+
+        // 2. Install backend deps
+        try {
+          await execAsync('npm install', {
+            cwd: `${repoDir}/dexterslab-backend`,
+            timeout: 60000,
+          });
+          results.push('backend: npm install done');
+        } catch (err: any) {
+          results.push(`backend npm install warning: ${err.message}`);
+        }
+
+        // 3. Install frontend deps
+        try {
+          await execAsync('npm install', {
+            cwd: `${repoDir}/dexterslab-frontend`,
+            timeout: 60000,
+          });
+          results.push('frontend: npm install done');
+        } catch (err: any) {
+          results.push(`frontend npm install warning: ${err.message}`);
+        }
+
+        // 4. Rebuild frontend (production only on Pi)
+        if (!IS_MAC) {
+          try {
+            await execAsync('npm run build', {
+              cwd: `${repoDir}/dexterslab-frontend`,
+              timeout: 120000,
+            });
+            results.push('frontend: build done');
+          } catch (err: any) {
+            results.push(`frontend build warning: ${err.message}`);
+          }
+        }
+
+        return NextResponse.json({
+          success: true,
+          message: 'Code synced successfully',
+          details: results,
+        });
+      }
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }

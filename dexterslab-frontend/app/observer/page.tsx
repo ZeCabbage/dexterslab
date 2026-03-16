@@ -61,6 +61,7 @@ export default function ObserverHub() {
   const [actionPending, setActionPending] = useState('');
   const [showShutdown, setShowShutdown] = useState(false);
   const [shutdownCount, setShutdownCount] = useState(0);
+  const [syncing, setSyncing] = useState(false);
   const [time, setTime] = useState('');
   const [scanY, setScanY] = useState(0);
   const [cursorBlink, setCursorBlink] = useState(true);
@@ -145,6 +146,7 @@ export default function ObserverHub() {
   // ── Actions ──
   const doAction = async (action: string, label: string) => {
     setActionPending(action);
+    if (action === 'git_pull') setSyncing(true);
     addLog(`${label}...`, 'command');
     try {
       const res = await fetch('/api/hub/action', {
@@ -155,6 +157,10 @@ export default function ObserverHub() {
       const data = await res.json();
       if (data.success) {
         addLog(data.message, 'success');
+        // Log sync details
+        if (data.details) {
+          for (const d of data.details) addLog(`  ↳ ${d}`, 'info');
+        }
         // Navigate if backend says so
         if (data.navigate) {
           router.push(data.navigate);
@@ -166,6 +172,7 @@ export default function ObserverHub() {
       addLog('Action failed — check connection', 'error');
     }
     setActionPending('');
+    if (action === 'git_pull') setSyncing(false);
   };
 
   const handleShutdown = () => {
@@ -319,6 +326,13 @@ export default function ObserverHub() {
           >
             ◉ WIFI
           </button>
+          <button
+            onClick={() => doAction('git_pull', 'Pulling latest code')}
+            disabled={!!actionPending || syncing}
+            className={`${styles.actionBtn} ${styles.syncBtn} ${syncing ? styles.syncBtnActive : ''}`}
+          >
+            {syncing ? '⟳ SYNCING...' : '⟳ SYNC'}
+          </button>
         </div>
 
         {/* ── Shutdown ── */}
@@ -345,7 +359,7 @@ export default function ObserverHub() {
 
         {/* ── Voice Hint ── */}
         <div className={styles.voiceHint}>
-          VOICE: &quot;Launch Eye Application&quot; • &quot;Launch Rules Lawyer&quot; • &quot;Kill Application&quot; • &quot;Go Home&quot;
+          VOICE: &quot;Launch Eye&quot; • &quot;Launch Rules Lawyer&quot; • &quot;Kill Application&quot; • &quot;Sync Code&quot; • &quot;Go Home&quot;
         </div>
       </div>
     </div>

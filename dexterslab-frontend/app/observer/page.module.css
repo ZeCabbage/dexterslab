@@ -275,6 +275,29 @@
   border-color: #44cc88;
 }
 
+.syncBtn {
+  background: #0a141a;
+  color: #55ccff;
+  border-color: #3399cc;
+  text-shadow: 0 0 6px rgba(85, 204, 255, 0.25);
+}
+
+.syncBtn:hover:not(:disabled) {
+  background: #0e1e2a;
+  box-shadow: 0 0 12px rgba(85, 204, 255, 0.2);
+}
+
+.syncBtnActive {
+  animation: syncPulse 1.2s ease-in-out infinite;
+  border-color: #55ccff;
+  color: #88ddff;
+}
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; text-shadow: 0 0 6px rgba(85, 204, 255, 0.25); }
+  50% { opacity: 0.6; text-shadow: 0 0 12px rgba(85, 204, 255, 0.5); }
+}
+
 .projectBtn {
   background: #0a0a28;
   color: var(--color-purple);
