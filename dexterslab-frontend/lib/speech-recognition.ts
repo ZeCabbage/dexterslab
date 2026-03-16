@@ -243,3 +243,254 @@ export class BrowserSpeechRecognition {
     }
   }
 }
+
+/**
+ * Server-side speech recognition using MediaRecorder + Gemini STT.
+ *
+ * Works in Chromium (which lacks Web Speech API) by:
+ * 1. Capturing mic audio via MediaRecorder (universal browser API)
+ * 2. Using AudioContext analyser for voice activity detection (VAD)
+ * 3. Sending audio chunks to /api/stt (Gemini) only when speech is detected
+ *
+ * Same callback interface as BrowserSpeechRecognition for drop-in use.
+ */
+export class ServerSpeechRecognition {
+  private running = false;
+  private stream: MediaStream | null = null;
+  private recorder: MediaRecorder | null = null;
+  private audioContext: AudioContext | null = null;
+  private analyser: AnalyserNode | null = null;
+  private options: SpeechRecognitionOptions;
+  private recordingTimer: ReturnType<typeof setInterval> | null = null;
+  private chunks: Blob[] = [];
+  private isSpeaking = false;
+  private silenceFrames = 0;
+
+  // VAD thresholds
+  private static readonly SPEECH_THRESHOLD = 15; // RMS level to consider "speech"
+  private static readonly SILENCE_FRAMES_TO_STOP = 12; // ~600ms of silence to end utterance
+  private static readonly CHUNK_INTERVAL_MS = 50; // VAD polling interval
+  private static readonly MAX_RECORDING_MS = 8000; // Max single recording length
+  private static readonly MIN_RECORDING_MS = 500; // Min recording to bother sending
+
+  constructor(options: SpeechRecognitionOptions) {
+    this.options = options;
+  }
+
+  /** Check if MediaRecorder is available (all modern browsers including Chromium). */
+  static isSupported(): boolean {
+    if (typeof window === 'undefined') return false;
+    return !!(navigator.mediaDevices && window.MediaRecorder);
+  }
+
+  /** Start continuous listening with VAD. */
+  async start(): Promise<boolean> {
+    if (this.running) return true;
+
+    this.options.onStatusChange?.('starting');
+
+    try {
+      this.stream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          echoCancellation: true,
+          noiseSuppression: true,
+          autoGainControl: true,
+        },
+      });
+
+      // Set up AudioContext for VAD
+      this.audioContext = new AudioContext();
+      const source = this.audioContext.createMediaStreamSource(this.stream);
+      this.analyser = this.audioContext.createAnalyser();
+      this.analyser.fftSize = 512;
+      this.analyser.smoothingTimeConstant = 0.3;
+      source.connect(this.analyser);
+
+      this.running = true;
+      this.options.onStatusChange?.('listening');
+
+      // Start VAD loop
+      this._vadLoop();
+
+      return true;
+    } catch (err) {
+      console.warn('🎙️ Failed to access microphone:', err);
+      this.options.onStatusChange?.('error');
+      return false;
+    }
+  }
+
+  /** Stop listening completely. */
+  stop() {
+    this.running = false;
+
+    if (this.recordingTimer) {
+      clearInterval(this.recordingTimer);
+      this.recordingTimer = null;
+    }
+
+    if (this.recorder && this.recorder.state !== 'inactive') {
+      try {
+        this.recorder.stop();
+      } catch {}
+    }
+    this.recorder = null;
+
+    if (this.audioContext) {
+      try {
+        this.audioContext.close();
+      } catch {}
+      this.audioContext = null;
+    }
+
+    if (this.stream) {
+      this.stream.getTracks().forEach((t) => t.stop());
+      this.stream = null;
+    }
+
+    this.analyser = null;
+    this.chunks = [];
+    this.options.onStatusChange?.('off');
+  }
+
+  get isRunning(): boolean {
+    return this.running;
+  }
+
+  /** Voice Activity Detection loop using AudioContext analyser. */
+  private _vadLoop() {
+    if (!this.running || !this.analyser) return;
+
+    const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+    let recordingStartTime = 0;
+
+    const checkVAD = () => {
+      if (!this.running || !this.analyser) return;
+
+      this.analyser.getByteFrequencyData(dataArray);
+
+      // Calculate RMS energy
+      let sum = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sum += dataArray[i] * dataArray[i];
+      }
+      const rms = Math.sqrt(sum / dataArray.length);
+
+      if (rms > ServerSpeechRecognition.SPEECH_THRESHOLD) {
+        this.silenceFrames = 0;
+
+        if (!this.isSpeaking) {
+          // Speech started — begin recording
+          this.isSpeaking = true;
+          recordingStartTime = Date.now();
+          this.options.onPartial?.('...');
+          this._startRecording();
+        }
+
+        // Check max duration
+        if (Date.now() - recordingStartTime > ServerSpeechRecognition.MAX_RECORDING_MS) {
+          this._stopRecordingAndTranscribe();
+          this.isSpeaking = false;
+        }
+      } else if (this.isSpeaking) {
+        this.silenceFrames++;
+        if (this.silenceFrames >= ServerSpeechRecognition.SILENCE_FRAMES_TO_STOP) {
+          // Silence long enough — end of utterance
+          const duration = Date.now() - recordingStartTime;
+          if (duration >= ServerSpeechRecognition.MIN_RECORDING_MS) {
+            this._stopRecordingAndTranscribe();
+          } else {
+            // Too short, discard
+            this._discardRecording();
+          }
+          this.isSpeaking = false;
+          this.silenceFrames = 0;
+        }
+      }
+    };
+
+    this.recordingTimer = setInterval(checkVAD, ServerSpeechRecognition.CHUNK_INTERVAL_MS);
+  }
+
+  private _startRecording() {
+    if (!this.stream) return;
+    this.chunks = [];
+
+    // Prefer webm/opus which Gemini supports well
+    const mimeType = MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
+      ? 'audio/webm;codecs=opus'
+      : MediaRecorder.isTypeSupported('audio/webm')
+        ? 'audio/webm'
+        : 'audio/ogg';
+
+    try {
+      this.recorder = new MediaRecorder(this.stream, { mimeType });
+      this.recorder.ondataavailable = (e) => {
+        if (e.data.size > 0) this.chunks.push(e.data);
+      };
+      this.recorder.start(100); // collect chunks every 100ms
+    } catch (err) {
+      console.warn('🎙️ MediaRecorder start failed:', err);
+    }
+  }
+
+  private async _stopRecordingAndTranscribe() {
+    if (!this.recorder || this.recorder.state === 'inactive') return;
+
+    return new Promise<void>((resolve) => {
+      if (!this.recorder) { resolve(); return; }
+
+      this.recorder.onstop = async () => {
+        const blob = new Blob(this.chunks, { type: this.recorder?.mimeType || 'audio/webm' });
+        this.chunks = [];
+        this.options.onPartial?.('🔄');
+
+        // Send to server for transcription
+        try {
+          const formData = new FormData();
+          formData.append('audio', blob, 'recording.webm');
+
+          const res = await fetch('/api/stt', {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (res.ok) {
+            const data = await res.json();
+            const text = (data.text || '').trim();
+            if (text) {
+              this.options.onFinal?.(text);
+              this.options.onPartial?.('');
+            } else {
+              this.options.onPartial?.('');
+            }
+          } else {
+            console.warn('🎙️ STT request failed:', res.status);
+            this.options.onPartial?.('');
+          }
+        } catch (err) {
+          console.warn('🎙️ STT request error:', err);
+          this.options.onPartial?.('');
+        }
+
+        resolve();
+      };
+
+      try {
+        this.recorder.stop();
+      } catch {
+        resolve();
+      }
+    });
+  }
+
+  private _discardRecording() {
+    if (this.recorder && this.recorder.state !== 'inactive') {
+      try {
+        this.recorder.stop();
+      } catch {}
+    }
+    this.chunks = [];
+    this.options.onPartial?.('');
+  }
+}

@@ -3,9 +3,11 @@
 /**
  * useVoiceListener — React hook for continuous browser speech recognition.
  *
- * Wraps BrowserSpeechRecognition in a hook with React-managed state.
- * Auto-starts on mount, auto-stops on unmount.
- * The underlying class handles 24/7 continuous listening with auto-restart.
+ * Auto-detects the best available STT engine:
+ *   1. BrowserSpeechRecognition (Web Speech API — Chrome only)
+ *   2. ServerSpeechRecognition (MediaRecorder + Gemini STT — Chromium/all browsers)
+ *
+ * Falls back gracefully: if neither is supported, status = 'error'.
  *
  * Usage:
  *   const { status, lastFinal, partial } = useVoiceListener({
@@ -18,6 +20,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react';
 import {
   BrowserSpeechRecognition,
+  ServerSpeechRecognition,
   SpeechStatus,
   CommandPattern,
   matchCommand,
@@ -47,12 +50,22 @@ export interface UseVoiceListenerReturn {
   partial: string;
   /** Whether the mic is actively listening. */
   isListening: boolean;
-  /** Whether the Web Speech API is supported. */
+  /** Whether any speech recognition engine is supported. */
   isSupported: boolean;
+  /** Which engine is in use: 'browser', 'server', or 'none'. */
+  engine: 'browser' | 'server' | 'none';
   /** Manually start listening. */
   start: () => void;
   /** Manually stop listening. */
   stop: () => void;
+}
+
+/** Detect which STT engine to use. */
+function detectEngine(): 'browser' | 'server' | 'none' {
+  if (typeof window === 'undefined') return 'none';
+  if (BrowserSpeechRecognition.isSupported()) return 'browser';
+  if (ServerSpeechRecognition.isSupported()) return 'server';
+  return 'none';
 }
 
 export function useVoiceListener(
@@ -70,15 +83,17 @@ export function useVoiceListener(
   const [status, setStatus] = useState<SpeechStatus>('off');
   const [lastFinal, setLastFinal] = useState('');
   const [partial, setPartial] = useState('');
+  const [engine, setEngine] = useState<'browser' | 'server' | 'none'>('none');
 
   // Stable refs for callbacks so the speech instance doesn't need to be recreated
   const callbacksRef = useRef({ onCommand, onFinal, onPartial, commands });
   callbacksRef.current = { onCommand, onFinal, onPartial, commands };
 
-  const speechRef = useRef<BrowserSpeechRecognition | null>(null);
+  const speechRef = useRef<BrowserSpeechRecognition | ServerSpeechRecognition | null>(null);
 
   const isSupported =
-    typeof window !== 'undefined' && BrowserSpeechRecognition.isSupported();
+    typeof window !== 'undefined' &&
+    (BrowserSpeechRecognition.isSupported() || ServerSpeechRecognition.isSupported());
 
   const start = useCallback(() => {
     if (speechRef.current?.isRunning) return;
@@ -90,14 +105,20 @@ export function useVoiceListener(
   }, []);
 
   useEffect(() => {
-    if (!BrowserSpeechRecognition.isSupported()) {
+    const detected = detectEngine();
+    setEngine(detected);
+
+    if (detected === 'none') {
       setStatus('error');
+      console.warn('🎙️ No speech recognition available (need Chrome for Web Speech API, or mic for server STT)');
       return;
     }
 
-    const speech = new BrowserSpeechRecognition({
+    console.log(`🎙️ Using ${detected === 'browser' ? 'Web Speech API (Chrome)' : 'MediaRecorder + Gemini STT (server)'}`);
+
+    const speechOptions = {
       lang,
-      onFinal: (text) => {
+      onFinal: (text: string) => {
         setLastFinal(text);
         setPartial('');
 
@@ -115,14 +136,22 @@ export function useVoiceListener(
         // No command matched — pass through as regular speech
         finalCb?.(text);
       },
-      onPartial: (text) => {
+      onPartial: (text: string) => {
         setPartial(text);
         callbacksRef.current.onPartial?.(text);
       },
-      onStatusChange: (s) => {
+      onStatusChange: (s: SpeechStatus) => {
         setStatus(s);
       },
-    });
+    };
+
+    let speech: BrowserSpeechRecognition | ServerSpeechRecognition;
+
+    if (detected === 'browser') {
+      speech = new BrowserSpeechRecognition(speechOptions);
+    } else {
+      speech = new ServerSpeechRecognition(speechOptions);
+    }
 
     speechRef.current = speech;
 
@@ -142,6 +171,7 @@ export function useVoiceListener(
     partial,
     isListening: status === 'listening',
     isSupported,
+    engine,
     start,
     stop,
   };
