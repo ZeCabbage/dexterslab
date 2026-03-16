@@ -244,6 +244,18 @@ export class BrowserSpeechRecognition {
   }
 }
 
+/** Send diagnostic log to both console and /api/diag server endpoint. */
+function diagLog(msg: string) {
+  console.log(msg);
+  if (typeof fetch !== 'undefined') {
+    fetch('/api/diag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ msg }),
+    }).catch(() => {});
+  }
+}
+
 /**
  * Server-side speech recognition using MediaRecorder + Gemini STT.
  *
@@ -282,7 +294,7 @@ export class ServerSpeechRecognition {
     if (typeof window === 'undefined') return false;
     const hasMediaDevices = !!navigator.mediaDevices;
     const hasMediaRecorder = !!window.MediaRecorder;
-    console.log(`🎙️ ServerSTT check: mediaDevices=${hasMediaDevices}, MediaRecorder=${hasMediaRecorder}`);
+    diagLog(`ServerSTT check: mediaDevices=${hasMediaDevices}, MediaRecorder=${hasMediaRecorder}`);
     return hasMediaDevices && hasMediaRecorder;
   }
 
@@ -290,11 +302,11 @@ export class ServerSpeechRecognition {
   async start(): Promise<boolean> {
     if (this.running) return true;
 
-    console.log('🎙️ ServerSTT: Starting...');
+    diagLog('ServerSTT: Starting...');
     this.options.onStatusChange?.('starting');
 
     try {
-      console.log('🎙️ ServerSTT: Requesting getUserMedia...');
+      diagLog('ServerSTT: Requesting getUserMedia...');
       this.stream = await navigator.mediaDevices.getUserMedia({
         audio: {
           echoCancellation: true,
@@ -302,7 +314,7 @@ export class ServerSpeechRecognition {
           autoGainControl: true,
         },
       });
-      console.log('🎙️ ServerSTT: getUserMedia granted, tracks:', this.stream.getAudioTracks().map(t => t.label));
+      diagLog(`ServerSTT: getUserMedia granted, tracks: ${this.stream.getAudioTracks().map(t => t.label).join(', ')}`);
 
       // Set up AudioContext for VAD
       this.audioContext = new AudioContext();
@@ -311,19 +323,19 @@ export class ServerSpeechRecognition {
       this.analyser.fftSize = 512;
       this.analyser.smoothingTimeConstant = 0.3;
       source.connect(this.analyser);
-      console.log('🎙️ ServerSTT: AudioContext and VAD analyser ready');
+      diagLog('ServerSTT: AudioContext and VAD analyser ready');
 
       this.running = true;
       this.options.onStatusChange?.('listening');
 
       // Start VAD loop
       this._vadLoop();
-      console.log('🎙️ ServerSTT: VAD loop started, now listening');
+      diagLog('ServerSTT: VAD loop started, now listening');
 
       return true;
     } catch (err) {
-      console.error('🎙️ ServerSTT: Failed to start:', err);
-      console.error('🎙️ ServerSTT: Error name:', (err as Error)?.name, 'message:', (err as Error)?.message);
+      const e = err as Error;
+      diagLog(`ServerSTT: FAILED - ${e?.name}: ${e?.message}`);
       this.options.onStatusChange?.('error');
       return false;
     }
