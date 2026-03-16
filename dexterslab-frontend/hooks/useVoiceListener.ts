@@ -63,8 +63,26 @@ export interface UseVoiceListenerReturn {
 /** Detect which STT engine to use. */
 function detectEngine(): 'browser' | 'server' | 'none' {
   if (typeof window === 'undefined') return 'none';
-  if (BrowserSpeechRecognition.isSupported()) return 'browser';
-  if (ServerSpeechRecognition.isSupported()) return 'server';
+
+  const hasBrowserSTT = BrowserSpeechRecognition.isSupported();
+  const hasServerSTT = ServerSpeechRecognition.isSupported();
+
+  // Log detailed detection to /api/diag for remote debugging
+  const msg = `detectEngine: BrowserSTT=${hasBrowserSTT}, ServerSTT=${hasServerSTT}, ` +
+    `SpeechRecognition=${!!((window as unknown as Record<string, unknown>).SpeechRecognition)}, ` +
+    `webkitSpeechRecognition=${!!((window as unknown as Record<string, unknown>).webkitSpeechRecognition)}, ` +
+    `mediaDevices=${!!navigator.mediaDevices}, ` +
+    `MediaRecorder=${!!window.MediaRecorder}`;
+  console.log(msg);
+  // POST to /api/diag for remote reading
+  fetch('/api/diag', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ msg }),
+  }).catch(() => {});
+
+  if (hasBrowserSTT) return 'browser';
+  if (hasServerSTT) return 'server';
   return 'none';
 }
 
