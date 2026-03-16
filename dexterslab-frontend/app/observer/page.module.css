@@ -275,6 +275,19 @@
   border-color: #44cc88;
 }
 
+.projectBtn {
+  background: #0a0a28;
+  color: var(--color-purple);
+  border-color: var(--color-purple);
+  text-shadow: 0 0 6px rgba(153, 69, 255, 0.25);
+  font-size: clamp(12px, 2.2vmin, 16px);
+}
+
+.projectBtn:hover:not(:disabled) {
+  background: #14143a;
+  box-shadow: 0 0 12px rgba(153, 69, 255, 0.2);
+}
+
 /* ── Shutdown ── */
 .shutdownArea {
   width: 85%;

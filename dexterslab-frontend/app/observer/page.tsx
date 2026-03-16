@@ -8,15 +8,16 @@
  *  - WiFi signal diagnostics (SSID, signal %, IP, status)
  *  - Voice feedback display (last heard text, partial, command log)
  *  - System launch log (rolling timestamped events)
- *  - Version switching (V1/V2/Kill) via API routes
+ *  - Sub-project launcher (touch-friendly tiles)
  *  - Shutdown with confirmation
- *  - Chrome Web Speech API for voice commands
+ *  - Chrome Web Speech API for voice commands (via VoiceProvider)
  */
 
-import { useEffect, useState, useRef, useCallback } from 'react';
+import { useEffect, useState, useCallback } from 'react';
+import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { HUB_COMMANDS } from '@/lib/speech-recognition';
-import { useVoiceListener } from '@/hooks/useVoiceListener';
+import { useVoice } from './VoiceProvider';
 import styles from './page.module.css';
 
 // ═══ Types ═══
@@ -32,7 +33,22 @@ interface LogEntry {
   type: 'info' | 'success' | 'error' | 'command' | 'kill' | 'heard';
 }
 
+// ═══ Sub-Projects ═══
+interface SubProject {
+  name: string;
+  route: string;
+  icon: string;
+  voiceCmd: string;
+}
+
+const SUB_PROJECTS: SubProject[] = [
+  { name: 'EYE', route: '/observer/eye', icon: '👁', voiceCmd: '"open eye"' },
+  { name: 'RULES LAWYER', route: '/observer/rules-lawyer', icon: '🎲', voiceCmd: '"launch rules lawyer"' },
+];
+
 export default function ObserverHub() {
+  const router = useRouter();
+
   // ── State ──
   const [status, setStatus] = useState<HubStatus>({
     version: 0,
@@ -48,6 +64,9 @@ export default function ObserverHub() {
   const [time, setTime] = useState('');
   const [scanY, setScanY] = useState(0);
   const [cursorBlink, setCursorBlink] = useState(true);
+
+  // ── Voice (from shared VoiceProvider) ──
+  const voice = useVoice();
 
   // ── Helpers ──
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -100,29 +119,19 @@ export default function ObserverHub() {
     return () => clearInterval(id);
   }, []);
 
-  // ── Voice Listener (Web Speech API) ──
-  const voice = useVoiceListener({
-    commands: HUB_COMMANDS,
-    onCommand: (cmd) => {
-      const labels: Record<string, string> = {
-        start_v1: 'VOICE → LAUNCHING V1',
-        start_v2: 'VOICE → LAUNCHING V2',
-        kill: 'VOICE → KILL',
-      };
-      addLog(`VOICE CMD: ${cmd}`, 'command');
-      doAction(cmd, labels[cmd] || cmd);
-    },
-    onFinal: (text) => {
-      setLastVoice(text);
+  // ── Sync voice state to UI ──
+  useEffect(() => {
+    if (voice.lastFinal && voice.lastFinal !== lastVoice) {
+      setLastVoice(voice.lastFinal);
       setVoicePartial('');
-      addLog(`💬 "${text}"`, 'heard');
-    },
-    onPartial: (text) => {
-      if (text) setVoicePartial(text);
-    },
-  });
+      addLog(`💬 "${voice.lastFinal}"`, 'heard');
+    }
+  }, [voice.lastFinal, lastVoice, addLog]);
 
-  // Sync voice status to UI
+  useEffect(() => {
+    if (voice.partial) setVoicePartial(voice.partial);
+  }, [voice.partial]);
+
   useEffect(() => {
     if (voice.status === 'listening') {
       setVoiceStatus('online');
@@ -146,6 +155,10 @@ export default function ObserverHub() {
       const data = await res.json();
       if (data.success) {
         addLog(data.message, 'success');
+        // Navigate if backend says so
+        if (data.navigate) {
+          router.push(data.navigate);
+        }
       } else {
         addLog(data.message || 'Failed', 'error');
       }
@@ -281,22 +294,17 @@ export default function ObserverHub() {
           </div>
         </div>
 
-        {/* ── Action Buttons ── */}
+        {/* ── Sub-Project Tiles ── */}
         <div className={styles.buttonsRow}>
-          <button
-            onClick={() => doAction('start_v1', 'LAUNCHING V1')}
-            disabled={!!actionPending}
-            className={styles.actionBtn}
-          >
-            ▶ V1
-          </button>
-          <button
-            onClick={() => doAction('start_v2', 'LAUNCHING V2')}
-            disabled={!!actionPending}
-            className={styles.actionBtn}
-          >
-            ▶ V2
-          </button>
+          {SUB_PROJECTS.map(proj => (
+            <button
+              key={proj.route}
+              onClick={() => router.push(proj.route)}
+              className={`${styles.actionBtn} ${styles.projectBtn}`}
+            >
+              {proj.icon} {proj.name}
+            </button>
+          ))}
           <button
             onClick={() => doAction('kill', 'KILL — stopping all')}
             disabled={!!actionPending}
@@ -337,9 +345,10 @@ export default function ObserverHub() {
 
         {/* ── Voice Hint ── */}
         <div className={styles.voiceHint}>
-          VOICE: &quot;Open Observer V1/V2&quot; • &quot;Kill Observer&quot;
+          VOICE: &quot;Launch Eye Application&quot; • &quot;Launch Rules Lawyer&quot; • &quot;Kill Application&quot; • &quot;Go Home&quot;
         </div>
       </div>
     </div>
   );
 }
+

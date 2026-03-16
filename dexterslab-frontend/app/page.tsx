@@ -33,6 +33,13 @@ const EXPERIMENTS: Experiment[] = [
     status: 'active',
     icon: '👁',
   },
+  {
+    name: 'RULES LAWYER',
+    route: '/observer/rules-lawyer',
+    description: 'LLM-powered board game rules assistant — 32-bit character, voice I/O, game-themed persona',
+    status: 'active',
+    icon: '🎲',
+  },
 ];
 
 export default function Home() {

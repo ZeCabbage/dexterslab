@@ -47,6 +47,24 @@ export const HUB_COMMANDS: CommandPattern[] = [
   { pattern: /shut\s+it\s+down/i, command: 'kill' },
 ];
 
+// ── Navigation Commands (launch/kill applications) ──
+// "launch X application" opens a sub-project
+// "kill X application" returns to observer hub
+export const NAVIGATION_COMMANDS: CommandPattern[] = [
+  // Launch applications
+  { pattern: /launch\s+(?:the\s+)?eye(?:\s+application)?/i, command: 'launch_eye' },
+  { pattern: /launch\s+(?:the\s+)?observer\s+eye(?:\s+application)?/i, command: 'launch_eye' },
+  // Kill applications (return to hub)
+  { pattern: /kill\s+(?:the\s+)?eye(?:\s+application)?/i, command: 'kill_eye' },
+  { pattern: /kill\s+(?:the\s+)?observer\s+eye(?:\s+application)?/i, command: 'kill_eye' },
+  // Generic kill (return to hub from any sub-project)
+  { pattern: /kill\s+(?:the\s+)?(?:current\s+)?application/i, command: 'kill_application' },
+  // Hub return (fallback)
+  { pattern: /(?:go\s+(?:to\s+)?)?(?:home|hub)/i, command: 'return_hub' },
+  { pattern: /return\s+(?:to\s+)?hub/i, command: 'return_hub' },
+  { pattern: /back\s+to\s+hub/i, command: 'return_hub' },
+];
+
 // ── Observer App Commands (in-app reactions) ──
 export const OBSERVER_COMMANDS: CommandPattern[] = [
   { pattern: /\bgo to sleep\b/i, command: 'sleep' },

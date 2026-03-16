@@ -1,0 +1,422 @@
+/* ═══════════════════════════════════════════════════════════════
+   RULES LAWYER — Circular Display (1080×1080 Waveshare 5")
+   Matches the Observer Hub circular layout.
+   ═══════════════════════════════════════════════════════════════ */
+
+/* ── Full-screen dark backdrop ── */
+.container {
+  width: 100vw;
+  height: 100vh;
+  background: var(--color-bg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  font-family: var(--font-mono);
+}
+
+/* ── Back link (outside circle) ── */
+.backLink {
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  z-index: 30;
+  font-size: 11px;
+  color: var(--color-muted);
+  text-decoration: none;
+  letter-spacing: 1px;
+  transition: color 0.15s ease;
+}
+.backLink:hover { color: var(--color-cyan); }
+
+/* ═══ CIRCULAR FRAME ═══ */
+.circleFrame {
+  width: 95vmin;
+  height: 95vmin;
+  max-width: 1060px;
+  max-height: 1060px;
+  border-radius: 50%;
+  background: radial-gradient(circle at 50% 45%, #0e0e1c 0%, var(--color-bg) 70%);
+  border: 3px solid var(--color-ring);
+  box-shadow:
+    0 0 40px rgba(0, 232, 208, 0.12),
+    0 0 80px rgba(255, 45, 149, 0.06),
+    inset 0 0 60px rgba(0, 0, 0, 0.7);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ── Inner ring ── */
+.ringInner {
+  position: absolute;
+  top: 4px; left: 4px; right: 4px; bottom: 4px;
+  border-radius: 50%;
+  border: 1px solid var(--color-ring2);
+  pointer-events: none;
+  z-index: 1;
+}
+
+.ringMid {
+  position: absolute;
+  top: 14px; left: 14px; right: 14px; bottom: 14px;
+  border-radius: 50%;
+  border: 1px solid var(--color-text-dim);
+  pointer-events: none;
+  z-index: 1;
+}
+
+/* ── CRT overlay ── */
+.crtOverlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 50%;
+  background-image: repeating-linear-gradient(
+    0deg, transparent, transparent 2px, rgba(0, 0, 0, 0.10) 2px, rgba(0, 0, 0, 0.10) 4px
+  );
+  pointer-events: none;
+  z-index: 22;
+}
+
+/* ── Vignette ── */
+.vignette {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, transparent 50%, rgba(0, 0, 0, 0.5) 80%, rgba(0, 0, 0, 0.9) 100%);
+  pointer-events: none;
+  z-index: 21;
+}
+
+/* ═══ GAME SELECT SCREEN (inside circle) ═══ */
+.selectScreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(12px, 2.5vmin, 24px);
+  z-index: 10;
+  height: 100%;
+  padding: 12%;
+  animation: fadeInUp 0.6s ease-out;
+}
+
+.selectCharacter {
+  width: clamp(120px, 22vmin, 200px);
+  height: clamp(160px, 28vmin, 260px);
+}
+
+.selectTitle {
+  font-family: var(--font-pixel);
+  font-size: clamp(22px, 4.5vmin, 38px);
+  color: var(--color-amber);
+  text-shadow: 0 0 12px rgba(255, 170, 0, 0.4);
+  text-align: center;
+  letter-spacing: 3px;
+}
+
+.selectSubtitle {
+  font-family: var(--font-display);
+  font-size: clamp(18px, 3vmin, 26px);
+  color: var(--color-text);
+  text-align: center;
+  opacity: 0.8;
+}
+
+.gameInputRow {
+  display: flex;
+  gap: clamp(6px, 1vmin, 10px);
+  align-items: center;
+  width: 80%;
+  max-width: 380px;
+}
+
+.gameInput {
+  flex: 1;
+  background: var(--color-bg-panel);
+  border: 2px solid var(--color-text-dim);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: clamp(20px, 3vmin, 26px);
+  padding: clamp(8px, 1.5vmin, 12px) clamp(10px, 2vmin, 16px);
+  outline: none;
+  letter-spacing: 1px;
+  transition: border-color 0.2s ease;
+}
+.gameInput:focus {
+  border-color: var(--color-cyan);
+  box-shadow: 0 0 12px rgba(0, 255, 224, 0.15);
+}
+.gameInput::placeholder {
+  color: var(--color-text-dim);
+  opacity: 0.6;
+}
+
+.goBtn {
+  background: var(--color-bg-panel);
+  border: 2px solid var(--color-green);
+  color: var(--color-green);
+  font-family: var(--font-pixel);
+  font-size: clamp(13px, 2vmin, 18px);
+  padding: clamp(10px, 1.5vmin, 14px) clamp(14px, 2vmin, 20px);
+  cursor: pointer;
+  letter-spacing: 2px;
+  transition: all 0.2s ease;
+}
+.goBtn:hover:not(:disabled) {
+  background: rgba(0, 255, 136, 0.1);
+  transform: scale(1.05);
+}
+.goBtn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+.voiceHintSmall {
+  font-size: clamp(12px, 1.8vmin, 16px);
+  color: var(--color-text-dim);
+  opacity: 0.5;
+}
+
+/* ═══ ACTIVE SESSION (inside circle) ═══ */
+.sessionScreen {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  height: 100%;
+  width: 100%;
+  z-index: 10;
+  animation: fadeInUp 0.5s ease-out;
+}
+
+/* ── Header Bar ── */
+.sessionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: clamp(8px, 2vmin, 16px);
+  padding: clamp(16px, 4vmin, 32px) 0 clamp(4px, 1vmin, 8px);
+  z-index: 10;
+}
+
+.sessionGameName {
+  font-family: var(--font-pixel);
+  font-size: clamp(14px, 2.2vmin, 18px);
+  color: var(--color-amber);
+  text-shadow: 0 0 8px rgba(255, 170, 0, 0.3);
+  letter-spacing: 2px;
+}
+
+.sessionStatus {
+  font-family: var(--font-mono);
+  font-size: clamp(12px, 1.8vmin, 16px);
+  color: var(--color-green);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.statusDot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--color-green);
+  animation: blink80s 2s infinite;
+}
+
+.endBtn {
+  background: none;
+  border: 1px solid var(--color-red);
+  color: var(--color-red);
+  font-family: var(--font-mono);
+  font-size: clamp(12px, 1.7vmin, 15px);
+  padding: 3px 8px;
+  cursor: pointer;
+  letter-spacing: 1px;
+  transition: all 0.15s ease;
+}
+.endBtn:hover {
+  background: rgba(255, 68, 102, 0.15);
+}
+
+/* ── Character (top center of circle) ── */
+.characterArea {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex-shrink: 0;
+  z-index: 10;
+}
+
+.characterCanvas {
+  width: clamp(140px, 26vmin, 280px);
+  height: clamp(180px, 32vmin, 340px);
+}
+
+.moodLabel {
+  font-family: var(--font-pixel);
+  font-size: clamp(11px, 1.5vmin, 14px);
+  letter-spacing: 2px;
+  margin-top: 4px;
+  padding: 2px 8px;
+  border: 1px solid var(--color-text-dim);
+  color: var(--color-text-dim);
+  text-transform: uppercase;
+}
+
+/* ── Chat (scrollable middle, inside circle) ── */
+.chatArea {
+  flex: 1;
+  width: 75%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: clamp(4px, 0.8vmin, 8px);
+  padding: clamp(4px, 1vmin, 8px) 0;
+  z-index: 10;
+  mask-image: linear-gradient(transparent 0%, black 5%, black 95%, transparent 100%);
+  -webkit-mask-image: linear-gradient(transparent 0%, black 5%, black 95%, transparent 100%);
+}
+
+.chatMessage {
+  padding: clamp(6px, 1vmin, 10px) clamp(8px, 1.5vmin, 14px);
+  animation: fadeInUp 0.3s ease-out;
+}
+
+.chatMessageUser {
+  align-self: flex-end;
+  background: rgba(0, 255, 224, 0.08);
+  border: 1px solid rgba(0, 255, 224, 0.2);
+  color: var(--color-cyan);
+  font-family: var(--font-mono);
+  font-size: clamp(15px, 2.1vmin, 18px);
+  max-width: 85%;
+}
+
+.chatMessageBot {
+  align-self: flex-start;
+  background: rgba(255, 170, 0, 0.06);
+  border: 1px solid rgba(255, 170, 0, 0.15);
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.7vmin, 24px);
+  line-height: 1.4;
+  max-width: 95%;
+}
+
+.chatMessageGreeting {
+  align-self: center;
+  background: rgba(153, 69, 255, 0.08);
+  border: 1px solid rgba(153, 69, 255, 0.2);
+  color: var(--color-purple);
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.4vmin, 22px);
+  text-align: center;
+  max-width: 90%;
+}
+
+.chatMessageRef {
+  font-size: clamp(12px, 1.5vmin, 15px);
+  color: var(--color-text-dim);
+  margin-top: 4px;
+  font-family: var(--font-mono);
+  opacity: 0.6;
+}
+
+.chatLoading {
+  align-self: flex-start;
+  color: var(--color-amber);
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.4vmin, 22px);
+  animation: blink80s 1s infinite;
+}
+
+/* ── Tip banner ── */
+.tipBanner {
+  width: 75%;
+  padding: clamp(4px, 0.8vmin, 6px) clamp(8px, 1.5vmin, 12px);
+  background: rgba(255, 170, 0, 0.05);
+  border-top: 1px solid rgba(255, 170, 0, 0.1);
+  font-family: var(--font-display);
+  font-size: clamp(15px, 2vmin, 20px);
+  color: var(--color-amber);
+  opacity: 0.7;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  z-index: 10;
+  animation: fadeInUp 0.4s ease-out;
+}
+.tipIcon { font-size: clamp(15px, 2vmin, 20px); }
+
+/* ── Input Bar (bottom of circle) ── */
+.inputBar {
+  width: 70%;
+  display: flex;
+  border: 1px solid var(--color-text-dim);
+  background: rgba(10, 10, 20, 0.9);
+  margin-bottom: clamp(20px, 6vmin, 50px);
+  z-index: 10;
+  flex-shrink: 0;
+}
+
+.questionInput {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--color-text);
+  font-family: var(--font-display);
+  font-size: clamp(18px, 2.7vmin, 24px);
+  padding: clamp(6px, 1vmin, 10px) clamp(8px, 1.5vmin, 14px);
+  outline: none;
+}
+.questionInput::placeholder {
+  color: var(--color-text-dim);
+  opacity: 0.4;
+}
+
+.askBtn {
+  background: var(--color-bg-panel);
+  border: none;
+  border-left: 1px solid var(--color-text-dim);
+  color: var(--color-green);
+  font-family: var(--font-pixel);
+  font-size: clamp(13px, 1.8vmin, 16px);
+  padding: clamp(6px, 1vmin, 10px) clamp(10px, 1.5vmin, 16px);
+  cursor: pointer;
+  letter-spacing: 2px;
+  transition: all 0.15s ease;
+}
+.askBtn:hover:not(:disabled) {
+  background: rgba(0, 255, 136, 0.08);
+}
+.askBtn:disabled { opacity: 0.3; cursor: not-allowed; }
+
+.speakingIndicator {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 clamp(6px, 1vmin, 10px);
+  color: var(--color-amber);
+  font-family: var(--font-mono);
+  font-size: clamp(12px, 1.5vmin, 15px);
+  letter-spacing: 1px;
+}
+
+.speakingDot {
+  width: 5px; height: 5px;
+  border-radius: 50%;
+  background: var(--color-amber);
+  animation: blink80s 0.6s infinite;
+}
+
+/* ═══ ANIMATIONS ═══ */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* ═══ RESPONSIVE ═══ */
+@media (max-width: 480px) {
+  .gameInputRow { flex-direction: column; width: 90%; }
+  .inputBar { width: 80%; }
+  .chatArea { width: 85%; }
+}

@@ -1,0 +1,10 @@
+# Dependencies
+node_modules/
+
+# Environment secrets — NEVER commit API keys
+.env
+.env.local
+.env.*.local
+
+# OS files
+.DS_Store

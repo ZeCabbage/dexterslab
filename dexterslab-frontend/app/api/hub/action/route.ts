@@ -3,11 +3,18 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 
 const execAsync = promisify(exec);
+const IS_MAC = process.platform === 'darwin';
 
 const BASE_DIR = process.env.OBSERVER_BASE_DIR || '/home/thecabbage/Desktop/The-Observer';
 const VENV_PYTHON = `${BASE_DIR}/backend/venv/bin/python`;
 
 async function killObserverProcesses(): Promise<string[]> {
+  if (IS_MAC) {
+    // Mac: just log, don't kill anything
+    console.log('[Mac] Kill action — no processes to manage');
+    return ['(mac-simulated)'];
+  }
+
   const patterns = [
     'python.*server:app',
     'uvicorn.*server:app',
@@ -38,9 +45,13 @@ async function killObserverProcesses(): Promise<string[]> {
 }
 
 async function startVersion(version: number): Promise<void> {
-  await killObserverProcesses();
+  if (IS_MAC) {
+    // Mac: just log the action
+    console.log(`[Mac] Start version ${version} — simulated`);
+    return;
+  }
 
-  // Wait for processes to die
+  await killObserverProcesses();
   await new Promise((r) => setTimeout(r, 2000));
 
   if (version === 1) {
@@ -54,7 +65,6 @@ async function startVersion(version: number): Promise<void> {
     } catch {}
   }
 
-  // Wait for server to start
   await new Promise((r) => setTimeout(r, 3000));
 
   // Refresh Chromium
@@ -89,13 +99,50 @@ export async function POST(request: Request) {
         const killed = await killObserverProcesses();
         return NextResponse.json({
           success: true,
-          message: killed.length > 0
-            ? `Killed PIDs: ${killed.join(', ')}`
-            : 'No processes found',
+          message: IS_MAC
+            ? 'Kill simulated (Mac testing mode)'
+            : killed.length > 0
+              ? `Killed PIDs: ${killed.join(', ')}`
+              : 'No processes found',
+        });
+      }
+
+      case 'return_hub': {
+        return NextResponse.json({
+          success: true,
+          message: 'Returning to hub',
+          navigate: '/observer',
         });
       }
 
       case 'wifi_scan': {
+        if (IS_MAC) {
+          // Mac: try airport scan
+          try {
+            const { stdout } = await execAsync(
+              '/System/Library/PrivateFrameworks/Apple80211.framework/Versions/Current/Resources/airport -s 2>/dev/null'
+            );
+            const lines = stdout.trim().split('\n').slice(1);
+            const networks = lines.map(line => {
+              const match = line.trim().match(/^(.+?)\s+([0-9a-f:]+)\s+(-?\d+)/i);
+              if (match) {
+                const rssi = parseInt(match[3]);
+                return {
+                  ssid: match[1].trim(),
+                  signal: Math.max(0, Math.min(100, Math.round(((rssi + 90) / 60) * 100))),
+                  security: 'WPA2',
+                  inUse: false,
+                };
+              }
+              return null;
+            }).filter(Boolean);
+            return NextResponse.json({ success: true, networks });
+          } catch {
+            return NextResponse.json({ success: true, networks: [], message: 'WiFi scan not available on this Mac' });
+          }
+        }
+
+        // Pi / Linux
         try {
           await execAsync('nmcli device wifi rescan', { timeout: 10000 });
           await new Promise((r) => setTimeout(r, 2000));
