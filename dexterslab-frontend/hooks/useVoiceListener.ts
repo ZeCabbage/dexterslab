@@ -1,20 +1,15 @@
 'use client';
 
 /**
- * useVoiceListener — React hook for continuous browser speech recognition.
+ * useVoiceListener — React hook for continuous speech recognition.
  *
- * Auto-detects the best available STT engine:
- *   1. BrowserSpeechRecognition (Web Speech API — Chrome only)
+ * Auto-detects and falls back between STT engines:
+ *   1. BrowserSpeechRecognition (Web Speech API — Chrome)
  *   2. ServerSpeechRecognition (MediaRecorder + Gemini STT — Chromium/all browsers)
  *
- * Falls back gracefully: if neither is supported, status = 'error'.
- *
- * Usage:
- *   const { status, lastFinal, partial } = useVoiceListener({
- *     commands: HUB_COMMANDS,
- *     onCommand: (cmd) => doAction(cmd),
- *     onFinal: (text) => console.log('Heard:', text),
- *   });
+ * Chromium 145+ defines SpeechRecognition/webkitSpeechRecognition as stubs
+ * that fail at runtime (no Google cloud speech service). This hook detects
+ * that failure and automatically falls back to server-side STT.
  */
 
 import { useEffect, useRef, useState, useCallback } from 'react';
@@ -27,63 +22,35 @@ import {
 } from '@/lib/speech-recognition';
 
 export interface UseVoiceListenerOptions {
-  /** Command patterns to match against recognized text. */
   commands?: CommandPattern[];
-  /** Called when a command pattern matches. */
   onCommand?: (command: string, rawText: string) => void;
-  /** Called with final recognized text (after command matching). */
   onFinal?: (text: string) => void;
-  /** Called with interim/partial text while speaking. */
   onPartial?: (text: string) => void;
-  /** Language for recognition. Default: 'en-US'. */
   lang?: string;
-  /** Whether to auto-start on mount. Default: true. */
   autoStart?: boolean;
 }
 
 export interface UseVoiceListenerReturn {
-  /** Current mic status: 'off' | 'starting' | 'listening' | 'error'. */
   status: SpeechStatus;
-  /** Last fully recognized utterance. */
   lastFinal: string;
-  /** Current interim/partial text while speaking. */
   partial: string;
-  /** Whether the mic is actively listening. */
   isListening: boolean;
-  /** Whether any speech recognition engine is supported. */
   isSupported: boolean;
-  /** Which engine is in use: 'browser', 'server', or 'none'. */
   engine: 'browser' | 'server' | 'none';
-  /** Manually start listening. */
   start: () => void;
-  /** Manually stop listening. */
   stop: () => void;
 }
 
-/** Detect which STT engine to use. */
-function detectEngine(): 'browser' | 'server' | 'none' {
-  if (typeof window === 'undefined') return 'none';
-
-  const hasBrowserSTT = BrowserSpeechRecognition.isSupported();
-  const hasServerSTT = ServerSpeechRecognition.isSupported();
-
-  // Log detailed detection to /api/diag for remote debugging
-  const msg = `detectEngine: BrowserSTT=${hasBrowserSTT}, ServerSTT=${hasServerSTT}, ` +
-    `SpeechRecognition=${!!((window as unknown as Record<string, unknown>).SpeechRecognition)}, ` +
-    `webkitSpeechRecognition=${!!((window as unknown as Record<string, unknown>).webkitSpeechRecognition)}, ` +
-    `mediaDevices=${!!navigator.mediaDevices}, ` +
-    `MediaRecorder=${!!window.MediaRecorder}`;
-  console.log(msg);
-  // POST to /api/diag for remote reading
-  fetch('/api/diag', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ msg }),
-  }).catch(() => {});
-
-  if (hasBrowserSTT) return 'browser';
-  if (hasServerSTT) return 'server';
-  return 'none';
+/** Send a diagnostic message to /api/diag (fire-and-forget). */
+function diagLog(msg: string) {
+  console.log(`🎙️ ${msg}`);
+  if (typeof fetch !== 'undefined') {
+    fetch('/api/diag', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ msg }),
+    }).catch(() => {});
+  }
 }
 
 export function useVoiceListener(
@@ -103,11 +70,11 @@ export function useVoiceListener(
   const [partial, setPartial] = useState('');
   const [engine, setEngine] = useState<'browser' | 'server' | 'none'>('none');
 
-  // Stable refs for callbacks so the speech instance doesn't need to be recreated
   const callbacksRef = useRef({ onCommand, onFinal, onPartial, commands });
   callbacksRef.current = { onCommand, onFinal, onPartial, commands };
 
   const speechRef = useRef<BrowserSpeechRecognition | ServerSpeechRecognition | null>(null);
+  const fallbackAttempted = useRef(false);
 
   const isSupported =
     typeof window !== 'undefined' &&
@@ -123,26 +90,26 @@ export function useVoiceListener(
   }, []);
 
   useEffect(() => {
-    const detected = detectEngine();
-    setEngine(detected);
+    if (typeof window === 'undefined') return;
 
-    if (detected === 'none') {
+    const hasBrowserSTT = BrowserSpeechRecognition.isSupported();
+    const hasServerSTT = ServerSpeechRecognition.isSupported();
+    diagLog(`detect: BrowserSTT=${hasBrowserSTT}, ServerSTT=${hasServerSTT}`);
+
+    if (!hasBrowserSTT && !hasServerSTT) {
+      setEngine('none');
       setStatus('error');
-      console.warn('🎙️ No speech recognition available (need Chrome for Web Speech API, or mic for server STT)');
+      diagLog('No STT engine available');
       return;
     }
 
-    console.log(`🎙️ Using ${detected === 'browser' ? 'Web Speech API (Chrome)' : 'MediaRecorder + Gemini STT (server)'}`);
-
-    const speechOptions = {
+    // Build speech options with callbacks
+    const makeSpeechOptions = (onStatusCb: (s: SpeechStatus) => void) => ({
       lang,
       onFinal: (text: string) => {
         setLastFinal(text);
         setPartial('');
-
         const { commands: cmds, onCommand: cmdCb, onFinal: finalCb } = callbacksRef.current;
-
-        // Try command matching first
         if (cmds && cmds.length > 0) {
           const matched = matchCommand(text, cmds);
           if (matched) {
@@ -150,35 +117,124 @@ export function useVoiceListener(
             return;
           }
         }
-
-        // No command matched — pass through as regular speech
         finalCb?.(text);
       },
       onPartial: (text: string) => {
         setPartial(text);
         callbacksRef.current.onPartial?.(text);
       },
-      onStatusChange: (s: SpeechStatus) => {
-        setStatus(s);
-      },
+      onStatusChange: onStatusCb,
+    });
+
+    // ── Fallback function: switch from Browser to Server STT ──
+    const fallbackToServer = () => {
+      if (fallbackAttempted.current || !hasServerSTT) {
+        diagLog('Fallback: no server STT available, giving up');
+        setStatus('error');
+        return;
+      }
+      fallbackAttempted.current = true;
+      diagLog('Falling back to ServerSpeechRecognition (MediaRecorder + Gemini)...');
+
+      // Stop the failed browser STT
+      speechRef.current?.stop();
+
+      const serverSpeech = new ServerSpeechRecognition(
+        makeSpeechOptions((s: SpeechStatus) => {
+          setStatus(s);
+          if (s === 'listening') {
+            diagLog('Server STT is LISTENING');
+          } else if (s === 'error') {
+            diagLog('Server STT also failed');
+          }
+        })
+      );
+
+      speechRef.current = serverSpeech;
+      setEngine('server');
+
+      if (autoStart) {
+        serverSpeech.start();
+      }
     };
 
-    let speech: BrowserSpeechRecognition | ServerSpeechRecognition;
+    // ── Try Browser STT first ──
+    if (hasBrowserSTT) {
+      diagLog('Trying BrowserSpeechRecognition (Web Speech API)...');
+      setEngine('browser');
 
-    if (detected === 'browser') {
-      speech = new BrowserSpeechRecognition(speechOptions);
-    } else {
-      speech = new ServerSpeechRecognition(speechOptions);
+      let browserFailed = false;
+      let browserListening = false;
+
+      const browserSpeech = new BrowserSpeechRecognition(
+        makeSpeechOptions((s: SpeechStatus) => {
+          if (browserFailed) return; // Already fell back
+
+          if (s === 'listening') {
+            browserListening = true;
+            setStatus(s);
+            diagLog('Browser STT is LISTENING');
+          } else if (s === 'error') {
+            diagLog('Browser STT reported error');
+            if (!browserListening) {
+              // Never reached 'listening' — this is a Chromium stub failure
+              browserFailed = true;
+              fallbackToServer();
+            } else {
+              // Was listening but errored (might be temporary)
+              setStatus(s);
+            }
+          } else {
+            setStatus(s);
+          }
+        })
+      );
+
+      speechRef.current = browserSpeech;
+
+      if (autoStart) {
+        browserSpeech.start();
+      }
+
+      // Safety timeout: if browser STT hasn't reached 'listening' in 5s, fallback
+      const timeoutId = setTimeout(() => {
+        if (!browserListening && !browserFailed) {
+          diagLog('Browser STT timeout — never reached listening state, falling back');
+          browserFailed = true;
+          fallbackToServer();
+        }
+      }, 5000);
+
+      return () => {
+        clearTimeout(timeoutId);
+        speechRef.current?.stop();
+        speechRef.current = null;
+      };
     }
 
-    speechRef.current = speech;
+    // ── Browser STT not available, go straight to Server ──
+    diagLog('Starting ServerSpeechRecognition directly');
+    setEngine('server');
+
+    const serverSpeech = new ServerSpeechRecognition(
+      makeSpeechOptions((s: SpeechStatus) => {
+        setStatus(s);
+        if (s === 'listening') {
+          diagLog('Server STT is LISTENING');
+        } else if (s === 'error') {
+          diagLog('Server STT failed');
+        }
+      })
+    );
+
+    speechRef.current = serverSpeech;
 
     if (autoStart) {
-      speech.start();
+      serverSpeech.start();
     }
 
     return () => {
-      speech.stop();
+      speechRef.current?.stop();
       speechRef.current = null;
     };
   }, [lang, autoStart]);
