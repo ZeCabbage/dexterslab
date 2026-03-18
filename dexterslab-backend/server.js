@@ -27,7 +27,19 @@ import { GoogleGenAI } from '@google/genai';
 const execAsync = promisify(exec);
 
 const PORT = parseInt(process.env.PORT || '8888', 10);
-const PLATFORM = process.env.PLATFORM || (process.platform === 'darwin' ? 'mac' : 'pi');
+
+// Platform detection: check env var first, then auto-detect from OS
+function detectPlatform() {
+  const envPlatform = (process.env.PLATFORM || '').toLowerCase();
+  if (envPlatform === 'windows' || envPlatform === 'pc') return 'windows';
+  if (envPlatform === 'mac') return 'mac';
+  if (envPlatform === 'pi') return 'pi';
+  if (process.platform === 'win32') return 'windows';
+  if (process.platform === 'darwin') return 'mac';
+  return 'pi';
+}
+
+const PLATFORM = detectPlatform();
 
 const app = express();
 app.use(cors());
@@ -50,7 +62,30 @@ app.get('/api/status', async (_req, res) => {
     platform: PLATFORM,
   };
 
-  if (PLATFORM === 'mac') {
+  if (PLATFORM === 'windows') {
+    // Windows: use netsh and OS network interfaces
+    try {
+      const { stdout } = await execAsync('netsh wlan show interfaces', { timeout: 5000 });
+      const ssidMatch = stdout.match(/\bSSID\s*:\s*(.+)/);
+      const signalMatch = stdout.match(/Signal\s*:\s*(\d+)%/);
+      const stateMatch = stdout.match(/State\s*:\s*(connected|disconnected)/i);
+      if (ssidMatch) status.wifi.ssid = ssidMatch[1].trim();
+      if (signalMatch) status.wifi.signal = parseInt(signalMatch[1]) || 0;
+      if (stateMatch && stateMatch[1].toLowerCase() === 'connected') status.wifi.connected = true;
+    } catch {}
+
+    // Get IP from OS network interfaces
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+      for (const iface of ifaces[name] || []) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          status.wifi.ip = iface.address;
+          break;
+        }
+      }
+      if (status.wifi.ip !== '---') break;
+    }
+  } else if (PLATFORM === 'mac') {
     // Mac: use networksetup + ifconfig
     try {
       const { stdout } = await execAsync(
@@ -63,31 +98,25 @@ app.get('/api/status', async (_req, res) => {
         status.wifi.connected = true;
       }
       if (rssiMatch) {
-        // Convert RSSI (dBm) to rough percentage (-30 = 100%, -90 = 0%)
         const rssi = parseInt(rssiMatch[1]);
         status.wifi.signal = Math.max(0, Math.min(100, Math.round(((rssi + 90) / 60) * 100)));
       }
     } catch {
-      // airport command may not be available on newer macOS
       try {
-        const { stdout } = await execAsync(
-          'networksetup -getairportnetwork en0 2>/dev/null'
-        );
+        const { stdout } = await execAsync('networksetup -getairportnetwork en0 2>/dev/null');
         const match = stdout.match(/Current Wi-Fi Network:\s*(.+)/);
         if (match) {
           status.wifi.ssid = match[1].trim();
           status.wifi.connected = true;
-          status.wifi.signal = 75; // Can't get signal strength easily
+          status.wifi.signal = 75;
         }
       } catch {}
     }
 
-    // Get IP
     try {
       const { stdout } = await execAsync('ipconfig getifaddr en0 2>/dev/null');
       status.wifi.ip = stdout.trim() || '---';
     } catch {
-      // Try alternative
       const ifaces = os.networkInterfaces();
       for (const name of Object.keys(ifaces)) {
         for (const iface of ifaces[name] || []) {
@@ -179,7 +208,35 @@ app.post('/api/action', async (req, res) => {
       break;
 
     case 'wifi_scan':
-      if (PLATFORM === 'mac') {
+      if (PLATFORM === 'windows') {
+        // Windows: use netsh wlan
+        try {
+          const { stdout } = await execAsync('netsh wlan show networks mode=bssid', { timeout: 10000 });
+          const networks = [];
+          const seen = new Set();
+          const blocks = stdout.split(/\n(?=SSID\s+\d+\s*:)/);
+          for (const block of blocks) {
+            const ssidMatch = block.match(/SSID\s+\d+\s*:\s*(.+)/);
+            const signalMatch = block.match(/Signal\s*:\s*(\d+)%/);
+            const authMatch = block.match(/Authentication\s*:\s*(.+)/);
+            if (ssidMatch) {
+              const ssid = ssidMatch[1].trim();
+              if (!ssid || seen.has(ssid)) continue;
+              seen.add(ssid);
+              networks.push({
+                ssid,
+                signal: signalMatch ? parseInt(signalMatch[1]) : 0,
+                security: authMatch ? authMatch[1].trim() : '',
+                inUse: false,
+              });
+            }
+          }
+          networks.sort((a, b) => b.signal - a.signal);
+          res.json({ success: true, networks });
+        } catch {
+          res.json({ success: true, networks: [], message: 'WiFi scan not available' });
+        }
+      } else if (PLATFORM === 'mac') {
         // Mac: list available networks
         try {
           const { stdout } = await execAsync(

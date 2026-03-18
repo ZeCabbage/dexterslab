@@ -4,13 +4,61 @@ import { promisify } from 'util';
 import os from 'os';
 
 const execAsync = promisify(exec);
-const IS_MAC = process.platform === 'darwin';
+
+// Platform detection: check env var first (set in .env), then auto-detect from OS
+function getPlatform(): 'windows' | 'mac' | 'pi' {
+  const envPlatform = process.env.PLATFORM?.toLowerCase();
+  if (envPlatform === 'windows' || envPlatform === 'pc') return 'windows';
+  if (envPlatform === 'mac') return 'mac';
+  if (envPlatform === 'pi') return 'pi';
+  // Auto-detect
+  if (process.platform === 'win32') return 'windows';
+  if (process.platform === 'darwin') return 'mac';
+  return 'pi';
+}
+
+const PLATFORM = getPlatform();
 
 export async function GET() {
   let version = 0;
   const wifi = { ssid: '---', signal: 0, ip: '---', connected: false };
 
-  if (IS_MAC) {
+  if (PLATFORM === 'windows') {
+    // ── Windows: use netsh and OS network interfaces ──
+    try {
+      const { stdout } = await execAsync(
+        'netsh wlan show interfaces',
+        { timeout: 5000 }
+      );
+      const ssidMatch = stdout.match(/\bSSID\s*:\s*(.+)/);
+      const signalMatch = stdout.match(/Signal\s*:\s*(\d+)%/);
+      const stateMatch = stdout.match(/State\s*:\s*(connected|disconnected)/i);
+
+      if (ssidMatch) {
+        wifi.ssid = ssidMatch[1].trim();
+      }
+      if (signalMatch) {
+        wifi.signal = parseInt(signalMatch[1]) || 0;
+      }
+      if (stateMatch && stateMatch[1].toLowerCase() === 'connected') {
+        wifi.connected = true;
+      }
+    } catch {
+      // WiFi might not be available (ethernet only)
+    }
+
+    // Get IP from OS network interfaces
+    const ifaces = os.networkInterfaces();
+    for (const name of Object.keys(ifaces)) {
+      for (const iface of ifaces[name] || []) {
+        if (iface.family === 'IPv4' && !iface.internal) {
+          wifi.ip = iface.address;
+          break;
+        }
+      }
+      if (wifi.ip !== '---') break;
+    }
+  } else if (PLATFORM === 'mac') {
     // ── Mac: use networksetup / airport ──
     try {
       const { stdout } = await execAsync(
@@ -96,5 +144,5 @@ export async function GET() {
     } catch {}
   }
 
-  return NextResponse.json({ version, wifi, platform: IS_MAC ? 'mac' : 'pi' });
+  return NextResponse.json({ version, wifi, platform: PLATFORM });
 }

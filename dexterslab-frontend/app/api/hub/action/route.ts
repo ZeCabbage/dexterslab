@@ -1,18 +1,40 @@
 import { NextResponse } from 'next/server';
 import { exec } from 'child_process';
 import { promisify } from 'util';
+import path from 'path';
 
 const execAsync = promisify(exec);
-const IS_MAC = process.platform === 'darwin';
+
+// Platform detection: check env var first (set in .env), then auto-detect from OS
+function getPlatform(): 'windows' | 'mac' | 'pi' {
+  const envPlatform = process.env.PLATFORM?.toLowerCase();
+  if (envPlatform === 'windows' || envPlatform === 'pc') return 'windows';
+  if (envPlatform === 'mac') return 'mac';
+  if (envPlatform === 'pi') return 'pi';
+  if (process.platform === 'win32') return 'windows';
+  if (process.platform === 'darwin') return 'mac';
+  return 'pi';
+}
+
+const PLATFORM = getPlatform();
+
+// Get the repo directory based on platform
+function getRepoDir(): string {
+  switch (PLATFORM) {
+    case 'windows': return 'C:\\Users\\holme\\OneDrive\\Desktop\\dexterslab';
+    case 'mac': return '/Users/dexterholmes/Documents/GitHub/dexterslab';
+    default: return '/home/thecabbage/Desktop/dexterslab';
+  }
+}
 
 const BASE_DIR = process.env.OBSERVER_BASE_DIR || '/home/thecabbage/Desktop/The-Observer';
 const VENV_PYTHON = `${BASE_DIR}/backend/venv/bin/python`;
 
 async function killObserverProcesses(): Promise<string[]> {
-  if (IS_MAC) {
-    // Mac: just log, don't kill anything
-    console.log('[Mac] Kill action — no processes to manage');
-    return ['(mac-simulated)'];
+  if (PLATFORM === 'windows' || PLATFORM === 'mac') {
+    // Windows/Mac: no Pi processes to manage
+    console.log(`[${PLATFORM}] Kill action — no processes to manage`);
+    return [`(${PLATFORM}-simulated)`];
   }
 
   const patterns = [
@@ -45,9 +67,9 @@ async function killObserverProcesses(): Promise<string[]> {
 }
 
 async function startVersion(version: number): Promise<void> {
-  if (IS_MAC) {
-    // Mac: just log the action
-    console.log(`[Mac] Start version ${version} — simulated`);
+  if (PLATFORM === 'windows' || PLATFORM === 'mac') {
+    // Windows/Mac: just log the action
+    console.log(`[${PLATFORM}] Start version ${version} — simulated`);
     return;
   }
 
@@ -67,7 +89,7 @@ async function startVersion(version: number): Promise<void> {
 
   await new Promise((r) => setTimeout(r, 3000));
 
-  // Refresh Chromium
+  // Refresh Chromium (Pi only)
   const route = version === 2 ? '/observer/v2' : '/observer/v1';
   const ts = Math.floor(Date.now() / 1000);
   const url = `http://localhost:7777${route}?v=${ts}`;
@@ -99,8 +121,8 @@ export async function POST(request: Request) {
         const killed = await killObserverProcesses();
         return NextResponse.json({
           success: true,
-          message: IS_MAC
-            ? 'Kill simulated (Mac testing mode)'
+          message: (PLATFORM === 'windows' || PLATFORM === 'mac')
+            ? `Kill simulated (${PLATFORM} mode)`
             : killed.length > 0
               ? `Killed PIDs: ${killed.join(', ')}`
               : 'No processes found',
@@ -116,7 +138,53 @@ export async function POST(request: Request) {
       }
 
       case 'wifi_scan': {
-        if (IS_MAC) {
+        if (PLATFORM === 'windows') {
+          // Windows: use netsh wlan
+          try {
+            const { stdout } = await execAsync(
+              'netsh wlan show networks mode=bssid',
+              { timeout: 10000 }
+            );
+            const networks: { ssid: string; signal: number; security: string; inUse: boolean }[] = [];
+            const seen = new Set<string>();
+            const blocks = stdout.split(/\n(?=SSID\s+\d+\s*:)/);
+
+            for (const block of blocks) {
+              const ssidMatch = block.match(/SSID\s+\d+\s*:\s*(.+)/);
+              const signalMatch = block.match(/Signal\s*:\s*(\d+)%/);
+              const authMatch = block.match(/Authentication\s*:\s*(.+)/);
+              if (ssidMatch) {
+                const ssid = ssidMatch[1].trim();
+                if (!ssid || seen.has(ssid)) continue;
+                seen.add(ssid);
+                networks.push({
+                  ssid,
+                  signal: signalMatch ? parseInt(signalMatch[1]) : 0,
+                  security: authMatch ? authMatch[1].trim() : '',
+                  inUse: false,
+                });
+              }
+            }
+
+            // Mark current network
+            try {
+              const { stdout: ifaceOut } = await execAsync('netsh wlan show interfaces');
+              const currentMatch = ifaceOut.match(/\bSSID\s*:\s*(.+)/);
+              if (currentMatch) {
+                const current = currentMatch[1].trim();
+                const found = networks.find(n => n.ssid === current);
+                if (found) found.inUse = true;
+              }
+            } catch {}
+
+            networks.sort((a, b) => b.signal - a.signal);
+            return NextResponse.json({ success: true, networks });
+          } catch {
+            return NextResponse.json({ success: true, networks: [], message: 'WiFi scan not available' });
+          }
+        }
+
+        if (PLATFORM === 'mac') {
           // Mac: try airport scan
           try {
             const { stdout } = await execAsync(
@@ -175,11 +243,10 @@ export async function POST(request: Request) {
       }
 
       case 'git_pull': {
-        const repoDir = IS_MAC
-          ? '/Users/dexterholmes/Documents/GitHub/dexterslab'
-          : '/home/thecabbage/Desktop/dexterslab';
-
+        const repoDir = getRepoDir();
         const results: string[] = [];
+        const isWin = PLATFORM === 'windows';
+        const sep = isWin ? '\\' : '/';
 
         // 1. Git pull
         try {
@@ -204,7 +271,7 @@ export async function POST(request: Request) {
         // 2. Install backend deps
         try {
           await execAsync('npm install', {
-            cwd: `${repoDir}/dexterslab-backend`,
+            cwd: `${repoDir}${sep}dexterslab-backend`,
             timeout: 60000,
           });
           results.push('backend: npm install done');
@@ -215,7 +282,7 @@ export async function POST(request: Request) {
         // 3. Install frontend deps
         try {
           await execAsync('npm install', {
-            cwd: `${repoDir}/dexterslab-frontend`,
+            cwd: `${repoDir}${sep}dexterslab-frontend`,
             timeout: 60000,
           });
           results.push('frontend: npm install done');
@@ -224,10 +291,10 @@ export async function POST(request: Request) {
         }
 
         // 4. Rebuild frontend (production only on Pi)
-        if (!IS_MAC) {
+        if (PLATFORM === 'pi') {
           try {
             await execAsync('npm run build', {
-              cwd: `${repoDir}/dexterslab-frontend`,
+              cwd: `${repoDir}${sep}dexterslab-frontend`,
               timeout: 120000,
             });
             results.push('frontend: build done');
@@ -250,3 +317,4 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: 'Action failed' }, { status: 500 });
   }
 }
+

@@ -4,62 +4,45 @@ description: Push code to GitHub and deploy to PC for Observer Hub (dexterslab.c
 
 # Push to Observer
 
-Commit all changes, run security check, push to GitHub, and deploy on the PC.
-
-## Pre-flight: Security Check
+Commit all changes, run security check, push to GitHub.
 
 // turbo-all
 
+## Pre-flight: Security Check
+
 1. Check for secrets, passwords, or API keys in staged files:
-```bash
-cd /Users/dexterholmes/Documents/GitHub/dexterslab && git diff --cached --name-only | xargs grep -l -E "(password|secret|api_key|apikey|token|GEMINI_API_KEY)" --include="*.ts" --include="*.tsx" --include="*.js" --include="*.json" --include="*.env" 2>/dev/null; echo "Security check complete"
+```powershell
+cd C:\Users\holme\OneDrive\Desktop\dexterslab; git diff --cached --name-only | ForEach-Object { Select-String -Path $_ -Pattern "(password|secret|api_key|apikey|GEMINI_API_KEY|token)" -ErrorAction SilentlyContinue } ; Write-Host "Security check complete"
 ```
-If any files are flagged, STOP and review them before continuing. Never push `.env` files with real credentials.
+If any files are flagged, STOP and review them before continuing.
 
 2. Make sure `.env` files are gitignored:
-```bash
-cd /Users/dexterholmes/Documents/GitHub/dexterslab && grep -q ".env" .gitignore 2>/dev/null && echo ".env is gitignored" || echo "WARNING: .env is NOT in .gitignore"
+```powershell
+cd C:\Users\holme\OneDrive\Desktop\dexterslab; if (Select-String -Path .gitignore -Pattern "\.env" -Quiet) { Write-Host ".env is gitignored" } else { Write-Host "WARNING: .env is NOT in .gitignore" }
 ```
 
 ## Push to GitHub
 
 3. Stage all changes:
-```bash
-cd /Users/dexterholmes/Documents/GitHub/dexterslab && git add -A
+```powershell
+cd C:\Users\holme\OneDrive\Desktop\dexterslab; git add -A
 ```
 
 4. Show what will be committed:
-```bash
-cd /Users/dexterholmes/Documents/GitHub/dexterslab && git status --short
+```powershell
+cd C:\Users\holme\OneDrive\Desktop\dexterslab; git status --short
 ```
 
 5. Commit with a descriptive message (use context from recent changes):
-```bash
-cd /Users/dexterholmes/Documents/GitHub/dexterslab && git commit -m "<descriptive message based on changes>"
+```powershell
+cd C:\Users\holme\OneDrive\Desktop\dexterslab; git commit -m "<descriptive message based on changes>"
 ```
 
 6. Push to origin main:
-```bash
-cd /Users/dexterholmes/Documents/GitHub/dexterslab && git push origin main
+```powershell
+cd C:\Users\holme\OneDrive\Desktop\dexterslab; git push origin main
 ```
 
-## Deploy on PC
-
-7. SSH into PC and pull latest code:
-```bash
-ssh pc "cd C:\Users\holme\Desktop\dexterslab && git pull origin main"
-```
-
-8. Install dependencies on PC:
-```bash
-ssh pc "cd C:\Users\holme\Desktop\dexterslab\dexterslab-backend && npm install && cd ..\dexterslab-frontend && npm install"
-```
-
-9. Build frontend on PC:
-```bash
-ssh pc "cd C:\Users\holme\Desktop\dexterslab\dexterslab-frontend && npm run build"
-```
-
-10. Notify user that deploy is complete:
-> Code pushed and deployed to PC. Live at `dexterslab.cclottaaworld.com`.
-> If services need restarting, SSH in with `ssh pc` and restart them.
+7. Notify user that push is complete:
+> Code pushed to GitHub. Live at `dexterslab.cclottaaworld.com` (served by Cloudflare Tunnel from this PC).
+> If the dev servers aren't running, use `/start-dev` to start them.
