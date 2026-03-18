@@ -49,7 +49,15 @@ fi
 
 # Start backend
 echo -e "${GREEN}  Starting backend server (port 8888)...${NC}"
-(cd "$BACKEND_DIR" && PLATFORM=mac npm run dev) &
+# Auto-detect platform
+if [[ "$(uname)" == "Darwin" ]]; then
+  DETECT_PLATFORM="mac"
+elif grep -q "Raspberry" /proc/cpuinfo 2>/dev/null; then
+  DETECT_PLATFORM="pi"
+else
+  DETECT_PLATFORM="linux"
+fi
+(cd "$BACKEND_DIR" && PLATFORM="${PLATFORM:-$DETECT_PLATFORM}" npm run dev) &
 BACKEND_PID=$!
 
 # Wait a moment for backend to start
