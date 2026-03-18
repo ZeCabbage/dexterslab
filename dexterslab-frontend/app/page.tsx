@@ -9,6 +9,7 @@
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import styles from './page.module.css';
+import EXPERIMENTS from '../data/experiments.json';
 
 interface Experiment {
   name: string;
@@ -17,30 +18,6 @@ interface Experiment {
   status: 'active' | 'wip' | 'planned';
   icon: string;
 }
-
-const EXPERIMENTS: Experiment[] = [
-  {
-    name: 'OBSERVER HUB',
-    route: '/observer',
-    description: 'Voice-controlled command center for the circular display — system control, version switching, diagnostics',
-    status: 'active',
-    icon: '◈',
-  },
-  {
-    name: 'OBSERVER EYE',
-    route: '/observer/eye',
-    description: 'Unified eye renderer — procedural iris, sentinel mode, voice reactions, Oracle Q&A',
-    status: 'active',
-    icon: '👁',
-  },
-  {
-    name: 'RULES LAWYER',
-    route: '/observer/rules-lawyer',
-    description: 'LLM-powered board game rules assistant — 32-bit character, voice I/O, game-themed persona',
-    status: 'active',
-    icon: '🎲',
-  },
-];
 
 export default function Home() {
   const [time, setTime] = useState('');

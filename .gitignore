@@ -16,3 +16,7 @@ node_modules/
 .idea/
 *.swp
 *.swo
+
+# Runtime data
+inbox-buddy-metrics.json
+inbox-buddy-vips.json
