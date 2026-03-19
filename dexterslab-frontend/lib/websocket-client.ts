@@ -55,13 +55,21 @@ export class WebSocketClient {
     onConnectionChange: ((connected: boolean) => void) | null = null;
 
     constructor(url?: string) {
-        // Auto-detect: use localhost in dev, Cloudflare tunnel in production
+        // Priority: explicit URL > env var > auto-detect from hostname
         if (!url) {
-            const isLocal = typeof window !== 'undefined'
-                && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
-            url = isLocal
-                ? 'ws://localhost:8888/ws'
-                : 'wss://dexterslab-api.cclottaaworld.com/ws';
+            const envBackend = process.env.NEXT_PUBLIC_BACKEND_URL;
+            if (envBackend) {
+                // Env var set (e.g. Pi pointing at PC backend)
+                const proto = envBackend.startsWith('https') ? 'wss' : 'ws';
+                const host = envBackend.replace(/^https?:\/\//, '').replace(/\/$/, '');
+                url = `${proto}://${host}/ws`;
+            } else {
+                const isLocal = typeof window !== 'undefined'
+                    && (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1');
+                url = isLocal
+                    ? 'ws://localhost:8888/ws'
+                    : 'wss://dexterslab-api.cclottaaworld.com/ws';
+            }
         }
         this.url = url;
     }
