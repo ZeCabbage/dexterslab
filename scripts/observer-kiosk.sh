@@ -8,7 +8,7 @@
 #  Chromium with all UI chrome hidden.
 # ═══════════════════════════════════════════
 
-OBSERVER_URL="http://localhost:3000/observer"
+OBSERVER_URL="http://localhost:3000/observer/eye"
 MAX_WAIT=90  # seconds to wait for the server
 
 LOG_TAG="[observer-kiosk]"
