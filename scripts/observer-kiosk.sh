@@ -80,7 +80,7 @@ chromium-browser \
   --check-for-update-interval=31536000 \
   --use-fake-ui-for-media-stream \
   --autoplay-policy=no-user-gesture-required \
-  --disable-features=TranslateUI \
+  --disable-features=TranslateUI,PipeWireCameraPortal \
   --disable-pinch \
   --overscroll-history-navigation=0 \
   --enable-features=UseOzonePlatform \
