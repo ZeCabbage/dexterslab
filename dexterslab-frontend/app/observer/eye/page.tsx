@@ -30,7 +30,7 @@ import { isCircularDisplay, getDisplayConfig } from '@/lib/pi-display-config';
 import { PhoneAlertOverlay } from '@/lib/phone-alert-overlay';
 import { OBSERVER_COMMANDS } from '@/lib/speech-recognition';
 import { useVoiceListener } from '@/hooks/useVoiceListener';
-import { useFaceTracking } from '@/hooks/useFaceTracking';
+import { useMotionTracking } from '@/hooks/useMotionTracking';
 import Link from 'next/link';
 
 // ── Configuration ──
@@ -525,16 +525,15 @@ export default function ObserverEye() {
     return cleanup;
   }, [startApp]);
 
-  // ── Face tracking (camera-based) ──
-  useFaceTracking({
-    eyeSize: EYE_SIZE,
-    onTrackingData: (data) => {
+  // ── Motion tracking (camera-based, multi-entity) ──
+  useMotionTracking({
+    onGazeUpdate: (gaze) => {
       const s = stateRef.current;
-      s.targetX = data.x;
-      s.targetY = data.y;
-      s.smoothFactor = data.smooth;
-      s.targetDilation = data.dilation;
-      s.somethingVisible = data.visible;
+      s.targetX = gaze.x;
+      s.targetY = gaze.y;
+      s.smoothFactor = gaze.smooth;
+      s.targetDilation = gaze.dilation;
+      s.somethingVisible = gaze.visible;
     },
   });
 
