@@ -1,7 +1,8 @@
 /**
- * DEXTER'S LAB — Mass Purge API Routes
- * POST /scan:  Scans historically for junk, subscriptions, repetitive senders
- * POST /apply: Executes mass purge on approved categories
+ * DEXTER'S LAB — Mass Purge API Routes v3.0
+ * POST ?action=scan   → Paginated scan through ALL matching emails (up to 5K per category)
+ * POST ?action=apply  → Batch purge in 1,000-ID chunks
+ * POST ?action=purgeAll → Purge every scanned category at once
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -21,7 +22,146 @@ export interface PurgeCategory {
   messageIds: string[];
 }
 
-// Scan for purgeable email categories
+const PURGE_QUERIES = [
+  {
+    id: 'old-promos',
+    label: 'Old Promotions',
+    description: 'Marketing emails older than 30 days',
+    icon: '🛍️',
+    query: 'category:promotions older_than:30d -is:starred',
+  },
+  {
+    id: 'social-noise',
+    label: 'Social Notifications',
+    description: 'Social media notifications and updates',
+    icon: '📱',
+    query: 'category:social older_than:14d -is:starred',
+  },
+  {
+    id: 'old-newsletters',
+    label: 'Old Newsletters',
+    description: 'Newsletter emails older than 60 days',
+    icon: '📰',
+    query: '(subject:newsletter OR subject:digest OR subject:"weekly update" OR list:) older_than:60d -is:starred -is:important',
+  },
+  {
+    id: 'notifications',
+    label: 'Automated Notifications',
+    description: 'Auto-generated alerts and no-reply emails',
+    icon: '🔔',
+    query: '(from:noreply OR from:no-reply OR from:notifications OR from:alerts OR from:mailer-daemon OR from:donotreply) older_than:30d -is:starred',
+  },
+  {
+    id: 'read-old',
+    label: 'Read & Old',
+    description: 'Already-read emails older than 6 months',
+    icon: '📖',
+    query: 'is:read older_than:6m in:inbox -is:starred -is:important',
+  },
+  {
+    id: 'unread-ancient',
+    label: 'Unread & Ancient',
+    description: 'Unread emails older than 1 year (never opened)',
+    icon: '💀',
+    query: 'is:unread older_than:1y -is:starred -is:important',
+  },
+  {
+    id: 'large-old',
+    label: 'Large & Old Emails',
+    description: 'Emails over 5MB older than 3 months',
+    icon: '📦',
+    query: 'larger:5M older_than:3m -is:starred',
+  },
+  {
+    id: 'updates-old',
+    label: 'Old Updates',
+    description: 'Automated updates (order confirmations, shipping, etc.)',
+    icon: '📋',
+    query: 'category:updates older_than:6m -is:starred -is:important',
+  },
+  {
+    id: 'forums-old',
+    label: 'Old Forum Emails',
+    description: 'Forum and group discussion threads',
+    icon: '💬',
+    query: 'category:forums older_than:3m -is:starred',
+  },
+];
+
+// ─── Paginated message list fetcher ───────────────────────
+// Follows nextPageToken to collect up to `maxTotal` message IDs
+
+async function paginatedList(
+  gmail: any,
+  query: string,
+  maxTotal: number = 5000
+): Promise<{ ids: string[]; total: number }> {
+  const allIds: string[] = [];
+  let pageToken: string | undefined;
+
+  while (allIds.length < maxTotal) {
+    const params: any = {
+      userId: 'me',
+      q: query,
+      maxResults: 500, // Gmail API max per page
+    };
+    if (pageToken) params.pageToken = pageToken;
+
+    const { data } = await gmail.users.messages.list(params);
+    const messages = data.messages || [];
+
+    if (messages.length === 0) break;
+
+    allIds.push(...messages.map((m: any) => m.id!));
+    pageToken = data.nextPageToken;
+
+    if (!pageToken) break; // No more pages
+  }
+
+  return { ids: allIds.slice(0, maxTotal), total: allIds.length };
+}
+
+// ─── Batch modify in 1,000-ID chunks ─────────────────────
+
+async function batchProcess(
+  gmail: any,
+  ids: string[],
+  action: 'trash' | 'archive'
+): Promise<number> {
+  const BATCH_SIZE = 1000; // Gmail's real batchModify limit
+  let affected = 0;
+
+  for (let i = 0; i < ids.length; i += BATCH_SIZE) {
+    const chunk = ids.slice(i, i + BATCH_SIZE);
+
+    if (action === 'trash') {
+      await gmail.users.messages.batchModify({
+        userId: 'me',
+        requestBody: {
+          ids: chunk,
+          addLabelIds: ['TRASH'],
+          removeLabelIds: ['INBOX'],
+        },
+      });
+    } else {
+      await gmail.users.messages.batchModify({
+        userId: 'me',
+        requestBody: {
+          ids: chunk,
+          removeLabelIds: ['INBOX'],
+        },
+      });
+    }
+
+    affected += chunk.length;
+    console.log(`[MassPurge] Batch ${Math.floor(i / BATCH_SIZE) + 1}: ${action} ${chunk.length} emails (${affected}/${ids.length} total)`);
+  }
+
+  return affected;
+}
+
+// ─── Route Handler ────────────────────────────────────────
+
 export async function POST(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const action = searchParams.get('action') || 'scan';
@@ -39,88 +179,34 @@ export async function POST(request: NextRequest) {
   } else if (action === 'apply') {
     const body = await request.json();
     return handleApply(gmail, body);
+  } else if (action === 'purgeAll') {
+    const body = await request.json();
+    return handlePurgeAll(gmail, body);
   }
 
   return NextResponse.json({ error: 'Invalid action' }, { status: 400 });
 }
 
+// ─── Scan: Paginated ──────────────────────────────────────
+
 async function handleScan(gmail: any) {
   try {
-    console.log('[MassPurge] Starting historical scan...');
-
-    // Define purge queries — go deep historically
-    const purgeQueries = [
-      {
-        id: 'old-promos',
-        label: 'Old Promotions',
-        description: 'Marketing emails older than 30 days',
-        icon: '🛍️',
-        query: 'category:promotions older_than:30d -is:starred',
-      },
-      {
-        id: 'social-noise',
-        label: 'Social Notifications',
-        description: 'Social media notifications and updates',
-        icon: '📱',
-        query: 'category:social older_than:14d -is:starred',
-      },
-      {
-        id: 'old-newsletters',
-        label: 'Old Newsletters',
-        description: 'Newsletter emails older than 60 days',
-        icon: '📰',
-        query: '(subject:newsletter OR subject:digest OR subject:"weekly update" OR list:) older_than:60d -is:starred -is:important',
-      },
-      {
-        id: 'notifications',
-        label: 'Automated Notifications',
-        description: 'Auto-generated notifications and alerts',
-        icon: '🔔',
-        query: '(from:noreply OR from:no-reply OR from:notifications OR from:alerts OR from:mailer-daemon) older_than:30d -is:starred',
-      },
-      {
-        id: 'read-old',
-        label: 'Read & Old',
-        description: 'Already-read emails older than 6 months',
-        icon: '📖',
-        query: 'is:read older_than:6m in:inbox -is:starred -is:important',
-      },
-      {
-        id: 'unread-ancient',
-        label: 'Unread & Ancient',
-        description: 'Unread emails older than 1 year (never opened)',
-        icon: '💀',
-        query: 'is:unread older_than:1y -is:starred -is:important',
-      },
-      {
-        id: 'large-old',
-        label: 'Large & Old Emails',
-        description: 'Emails over 5MB older than 3 months',
-        icon: '📦',
-        query: 'larger:5M older_than:3m -is:starred',
-      },
-    ];
-
+    console.log('[MassPurge] Starting paginated scan...');
     const categories: PurgeCategory[] = [];
 
-    for (const pq of purgeQueries) {
+    for (const pq of PURGE_QUERIES) {
       try {
-        const { data } = await gmail.users.messages.list({
-          userId: 'me',
-          q: pq.query,
-          maxResults: 500,
-        });
+        const { ids, total } = await paginatedList(gmail, pq.query, 5000);
 
-        const messages = data.messages || [];
-        if (messages.length === 0) continue;
+        if (ids.length === 0) continue;
 
-        // Get sample metadata for preview
-        const sampleIds = messages.slice(0, 5);
+        // Get sample metadata for preview (only 5)
+        const sampleIds = ids.slice(0, 5);
         const samples = await Promise.all(
-          sampleIds.map((msg: any) =>
+          sampleIds.map((id: string) =>
             gmail.users.messages.get({
               userId: 'me',
-              id: msg.id!,
+              id,
               format: 'metadata',
               metadataHeaders: ['From', 'Subject'],
             }).catch(() => null)
@@ -143,18 +229,19 @@ async function handleScan(gmail: any) {
 
         categories.push({
           ...pq,
-          count: data.resultSizeEstimate || messages.length,
+          count: total,
           sampleSubjects: [...new Set(sampleSubjects)].slice(0, 3),
           sampleSenders: [...new Set(sampleSenders)].slice(0, 3),
-          messageIds: messages.map((m: any) => m.id!),
+          messageIds: ids,
         });
+
+        console.log(`[MassPurge] ${pq.id}: ${total} emails (fetched ${ids.length} IDs)`);
       } catch (err) {
         console.error(`[MassPurge] Query failed for ${pq.id}:`, err);
       }
     }
 
     const totalPurgeable = categories.reduce((a, c) => a + c.count, 0);
-
     console.log(`[MassPurge] Scan complete: ${totalPurgeable} emails across ${categories.length} categories`);
 
     return NextResponse.json({
@@ -168,45 +255,57 @@ async function handleScan(gmail: any) {
   }
 }
 
-async function handleApply(gmail: any, body: { categoryId: string; messageIds: string[]; action: 'trash' | 'archive' }) {
+// ─── Apply: Single Category ──────────────────────────────
+
+async function handleApply(
+  gmail: any,
+  body: { categoryId: string; messageIds: string[]; action: 'trash' | 'archive' }
+) {
   try {
-    const { messageIds, action } = body;
+    const { messageIds, action: purgeAction } = body;
 
     if (!messageIds || messageIds.length === 0) {
       return NextResponse.json({ error: 'No messages to purge' }, { status: 400 });
     }
 
-    // Process in batches of 100 (Gmail API limit)
-    let affected = 0;
-    for (let i = 0; i < messageIds.length; i += 100) {
-      const batch = messageIds.slice(i, i + 100);
+    const affected = await batchProcess(gmail, messageIds, purgeAction);
 
-      if (action === 'trash') {
-        await gmail.users.messages.batchModify({
-          userId: 'me',
-          requestBody: {
-            ids: batch,
-            addLabelIds: ['TRASH'],
-            removeLabelIds: ['INBOX'],
-          },
-        });
-      } else {
-        await gmail.users.messages.batchModify({
-          userId: 'me',
-          requestBody: {
-            ids: batch,
-            removeLabelIds: ['INBOX'],
-          },
-        });
-      }
-
-      affected += batch.length;
-    }
-
-    console.log(`[MassPurge] Applied ${action} to ${affected} messages`);
-    return NextResponse.json({ success: true, affected, action });
+    console.log(`[MassPurge] Applied ${purgeAction} to ${affected} messages`);
+    return NextResponse.json({ success: true, affected, action: purgeAction });
   } catch (err: any) {
     console.error('[MassPurge] Apply failed:', err);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
+// ─── Purge All: All categories at once ───────────────────
+
+async function handlePurgeAll(
+  gmail: any,
+  body: { categories: { id: string; messageIds: string[]; action: 'trash' | 'archive' }[] }
+) {
+  try {
+    const results: { id: string; affected: number; action: string }[] = [];
+    let totalAffected = 0;
+
+    for (const cat of body.categories) {
+      if (!cat.messageIds || cat.messageIds.length === 0) continue;
+
+      const affected = await batchProcess(gmail, cat.messageIds, cat.action);
+      results.push({ id: cat.id, affected, action: cat.action });
+      totalAffected += affected;
+
+      console.log(`[MassPurge] Purged ${cat.id}: ${affected} emails (${cat.action})`);
+    }
+
+    console.log(`[MassPurge] PURGE ALL complete: ${totalAffected} total emails affected`);
+    return NextResponse.json({
+      success: true,
+      totalAffected,
+      results,
+    });
+  } catch (err: any) {
+    console.error('[MassPurge] PurgeAll failed:', err);
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }

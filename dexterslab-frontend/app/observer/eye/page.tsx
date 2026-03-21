@@ -25,11 +25,12 @@ import { LidRenderer } from '@/lib/lid-renderer';
 import { HousingRenderer } from '@/lib/housing-renderer';
 import { TextOverlay } from '@/lib/text-overlay';
 import { BlinkController, SaccadeController } from '@/lib/animation-controller';
-import { WebSocketClient, TrackingData, OracleEvent, VoiceCommandEvent, VoicePartialEvent } from '@/lib/websocket-client';
+import { WebSocketClient, OracleEvent, VoiceCommandEvent, VoicePartialEvent } from '@/lib/websocket-client';
 import { isCircularDisplay, getDisplayConfig } from '@/lib/pi-display-config';
 import { PhoneAlertOverlay } from '@/lib/phone-alert-overlay';
 import { OBSERVER_COMMANDS } from '@/lib/speech-recognition';
 import { useVoiceListener } from '@/hooks/useVoiceListener';
+import { useFaceTracking } from '@/hooks/useFaceTracking';
 import Link from 'next/link';
 
 // ── Configuration ──
@@ -141,18 +142,8 @@ export default function ObserverEye() {
     const saccadeController = new SaccadeController(200);
     const phoneAlert = new PhoneAlertOverlay(EYE_SIZE);
 
-    // WebSocket
+    // WebSocket (voice + oracle events only — tracking comes from face detection)
     const ws = new WebSocketClient();
-
-    ws.onTracking = (data: TrackingData) => {
-      const s = stateRef.current;
-      s.targetX = data.x;
-      s.targetY = data.y;
-      s.smoothFactor = data.smooth;
-      s.targetDilation = data.dilation;
-      s.somethingVisible = data.visible;
-      s.objects = data.objects || [];
-    };
 
     ws.onOracle = (data: OracleEvent) => {
       stateRef.current.lastOracleResponse = data.response;
@@ -533,6 +524,19 @@ export default function ObserverEye() {
     const cleanup = startApp();
     return cleanup;
   }, [startApp]);
+
+  // ── Face tracking (camera-based) ──
+  useFaceTracking({
+    eyeSize: EYE_SIZE,
+    onTrackingData: (data) => {
+      const s = stateRef.current;
+      s.targetX = data.x;
+      s.targetY = data.y;
+      s.smoothFactor = data.smooth;
+      s.targetDilation = data.dilation;
+      s.somethingVisible = data.visible;
+    },
+  });
 
   // ── Canvas sizing ──
   useEffect(() => {

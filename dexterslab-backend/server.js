@@ -721,33 +721,8 @@ wss.on('connection', (ws) => {
   });
 });
 
-// ── Mock tracking data broadcast (30fps) ──
-let trackingAngle = 0;
-
-function broadcastTracking() {
-  if (clients.size === 0) return;
-
-  trackingAngle += 0.05;
-  const x = 0.5 + 0.15 * Math.sin(trackingAngle);
-  const y = 0.5 + 0.1 * Math.cos(trackingAngle * 0.7);
-  const dilation = 0.4 + 0.1 * Math.sin(trackingAngle * 0.3);
-  const visible = 1.0;
-  const smooth = 0.8;
-
-  // Binary frame: 5 × Float32 = 20 bytes
-  const buffer = new Float32Array([x, y, dilation, visible, smooth]);
-
-  for (const client of clients) {
-    if (client.readyState === 1) {
-      try {
-        client.send(buffer.buffer);
-      } catch {}
-    }
-  }
-}
-
-// Broadcast at ~30fps
-setInterval(broadcastTracking, 33);
+// ── Tracking data is now handled client-side via browser FaceDetector API ──
+// WebSocket is used for voice/oracle events only
 
 // ═══════════════════════════════════════════
 //  Start

@@ -64,6 +64,17 @@ interface PurgeCategory {
   selected?: boolean;
 }
 
+interface UnsubCandidate {
+  senderEmail: string;
+  senderName: string;
+  emailCount: number;
+  unsubscribeLink: string | null;
+  unsubscribeMailto: string | null;
+  sampleSubject: string;
+  messageIds: string[];
+  trashed?: boolean;
+}
+
 interface ConfirmAction {
   title: string;
   description: string;
@@ -115,6 +126,12 @@ export default function InboxBuddyPage() {
   const [purgeCategories, setPurgeCategories] = useState<PurgeCategory[]>([]);
   const [purgeLoading, setPurgeLoading] = useState(false);
   const [purgingId, setPurgingId] = useState<string | null>(null);
+  const [purgeAllLoading, setPurgeAllLoading] = useState(false);
+
+  // Unsubscribe state
+  const [unsubCandidates, setUnsubCandidates] = useState<UnsubCandidate[]>([]);
+  const [unsubLoading, setUnsubLoading] = useState(false);
+  const [trashingSender, setTrashingSender] = useState<string | null>(null);
 
   // Confirmation modal
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
@@ -123,7 +140,7 @@ export default function InboxBuddyPage() {
   // Toast notifications
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'vip' | 'deepdive' | 'purge'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'vip' | 'deepdive' | 'purge' | 'unsub'>('overview');
 
   // ── Helpers ──
 
@@ -375,6 +392,84 @@ export default function InboxBuddyPage() {
     });
   }, [showConfirm, addToast]);
 
+  // ── Purge All ──
+  const purgeAllCategories = useCallback(async (action: 'trash' | 'archive') => {
+    showConfirm({
+      title: `☢️ ${action === 'trash' ? 'TRASH' : 'ARCHIVE'} ALL CATEGORIES`,
+      description: `${action === 'trash' ? 'Trash' : 'Archive'} ALL ${purgeCategories.reduce((a, c) => a + c.messageIds.length, 0).toLocaleString()} scanned emails across ${purgeCategories.length} categories`,
+      details: [
+        ...purgeCategories.map((c) => `${c.icon} ${c.label}: ${c.count.toLocaleString()} emails`),
+        '',
+        action === 'trash' ? '⚠ All emails can be recovered from Trash within 30 days' : '📦 All emails will be archived (still searchable)',
+      ],
+      actionLabel: `${action.toUpperCase()} ALL ${purgeCategories.reduce((a, c) => a + c.messageIds.length, 0).toLocaleString()} EMAILS`,
+      dangerLevel: 'destructive',
+      onConfirm: async () => {
+        setPurgeAllLoading(true);
+        try {
+          const res = await fetch('/api/inbox-buddy/mass-purge?action=purgeAll', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              categories: purgeCategories.map((c) => ({
+                id: c.id, messageIds: c.messageIds, action,
+              })),
+            }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setPurgeCategories([]);
+            addToast(`☢️ ${action === 'trash' ? 'Trashed' : 'Archived'} ${data.totalAffected.toLocaleString()} emails across all categories`, 'success');
+          } else { setError(data.error); }
+        } catch (err: any) { setError(err.message); }
+        finally { setPurgeAllLoading(false); }
+      },
+    });
+  }, [purgeCategories, showConfirm, addToast]);
+
+  // ── Unsubscribe ──
+  const scanUnsub = useCallback(async () => {
+    setUnsubLoading(true);
+    setError(null);
+    try {
+      const res = await fetch('/api/inbox-buddy/unsubscribe');
+      const data = await res.json();
+      if (!res.ok) { setError(data.error); return; }
+      setUnsubCandidates(data.candidates || []);
+      addToast(`Found ${data.total} senders with unsubscribe links`, 'info');
+    } catch (err: any) { setError(err.message); }
+    finally { setUnsubLoading(false); }
+  }, [addToast]);
+
+  const trashSender = useCallback(async (candidate: UnsubCandidate) => {
+    showConfirm({
+      title: `🗑️ TRASH ALL: ${candidate.senderName}`,
+      description: `Trash all ${candidate.emailCount} emails from ${candidate.senderEmail}`,
+      details: [
+        `Sample: "${candidate.sampleSubject}"`,
+        'Emails can be recovered from Trash within 30 days',
+      ],
+      actionLabel: `TRASH ${candidate.emailCount} EMAILS`,
+      dangerLevel: 'destructive',
+      onConfirm: async () => {
+        setTrashingSender(candidate.senderEmail);
+        try {
+          const res = await fetch('/api/inbox-buddy/unsubscribe', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ senderEmail: candidate.senderEmail, messageIds: candidate.messageIds }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setUnsubCandidates((prev) => prev.map((c) => c.senderEmail === candidate.senderEmail ? { ...c, trashed: true } : c));
+            addToast(`✅ Trashed ${data.affected} emails from ${candidate.senderName}`, 'success');
+          } else { setError(data.error); }
+        } catch (err: any) { setError(err.message); }
+        finally { setTrashingSender(null); }
+      },
+    });
+  }, [showConfirm, addToast]);
+
   const formatTime = (iso: string) => {
     const d = new Date(iso);
     return d.toLocaleString('en-GB', { day: '2-digit', month: 'short', hour: '2-digit', minute: '2-digit' });
@@ -476,9 +571,9 @@ export default function InboxBuddyPage() {
         {status === 'authenticated' && (
           <>
             <div className={styles.tabBar}>
-              {(['overview', 'vip', 'deepdive', 'purge'] as const).map((tab) => (
+              {(['overview', 'vip', 'deepdive', 'purge', 'unsub'] as const).map((tab) => (
                 <button key={tab} className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`} onClick={() => setActiveTab(tab)}>
-                  {tab === 'overview' ? '🧹 OVERVIEW' : tab === 'vip' ? '⭐ VIP' : tab === 'deepdive' ? '🔬 DEEP DIVE' : '💣 MASS PURGE'}
+                  {tab === 'overview' ? '🧹 OVERVIEW' : tab === 'vip' ? '⭐ VIP' : tab === 'deepdive' ? '🔬 DEEP DIVE' : tab === 'purge' ? '💣 MASS PURGE' : '🚫 UNSUB'}
                 </button>
               ))}
             </div>
@@ -675,6 +770,24 @@ export default function InboxBuddyPage() {
                         <span className={styles.purgeLabel}>PURGEABLE EMAILS FOUND</span>
                       </div>
 
+                      {/* ☢️ PURGE ALL BUTTON */}
+                      <div className={styles.purgeAllBar}>
+                        <button
+                          className={styles.purgeAllBtn}
+                          onClick={() => purgeAllCategories('trash')}
+                          disabled={purgeAllLoading}
+                        >
+                          {purgeAllLoading ? <><span className={styles.spinner} />PURGING...</> : `☢️ TRASH ALL ${purgeCategories.length} CATEGORIES (${purgeCategories.reduce((a, c) => a + c.messageIds.length, 0).toLocaleString()} emails)`}
+                        </button>
+                        <button
+                          className={styles.purgeAllArchiveBtn}
+                          onClick={() => purgeAllCategories('archive')}
+                          disabled={purgeAllLoading}
+                        >
+                          📦 ARCHIVE ALL INSTEAD
+                        </button>
+                      </div>
+
                       <div className={styles.purgeList}>
                         {purgeCategories.map((cat) => (
                           <div key={cat.id} className={styles.purgeCard}>
@@ -728,6 +841,71 @@ export default function InboxBuddyPage() {
                   )}
                 </div>
               )}
+
+              {/* ═══ UNSUBSCRIBE ═══ */}
+              {activeTab === 'unsub' && (
+                <div className={styles.purgePanel}>
+                  <div className={styles.panelHeader}>
+                    <div>
+                      <h2 className={styles.panelTitle}>🚫 UNSUBSCRIBE</h2>
+                      <p className={styles.panelDesc}>Find senders with unsubscribe links — click to unsubscribe, then trash all their emails</p>
+                    </div>
+                    <button className={styles.cleanBtn} onClick={scanUnsub} disabled={unsubLoading} style={{ width: 'auto', padding: '10px 20px' }}>
+                      {unsubLoading ? <><span className={styles.spinner} />SCANNING...</> : '🔍 FIND UNSUBSCRIBE LINKS'}
+                    </button>
+                  </div>
+
+                  {unsubCandidates.length > 0 && (
+                    <div className={styles.purgeList}>
+                      {unsubCandidates.map((candidate) => (
+                        <div key={candidate.senderEmail} className={styles.purgeCard} style={candidate.trashed ? { opacity: 0.4 } : undefined}>
+                          <div className={styles.purgeCardHeader}>
+                            <span className={styles.purgeIcon}>📧</span>
+                            <div className={styles.purgeCardInfo}>
+                              <span className={styles.purgeCardTitle}>{candidate.senderName}</span>
+                              <span className={styles.purgeCardDesc}>{candidate.senderEmail}</span>
+                            </div>
+                            <span className={styles.purgeCardCount}>{candidate.emailCount}</span>
+                          </div>
+
+                          <div className={styles.purgeSamples}>
+                            <span className={styles.sampleLabel}>SAMPLE:</span>
+                            <span>{candidate.sampleSubject}</span>
+                          </div>
+
+                          <div className={styles.purgeActions}>
+                            {candidate.unsubscribeLink && (
+                              <a
+                                href={candidate.unsubscribeLink}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className={styles.purgeArchiveBtn}
+                                style={{ textDecoration: 'none', textAlign: 'center' }}
+                              >
+                                🔗 UNSUBSCRIBE
+                              </a>
+                            )}
+                            <button
+                              className={styles.purgeTrashBtn}
+                              onClick={() => trashSender(candidate)}
+                              disabled={trashingSender === candidate.senderEmail || candidate.trashed}
+                            >
+                              {candidate.trashed ? '✅ TRASHED' : trashingSender === candidate.senderEmail ? <><span className={styles.spinner} /></> : '🗑️'} TRASH ALL
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {!unsubLoading && unsubCandidates.length === 0 && (
+                    <div className={styles.emptyState}>
+                      <span>🚫</span>
+                      <p>Scan your inbox to find senders with unsubscribe links — stop junk at the source</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -742,7 +920,7 @@ export default function InboxBuddyPage() {
         )}
 
         <footer className={styles.footer}>
-          <span>INBOX BUDDY v2.1</span>
+          <span>INBOX BUDDY v3.0</span>
           <span className={styles.divider}>│</span>
           <span>GEMINI AI</span>
           <span className={styles.divider}>│</span>
