@@ -84,4 +84,5 @@ chromium-browser \
   --disable-pinch \
   --overscroll-history-navigation=0 \
   --enable-features=UseOzonePlatform \
+  --enable-experimental-web-platform-features \
   --ozone-platform=wayland
