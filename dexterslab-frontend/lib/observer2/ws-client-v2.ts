@@ -44,10 +44,33 @@ export class WSClientV2 {
     public onConnectionChange: ((connected: boolean) => void) | null = null;
 
     constructor() {
-        // Connect to the same host as the page, port 8888 (backend)
-        const protocol = typeof window !== 'undefined' && window.location.protocol === 'https:' ? 'wss' : 'ws';
-        const host = typeof window !== 'undefined' ? window.location.hostname : 'localhost';
-        this.url = `${protocol}://${host}:8888/ws/observer2`;
+        // Connect to the backend WebSocket — supports multiple deployment modes:
+        //   1. Localhost dev: ws://localhost:8888/ws/observer2
+        //   2. LAN (Pi→PC):  ws://192.168.x.x:8888/ws/observer2
+        //   3. Cloudflare:   wss://dexterslab-api.cclottaaworld.com/ws/observer2
+        if (typeof window === 'undefined') {
+            this.url = 'ws://localhost:8888/ws/observer2';
+            return;
+        }
+
+        const envBackend = process.env.NEXT_PUBLIC_BACKEND_URL;
+        if (envBackend) {
+            const proto = envBackend.startsWith('https') ? 'wss' : 'ws';
+            const host = envBackend.replace(/^https?:\/\//, '').replace(/\/$/, '');
+            this.url = `${proto}://${host}/ws/observer2`;
+        } else {
+            const hostname = window.location.hostname;
+            const isLocal = hostname === 'localhost' || hostname === '127.0.0.1';
+            if (isLocal) {
+                this.url = 'ws://localhost:8888/ws/observer2';
+            } else if (/^192\.168\.|^10\.|^172\.(1[6-9]|2\d|3[01])\./.test(hostname)) {
+                // LAN IP — connect directly to backend port on same host
+                this.url = `ws://${hostname}:8888/ws/observer2`;
+            } else {
+                // External (Cloudflare Tunnel)
+                this.url = 'wss://dexterslab-api.cclottaaworld.com/ws/observer2';
+            }
+        }
     }
 
     connect() {
