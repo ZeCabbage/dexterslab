@@ -43,6 +43,7 @@ interface SubProject {
 
 const SUB_PROJECTS: SubProject[] = [
   { name: 'EYE', route: '/observer/eye', icon: '👁', voiceCmd: '"open eye"' },
+  { name: 'EYE V2', route: '/observer/eye-v2', icon: '👁️', voiceCmd: '"open eye v2"' },
   { name: 'RULES LAWYER', route: '/observer/rules-lawyer', icon: '🎲', voiceCmd: '"launch rules lawyer"' },
 ];
 

@@ -14,6 +14,13 @@
     "icon": "👁"
   },
   {
+    "name": "OBSERVER EYE V2",
+    "route": "/observer/eye-v2",
+    "description": "PC-powered photorealistic eye — thin client architecture, server-side tracking & behavior",
+    "status": "wip",
+    "icon": "👁️"
+  },
+  {
     "name": "RULES LAWYER",
     "route": "/observer/rules-lawyer",
     "description": "LLM-powered board game rules assistant — 32-bit character, voice I/O, game-themed persona",

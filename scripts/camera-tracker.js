@@ -12,8 +12,6 @@
  */
 
 const { spawn, execSync } = require('child_process');
-const http = require('http');
-const crypto = require('crypto');
 
 // ── Config ──
 const CAPTURE_WIDTH = 160;
@@ -92,75 +90,58 @@ let prevEntities = [];     // previous frame's entities for ID persistence
 let nextEntityId = 0;
 const clients = new Set(); // WebSocket clients
 
-// ── Minimal WebSocket server (no dependencies) ──
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'application/json' });
-    res.end(JSON.stringify({ status: 'ok', service: 'camera-tracker', device: VIDEO_DEVICE }));
+// ── WebSocket server using ws package ──
+let WebSocketServer;
+try {
+    WebSocketServer = require('ws').WebSocketServer;
+} catch (e) {
+    // Install ws if missing
+    console.log('[tracker] Installing ws package...');
+    const { execSync: execS } = require('child_process');
+    execS('npm install ws --no-save --prefix /tmp/ws-install', { stdio: 'pipe' });
+    WebSocketServer = require('/tmp/ws-install/node_modules/ws').WebSocketServer;
+}
+
+const wss = new WebSocketServer({ port: WS_PORT });
+
+wss.on('listening', () => {
+    console.log(`[tracker] WebSocket server on ws://localhost:${WS_PORT}`);
 });
 
-server.on('upgrade', (req, socket) => {
-    const key = req.headers['sec-websocket-key'];
-    if (!key) { socket.destroy(); return; }
-
-    const accept = crypto.createHash('sha1')
-        .update(key + '258EAFA5-E914-47DA-95CA-5AB5CF11F171')
-        .digest('base64');
-
-    socket.write(
-        'HTTP/1.1 101 Switching Protocols\r\n' +
-        'Upgrade: websocket\r\n' +
-        'Connection: Upgrade\r\n' +
-        'Sec-WebSocket-Accept: ' + accept + '\r\n' +
-        '\r\n'
-    );
-
-    clients.add(socket);
+wss.on('connection', (ws) => {
+    clients.add(ws);
     console.log(`[ws] Client connected (${clients.size} total)`);
 
-    // Read and discard incoming data (browser sends masked frames, pings, etc.)
-    socket.on('data', () => { /* consume incoming frames to prevent backpressure */ });
-    socket.on('end', () => { clients.delete(socket); });
-    socket.on('close', () => { clients.delete(socket); });
-    socket.on('error', () => { clients.delete(socket); });
-
-    // Keep alive: set a long timeout
-    socket.setTimeout(0); // disable timeout
+    ws.on('close', () => {
+        clients.delete(ws);
+        console.log(`[ws] Client disconnected (${clients.size} remaining)`);
+    });
+    ws.on('error', () => { clients.delete(ws); });
 });
 
 function wsBroadcast(data) {
     const payload = JSON.stringify(data);
-    const buf = Buffer.from(payload);
-    let frame;
-    if (buf.length < 126) {
-        frame = Buffer.alloc(2 + buf.length);
-        frame[0] = 0x81;
-        frame[1] = buf.length;
-        buf.copy(frame, 2);
-    } else {
-        frame = Buffer.alloc(4 + buf.length);
-        frame[0] = 0x81;
-        frame[1] = 126;
-        frame.writeUInt16BE(buf.length, 2);
-        buf.copy(frame, 4);
-    }
     for (const client of clients) {
-        try { client.write(frame); } catch (e) { clients.delete(client); }
+        if (client.readyState === 1) { // OPEN
+            try { client.send(payload); } catch (e) { clients.delete(client); }
+        }
     }
 }
 
-server.listen(WS_PORT, () => {
-    console.log(`[tracker] WebSocket server on ws://localhost:${WS_PORT}`);
-});
-
 // ── ffmpeg capture ──
-console.log(`[tracker] Starting ffmpeg capture from ${VIDEO_DEVICE} (${CAPTURE_WIDTH}x${CAPTURE_HEIGHT} @ ${FPS}fps)`);
+// Camera captures at 320×240 (smallest supported), ffmpeg scales to 160×120 for processing
+const CAMERA_WIDTH = 320;
+const CAMERA_HEIGHT = 240;
+
+console.log(`[tracker] Starting ffmpeg: ${VIDEO_DEVICE} ${CAMERA_WIDTH}x${CAMERA_HEIGHT} → ${CAPTURE_WIDTH}x${CAPTURE_HEIGHT} @ ${FPS}fps`);
 
 const ffmpeg = spawn('ffmpeg', [
     '-f', 'v4l2',
     '-input_format', 'yuyv422',
-    '-video_size', `${CAPTURE_WIDTH}x${CAPTURE_HEIGHT}`,
+    '-video_size', `${CAMERA_WIDTH}x${CAMERA_HEIGHT}`,
     '-framerate', String(FPS),
     '-i', VIDEO_DEVICE,
+    '-vf', `scale=${CAPTURE_WIDTH}:${CAPTURE_HEIGHT}`,
     '-f', 'rawvideo',
     '-pix_fmt', 'gray',
     '-an',
