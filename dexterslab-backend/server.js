@@ -716,10 +716,31 @@ app.post('/api/observer2/command', (req, res) => {
 
 const server = createServer(app);
 
+// ── WebSocket Servers (noServer mode for multi-path routing) ──
+const wss = new WebSocketServer({ noServer: true });
+const wssObserver2 = new WebSocketServer({ noServer: true });
+
+// Route WebSocket upgrades by path
+server.on('upgrade', (request, socket, head) => {
+  const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
+
+  if (pathname === '/ws') {
+    wss.handleUpgrade(request, socket, head, (ws) => {
+      wss.emit('connection', ws, request);
+    });
+  } else if (pathname === '/ws/observer2') {
+    wssObserver2.handleUpgrade(request, socket, head, (ws) => {
+      wssObserver2.emit('connection', ws, request);
+    });
+  } else {
+    socket.destroy();
+  }
+});
+
 // ── Original V1 WebSocket (/ws) ──
-const wss = new WebSocketServer({ server, path: '/ws' });
 
 const clients = new Set();
+
 
 wss.on('connection', (ws) => {
   clients.add(ws);
@@ -754,7 +775,6 @@ wss.on('connection', (ws) => {
 });
 
 // ── Observer 2 WebSocket (/ws/observer2) ──
-const wssObserver2 = new WebSocketServer({ server, path: '/ws/observer2' });
 const observer2Clients = new Set();
 
 wssObserver2.on('connection', (ws) => {
