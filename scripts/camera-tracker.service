@@ -9,7 +9,6 @@ WorkingDirectory=/home/thecabbage/Desktop/dexterslab/scripts
 ExecStart=/usr/bin/node /home/thecabbage/Desktop/dexterslab/scripts/camera-tracker.js
 Restart=always
 RestartSec=5
-Environment=VIDEO_DEVICE=/dev/video4
 
 [Install]
 WantedBy=multi-user.target

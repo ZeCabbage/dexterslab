@@ -11,12 +11,11 @@
  * Zero npm dependencies beyond Node.js built-ins.
  */
 
-const { spawn } = require('child_process');
+const { spawn, execSync } = require('child_process');
 const http = require('http');
 const crypto = require('crypto');
 
 // ── Config ──
-const VIDEO_DEVICE = process.env.VIDEO_DEVICE || '/dev/video4';
 const CAPTURE_WIDTH = 160;
 const CAPTURE_HEIGHT = 120;
 const FPS = 10;
@@ -25,6 +24,49 @@ const MOTION_THRESHOLD = 25;
 const MIN_BLOB_CELLS = 2;
 const BG_LEARN_RATE = 0.02;
 const MERGE_DISTANCE = 0.15;
+
+// ── Auto-detect camera device ──
+function findCameraDevice() {
+    if (process.env.VIDEO_DEVICE) {
+        console.log(`[tracker] Using VIDEO_DEVICE env: ${process.env.VIDEO_DEVICE}`);
+        return process.env.VIDEO_DEVICE;
+    }
+
+    try {
+        const output = execSync('v4l2-ctl --list-devices 2>&1', { encoding: 'utf8' });
+        const lines = output.split('\n');
+        let foundCamera = false;
+        for (const line of lines) {
+            // Look for USB camera headers (not ISP/pispbe, not decoder/rpi-hevc)
+            if (line.match(/Camera|Webcam|UVC|usb/) && !line.match(/pispbe|hevc|rpi-/) ) {
+                foundCamera = true;
+                continue;
+            }
+            if (foundCamera && line.match(/\/dev\/video\d+/)) {
+                const device = line.trim();
+                // Verify it's a capture device
+                try {
+                    const info = execSync(`v4l2-ctl -d ${device} --info 2>&1`, { encoding: 'utf8' });
+                    if (info.includes('Video Capture')) {
+                        console.log(`[tracker] Auto-detected camera: ${device}`);
+                        return device;
+                    }
+                } catch (e) { /* skip */ }
+            }
+            // Reset if we hit a non-indented line (new device section)
+            if (foundCamera && line.length > 0 && !line.startsWith('\t') && !line.startsWith(' ')) {
+                foundCamera = false;
+            }
+        }
+    } catch (e) {
+        console.log(`[tracker] v4l2-ctl not available: ${e.message}`);
+    }
+
+    console.log('[tracker] No camera found, falling back to /dev/video0');
+    return '/dev/video0';
+}
+
+const VIDEO_DEVICE = findCameraDevice();
 
 // Grid config (4x4 cells for speed)
 const GRID_CELL = 4;
@@ -69,11 +111,10 @@ server.on('upgrade', (req, socket) => {
 function wsBroadcast(data) {
     const payload = JSON.stringify(data);
     const buf = Buffer.from(payload);
-    // WebSocket frame: text opcode, no mask
     let frame;
     if (buf.length < 126) {
         frame = Buffer.alloc(2 + buf.length);
-        frame[0] = 0x81; // FIN + text
+        frame[0] = 0x81;
         frame[1] = buf.length;
         buf.copy(frame, 2);
     } else {
@@ -102,10 +143,10 @@ const ffmpeg = spawn('ffmpeg', [
     '-framerate', String(FPS),
     '-i', VIDEO_DEVICE,
     '-f', 'rawvideo',
-    '-pix_fmt', 'gray',      // output grayscale
-    '-an',                     // no audio
+    '-pix_fmt', 'gray',
+    '-an',
     '-v', 'warning',
-    'pipe:1'                   // output to stdout
+    'pipe:1'
 ], { stdio: ['ignore', 'pipe', 'pipe'] });
 
 ffmpeg.stderr.on('data', (d) => {
@@ -115,7 +156,6 @@ ffmpeg.stderr.on('data', (d) => {
 
 ffmpeg.on('error', (err) => {
     console.error(`[ffmpeg] Failed to start: ${err.message}`);
-    // Try alternate device
     console.log('[ffmpeg] Check VIDEO_DEVICE env var or run: v4l2-ctl --list-devices');
 });
 
@@ -123,7 +163,7 @@ ffmpeg.on('close', (code) => {
     console.log(`[ffmpeg] Exited with code ${code}`);
     if (code !== 0) {
         console.log('[tracker] Retrying in 5s...');
-        setTimeout(() => process.exit(1), 5000); // systemd will restart
+        setTimeout(() => process.exit(1), 5000);
     }
 });
 
