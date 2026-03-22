@@ -33,7 +33,20 @@ function findCameraDevice() {
     }
 
     try {
-        const output = execSync('v4l2-ctl --list-devices 2>&1', { encoding: 'utf8' });
+        // v4l2-ctl may exit non-zero if /dev/video0 doesn't exist, but still lists devices
+        let output;
+        try {
+            output = execSync('v4l2-ctl --list-devices', { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
+        } catch (e) {
+            // execSync throws on non-zero exit, but stdout is still in the error object
+            output = e.stdout || '';
+        }
+
+        if (!output) {
+            console.log('[tracker] v4l2-ctl returned no output');
+            return '/dev/video0';
+        }
+
         const lines = output.split('\n');
         let foundCamera = false;
         for (const line of lines) {
@@ -46,12 +59,12 @@ function findCameraDevice() {
                 const device = line.trim();
                 // Verify it's a capture device
                 try {
-                    const info = execSync(`v4l2-ctl -d ${device} --info 2>&1`, { encoding: 'utf8' });
+                    const info = execSync(`v4l2-ctl -d ${device} --info`, { encoding: 'utf8', stdio: ['pipe', 'pipe', 'pipe'] });
                     if (info.includes('Video Capture')) {
                         console.log(`[tracker] Auto-detected camera: ${device}`);
                         return device;
                     }
-                } catch (e) { /* skip */ }
+                } catch (e) { /* skip this device */ }
             }
             // Reset if we hit a non-indented line (new device section)
             if (foundCamera && line.length > 0 && !line.startsWith('\t') && !line.startsWith(' ')) {
@@ -104,8 +117,14 @@ server.on('upgrade', (req, socket) => {
     clients.add(socket);
     console.log(`[ws] Client connected (${clients.size} total)`);
 
-    socket.on('close', () => { clients.delete(socket); console.log(`[ws] Client disconnected (${clients.size})`); });
+    // Read and discard incoming data (browser sends masked frames, pings, etc.)
+    socket.on('data', () => { /* consume incoming frames to prevent backpressure */ });
+    socket.on('end', () => { clients.delete(socket); });
+    socket.on('close', () => { clients.delete(socket); });
     socket.on('error', () => { clients.delete(socket); });
+
+    // Keep alive: set a long timeout
+    socket.setTimeout(0); // disable timeout
 });
 
 function wsBroadcast(data) {

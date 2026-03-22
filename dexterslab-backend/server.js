@@ -23,6 +23,7 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
 import { GoogleGenAI } from '@google/genai';
+import { EyeStateMachine } from './observer2/eye-state-machine.js';
 
 const execAsync = promisify(exec);
 
@@ -679,14 +680,45 @@ app.get('/api/rules-lawyer/status', (_req, res) => {
 });
 
 // ═══════════════════════════════════════════
+//  OBSERVER 2 — PC-Powered Eye Engine
+// ═══════════════════════════════════════════
+
+const observer2Engine = new EyeStateMachine({ genai });
+
+// ── Observer 2 REST Endpoints ──
+
+app.post('/api/observer2/oracle', async (req, res) => {
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: 'No text provided' });
+  try {
+    const result = await observer2Engine.handleOracleQuestion(text);
+    res.json(result);
+  } catch (err) {
+    console.error('Observer 2 Oracle error:', err);
+    res.json({ response: '[SYSTEM ERROR]', category: 'oracle', emotion: 'neutral' });
+  }
+});
+
+app.get('/api/observer2/ambient', (_req, res) => {
+  res.json({ phrase: observer2Engine.getAmbientPhrase() });
+});
+
+app.post('/api/observer2/command', (req, res) => {
+  const { command } = req.body;
+  if (!command) return res.status(400).json({ error: 'No command provided' });
+  observer2Engine.handleCommand(command);
+  res.json({ success: true, command });
+});
+
+// ═══════════════════════════════════════════
 //  HTTP + WebSocket Server
 // ═══════════════════════════════════════════
 
 const server = createServer(app);
 
+// ── Original V1 WebSocket (/ws) ──
 const wss = new WebSocketServer({ server, path: '/ws' });
 
-// Connected clients
 const clients = new Set();
 
 wss.on('connection', (ws) => {
@@ -721,8 +753,65 @@ wss.on('connection', (ws) => {
   });
 });
 
-// ── Tracking data is now handled client-side via browser FaceDetector API ──
-// WebSocket is used for voice/oracle events only
+// ── Observer 2 WebSocket (/ws/observer2) ──
+const wssObserver2 = new WebSocketServer({ server, path: '/ws/observer2' });
+const observer2Clients = new Set();
+
+wssObserver2.on('connection', (ws) => {
+  observer2Clients.add(ws);
+  console.log(`👁  Observer 2 client connected (total: ${observer2Clients.size})`);
+
+  ws.on('message', (data) => {
+    // Binary data = JPEG camera frame from thin client
+    if (Buffer.isBuffer(data) || data instanceof ArrayBuffer) {
+      const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
+      // Process frame asynchronously — don't block WS
+      observer2Engine.processFrame(buffer).catch(() => {});
+      return;
+    }
+
+    // Text data = JSON commands
+    try {
+      const msg = JSON.parse(data.toString());
+      if (msg.type === 'command') {
+        observer2Engine.handleCommand(msg.command);
+      } else if (msg.type === 'oracle') {
+        observer2Engine.handleOracleQuestion(msg.text).then(result => {
+          ws.send(JSON.stringify({ type: 'oracle_response', ...result }));
+        }).catch(() => {});
+      } else if (msg.type === 'voice_partial') {
+        // Broadcast voice partial to other observer2 clients
+        for (const client of observer2Clients) {
+          if (client !== ws && client.readyState === 1) {
+            client.send(JSON.stringify(msg));
+          }
+        }
+      }
+    } catch {
+      // Ignore unparseable
+    }
+  });
+
+  ws.on('close', () => {
+    observer2Clients.delete(ws);
+    console.log(`👁  Observer 2 client disconnected (total: ${observer2Clients.size})`);
+  });
+
+  ws.on('error', () => {
+    observer2Clients.delete(ws);
+  });
+});
+
+// Start Observer 2 engine — broadcasts eye state at 60fps
+observer2Engine.start((eyeState) => {
+  if (observer2Clients.size === 0) return;
+  const packet = JSON.stringify(eyeState);
+  for (const client of observer2Clients) {
+    if (client.readyState === 1) {
+      client.send(packet);
+    }
+  }
+});
 
 // ═══════════════════════════════════════════
 //  Start
@@ -734,10 +823,12 @@ server.listen(PORT, () => {
   console.log(`  ║  DEXTER'S LAB — Backend Server            ║`);
   console.log(`  ║  Port: ${PORT}                              ║`);
   console.log(`  ║  Platform: ${PLATFORM.padEnd(31)}║`);
-  console.log('  ║  WebSocket: /ws                           ║');
+  console.log('  ║  WebSocket: /ws  /ws/observer2            ║');
+  console.log('  ║  Observer 2: 60fps Eye Engine ACTIVE      ║');
   console.log('  ╚═══════════════════════════════════════════╝');
   console.log('');
   console.log(`  REST API:  http://localhost:${PORT}/api/health`);
   console.log(`  WebSocket: ws://localhost:${PORT}/ws`);
+  console.log(`  Observer2: ws://localhost:${PORT}/ws/observer2`);
   console.log('');
 });
