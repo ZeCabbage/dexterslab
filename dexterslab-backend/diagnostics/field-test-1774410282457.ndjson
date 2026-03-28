@@ -1,3 +1,0 @@
-{"seq":1,"ts":1774410282459,"ts_hr":"214919594151900","event":"system.startup","payload_size_bytes":61,"payload_summary":"{\"version\":\"1.0.0\",\"observer_mode\":\"v2\",\"platform\":\"windows\"}"}
-{"seq":2,"ts":1774410283327,"ts_hr":"214920462225000","event":"system.pi_connected","payload_size_bytes":27,"payload_summary":"{\"timestamp\":1774410283327}"}
-{"seq":3,"ts":1774410292459,"type":"metrics_snapshot","data":{"events_total":2,"events_last_10s":2,"event_type_counts":{"system.startup":1,"system.pi_connected":1},"nodejs_memory_mb":16.556060791015625,"nodejs_uptime_seconds":10.2747257,"active_ws_connections":1,"memory_queue_depth":0,"context_bus_pending":0}}

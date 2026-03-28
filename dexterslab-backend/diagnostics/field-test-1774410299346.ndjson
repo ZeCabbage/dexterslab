@@ -1,2 +1,0 @@
-{"seq":1,"ts":1774410299348,"ts_hr":"214936484402100","event":"system.startup","payload_size_bytes":61,"payload_summary":"{\"version\":\"1.0.0\",\"observer_mode\":\"v2\",\"platform\":\"windows\"}"}
-{"seq":2,"ts":1774410300223,"ts_hr":"214937358744200","event":"system.pi_connected","payload_size_bytes":27,"payload_summary":"{\"timestamp\":1774410300223}"}

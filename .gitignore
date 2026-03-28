@@ -14,6 +14,7 @@ node_modules/
 
 # IDE
 .idea/
+.vscode/
 *.swp
 *.swo
 
@@ -22,7 +23,49 @@ inbox-buddy-metrics.json
 inbox-buddy-vips.json
 
 # Memory Engine (Phase 7)
-data/
+/data/
 *.db
 *.db-wal
 *.db-shm
+
+# ── Observer V2 large/temp files ──
+# Vosk STT model (40MB+ binary)
+dexterslab-backend/models/
+*.zip
+
+# Diagnostics field test captures
+dexterslab-backend/diagnostics/*.ndjson
+
+# Runtime logs
+logs/
+*.log
+
+# Test/scratch artifacts
+dexterslab-backend/scratch.js
+dexterslab-backend/save-frame.js
+dexterslab-backend/test_out.txt
+dexterslab-backend/diagnostic.txt
+test-frame.jpg
+
+# Root-level debug/temp dumps
+/final_pc.txt
+/final_pi.txt
+/final_pc_health.json
+/final_pi_health.json
+/health.json
+/pc_health.json
+/pc_health2.txt
+/pi_health.json
+/pi_health2.txt
+/pi_logs*.txt
+/pi_uptime.txt
+/motion_logs.txt
+/netstat*.txt
+/pc_fps_check.txt
+/pm2_*.txt
+/vosk_logs.txt
+/who.txt
+/ws_test.txt
+
+# Edge daemon env (Pi-specific)
+edge-daemon/.env.pi
