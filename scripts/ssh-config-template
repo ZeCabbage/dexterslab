@@ -1,0 +1,37 @@
+# dexterslab SSH Configuration
+# Replace [PC_TAILSCALE_IP], [PI_TAILSCALE_IP], [PC_USERNAME] 
+# with actual values. Never commit the filled-in version.
+
+Host dexterslab-pc
+    HostName [PC_TAILSCALE_IP]
+    User [PC_USERNAME]
+    IdentityFile ~/.ssh/dexterslab_ed25519
+    ForwardAgent no
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+    ControlMaster auto
+    ControlPath ~/.ssh/cm-%r@%h:%p
+    ControlPersist 10m
+
+Host dexterslab-pi
+    HostName [PI_TAILSCALE_IP]
+    User deploy
+    IdentityFile ~/.ssh/dexterslab_pi_ed25519
+    ForwardAgent no
+    ServerAliveInterval 30
+    ServerAliveCountMax 3
+
+Host dexterslab-pi-deploy
+    HostName [PI_TAILSCALE_IP]
+    User deploy
+    IdentityFile ~/.ssh/pc_to_pi_deploy
+    ForwardAgent no
+
+# Emergency fallback: reach Pi through PC
+# Use only if Tailscale is down on Pi
+Host dexterslab-pi-via-pc
+    HostName [PI_TAILSCALE_IP]
+    User deploy
+    ProxyJump dexterslab-pc
+    IdentityFile ~/.ssh/dexterslab_pi_ed25519
+    ForwardAgent no

@@ -16,8 +16,6 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
-import { HUB_COMMANDS } from '@/lib/speech-recognition';
-import { useVoice } from './VoiceProvider';
 import styles from './page.module.css';
 
 // ═══ Types ═══
@@ -42,7 +40,6 @@ interface SubProject {
 }
 
 const SUB_PROJECTS: SubProject[] = [
-  { name: 'EYE', route: '/observer/eye', icon: '👁', voiceCmd: '"open eye"' },
   { name: 'EYE V2', route: '/observer/eye-v2', icon: '👁️', voiceCmd: '"open eye v2"' },
   { name: 'RULES LAWYER', route: '/observer/rules-lawyer', icon: '🎲', voiceCmd: '"launch rules lawyer"' },
 ];
@@ -55,9 +52,6 @@ export default function ObserverHub() {
     version: 0,
     wifi: { ssid: '---', signal: 0, ip: '---', connected: false },
   });
-  const [voiceStatus, setVoiceStatus] = useState<'online' | 'offline'>('offline');
-  const [lastVoice, setLastVoice] = useState('');
-  const [voicePartial, setVoicePartial] = useState('');
   const [log, setLog] = useState<LogEntry[]>([]);
   const [actionPending, setActionPending] = useState('');
   const [showShutdown, setShowShutdown] = useState(false);
@@ -67,8 +61,7 @@ export default function ObserverHub() {
   const [scanY, setScanY] = useState(0);
   const [cursorBlink, setCursorBlink] = useState(true);
 
-  // ── Voice (from shared VoiceProvider) ──
-  const voice = useVoice();
+
 
   // ── Helpers ──
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -121,35 +114,7 @@ export default function ObserverHub() {
     return () => clearInterval(id);
   }, []);
 
-  // ── Sync voice state to UI ──
-  useEffect(() => {
-    if (voice.lastFinal && voice.lastFinal !== lastVoice) {
-      setLastVoice(voice.lastFinal);
-      setVoicePartial('');
-      addLog(`💬 "${voice.lastFinal}"`, 'heard');
-    }
-  }, [voice.lastFinal, lastVoice, addLog]);
 
-  useEffect(() => {
-    if (voice.partial) setVoicePartial(voice.partial);
-  }, [voice.partial]);
-
-  useEffect(() => {
-    if (voice.status === 'listening') {
-      setVoiceStatus('online');
-      const engineLabel = voice.engine === 'browser' ? 'browser' : voice.engine === 'server' ? 'server STT' : 'unknown';
-      addLog(`🎙️ Voice ACTIVE (${engineLabel})`, 'success');
-    } else if (voice.status === 'error') {
-      setVoiceStatus('offline');
-      if (voice.engine === 'none') {
-        addLog('No speech engine — check browser', 'error');
-      } else {
-        addLog(`Mic error (${voice.engine}) — check permissions`, 'error');
-      }
-    } else if (voice.status === 'starting') {
-      addLog('🎙️ Mic starting...', 'info');
-    }
-  }, [voice.status, voice.engine, addLog]);
 
   // ── Actions ──
   const doAction = async (action: string, label: string) => {
@@ -203,12 +168,8 @@ export default function ObserverHub() {
   const sigColor = status.wifi.signal >= 50 ? 'var(--color-green)'
     : status.wifi.signal >= 25 ? 'var(--color-amber)' : 'var(--color-red)';
 
-  const verText = status.version === 1 ? '● OBSERVER V1 ACTIVE'
-    : status.version === 2 ? '● OBSERVER V2 ACTIVE'
-    : '○ NO OBSERVER RUNNING';
-  const verColor = status.version === 1 ? 'var(--color-green)'
-    : status.version === 2 ? 'var(--color-blue)'
-    : '#555';
+  const verText = status.version === 2 ? '● OBSERVER V2 ACTIVE' : '○ NO OBSERVER RUNNING';
+  const verColor = status.version === 2 ? 'var(--color-blue)' : '#555';
 
   const logColors: Record<string, string> = {
     info: '#5a7a6a', success: 'var(--color-green)', error: 'var(--color-red)',
@@ -269,26 +230,15 @@ export default function ObserverHub() {
           </div>
 
           {/* Voice Panel */}
-          <div className={`${styles.panel} ${voice.isListening ? styles.panelActive : styles.panelInactive}`}>
+          <div className={`${styles.panel} ${styles.panelActive}`}>
             <div className={styles.panelHeader}>╔══ VOICE ════╗</div>
-            <div className={styles.panelValue} style={{
-              color: voice.isListening ? 'var(--color-green)'
-                : voiceStatus === 'online' ? 'var(--color-green)' : 'var(--color-red)',
-            }}>
-              {voice.isListening ? '● LISTENING'
-                : voice.status === 'starting' ? '◌ STARTING...'
-                : voice.status === 'error' ? '✕ MIC ERROR'
-                : '○ MIC OFF'}
+            <div className={styles.panelValue} style={{ color: 'var(--color-green)' }}>
+              EDGE DAEMON
             </div>
             <div className={styles.panelDetail}>
-              <div style={{ color: 'var(--color-blue)' }}>
-                &quot;{lastVoice || '(silence)'}&quot;
+              <div style={{ color: '#555' }}>
+                Capture routed remotely
               </div>
-              {voicePartial && (
-                <div style={{ color: '#337755' }}>
-                  &gt;{voicePartial}{cursorBlink ? '█' : ' '}
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -367,7 +317,7 @@ export default function ObserverHub() {
 
         {/* ── Voice Hint ── */}
         <div className={styles.voiceHint}>
-          VOICE: &quot;Launch Eye&quot; • &quot;Launch Rules Lawyer&quot; • &quot;Kill Application&quot; • &quot;Sync Code&quot; • &quot;Go Home&quot;
+          VOICE: &quot;Launch Rules Lawyer&quot; • &quot;Kill Application&quot; • &quot;Sync Code&quot; • &quot;Go Home&quot;
         </div>
       </div>
     </div>

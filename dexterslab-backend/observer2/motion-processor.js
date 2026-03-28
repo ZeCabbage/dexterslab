@@ -19,10 +19,10 @@
 // ── Detection Config ──
 const CAPTURE_WIDTH = 320;
 const CAPTURE_HEIGHT = 240;
-const MOTION_THRESHOLD = 28;        // pixel diff threshold (0-255)
-const MIN_BLOB_PIXELS = 20;         // minimum pixels to qualify as entity
+const MOTION_THRESHOLD = 20;        // pixel diff threshold — tuned for MJPEG compression noise floor
+const MIN_BLOB_PIXELS = 6;          // minimum grid cells to qualify as entity
 const MERGE_DISTANCE = 0.15;        // normalized distance to merge blobs
-const BG_LEARN_RATE = 0.025;        // background adaptation speed
+const BG_LEARN_RATE = 0.012;        // background adaptation speed — slowed to catch slower motion
 const GRID_CELL = 4;                // process in 4×4 cell blocks
 const GRID_W = Math.ceil(CAPTURE_WIDTH / GRID_CELL);
 const GRID_H = Math.ceil(CAPTURE_HEIGHT / GRID_CELL);
@@ -36,6 +36,11 @@ export class MotionProcessor {
 
         /** @type {number} */
         this.frameCount = 0;
+
+        // Debug FPS counter
+        this._fpsFrames = 0;
+        this._fpsLastLog = Date.now();
+        this._lastEntityLog = 0;
 
         /** @type {number} */
         this.nextEntityId = 0;
@@ -65,6 +70,28 @@ export class MotionProcessor {
      */
     processFrame(pixelData, width, height, channels = 4) {
         this.frameCount++;
+        this._fpsFrames++;
+        this._totalMotionAccum = (this._totalMotionAccum || 0);
+        const now = Date.now();
+
+        // Save first 20 pixel R-values on frame 10 to validate image content
+        if (this.frameCount === 10) {
+            const samplePixels = [];
+            for (let i = 0; i < Math.min(20, width * height); i++) {
+                const p = i * channels;
+                samplePixels.push(pixelData[p]);
+            }
+            console.log('[MotionProcessor] FRAME SAMPLE (first 20 R-values): [' + samplePixels.join(',') + ']');
+            console.log('[MotionProcessor] pixelData.length=' + pixelData.length + ' expected=' + (width * height * channels) + ' channels=' + channels);
+        }
+
+        if (now - this._fpsLastLog >= 3000) {
+            const fps = (this._fpsFrames / ((now - this._fpsLastLog) / 1000)).toFixed(1);
+            console.log('[MotionProcessor] ' + fps + ' fps | frame#' + this.frameCount + ' | ' + width + 'x' + height + ' | ENTITIES: ' + this.prevEntities.length + ' | motionCells: ' + this._totalMotionAccum);
+            this._fpsFrames = 0;
+            this._fpsLastLog = now;
+            this._totalMotionAccum = 0;
+        }
         const totalPixels = width * height;
 
         // ── 1. Convert to grayscale ──
@@ -112,8 +139,8 @@ export class MotionProcessor {
                     }
                 }
 
-                // Cell has motion if >30% of pixels changed
-                if (cellPixels > 0 && motionCount / cellPixels > 0.3) {
+                // Cell has motion if >20% of pixels changed (lowered from 30% for sensitivity)
+                if (cellPixels > 0 && motionCount / cellPixels > 0.2) {
                     motionGrid[gy * gridW + gx] = 1;
                     totalMotionCells++;
                 }
@@ -121,6 +148,7 @@ export class MotionProcessor {
         }
 
         this.prevGray = new Uint8Array(gray);
+        this._totalMotionAccum += totalMotionCells;
 
         // ── 4. Connected-component blob detection (flood fill) ──
         const visited = this._visited;
@@ -173,6 +201,13 @@ export class MotionProcessor {
                     rawBlobs.push(blob);
                 }
             }
+        }
+
+        // Debug: log blob details every 3s
+        if (now - (this._lastBlobLog || 0) >= 3000) {
+            const blobSizes = rawBlobs.map(b => b.count);
+            console.log('[MotionProcessor] RAW BLOBS: ' + rawBlobs.length + ' blobs, sizes: [' + blobSizes.slice(0, 10).join(',') + ']' + (blobSizes.length > 10 ? '...' : '') + ' | motionCells/frame: ' + (totalMotionCells));
+            this._lastBlobLog = now;
         }
 
         // ── 5. Convert blobs to entities (normalized coords) ──

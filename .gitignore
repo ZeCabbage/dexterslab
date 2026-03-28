@@ -20,3 +20,9 @@ node_modules/
 # Runtime data
 inbox-buddy-metrics.json
 inbox-buddy-vips.json
+
+# Memory Engine (Phase 7)
+data/
+*.db
+*.db-wal
+*.db-shm

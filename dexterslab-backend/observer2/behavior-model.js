@@ -16,25 +16,25 @@
  */
 
 // ── Config ──
-const MAX_OFFSET = 180;             // max eye displacement in pixels (wider range for PC)
+const MAX_OFFSET = 120;             // max eye displacement in px — balanced: visible but centered
 const DWELL_MIN = 2.0;              // min seconds on primary target
 const DWELL_MAX = 4.5;              // max seconds on primary target
 const GLANCE_DURATION = 0.5;        // quick glance duration
 const GLANCE_CHANCE = 0.35;         // probability of glancing at secondary
-const TRACKING_SMOOTH = 0.12;       // smooth factor while locked
-const TRANSITION_SMOOTH = 0.06;     // smooth factor during transitions
-const RECOGNITION_DILATION = 1.45;  // dilation burst for new entity
-const STARTLE_DILATION = 1.6;       // dilation burst for sudden motion
+const TRACKING_SMOOTH = 0.16;       // smooth factor while locked — natural pan speed
+const TRANSITION_SMOOTH = 0.08;     // smooth factor during transitions
+const RECOGNITION_DILATION = 1.5;   // dilation burst for new entity
+const STARTLE_DILATION = 1.7;       // dilation burst for sudden motion
 const STARTLE_MOTION_THRESHOLD = 0.15; // total motion jump to trigger startle
 
 // Microsaccade config
 const SACCADE_INTERVAL_MIN = 200;   // ms between microsaccades
 const SACCADE_INTERVAL_MAX = 500;
-const SACCADE_AMPLITUDE = 3.5;      // pixels
+const SACCADE_AMPLITUDE = 2.5;      // pixels — reduced for smoother look
 
 // Pupil breathing rhythm
-const PUPIL_BREATH_SPEED = 0.15;    // Hz
-const PUPIL_BREATH_AMPLITUDE = 0.06;
+const PUPIL_BREATH_SPEED = 0.12;    // Hz — slower, more organic
+const PUPIL_BREATH_AMPLITUDE = 0.04;
 
 export class BehaviorModel {
     constructor() {
@@ -96,8 +96,8 @@ export class BehaviorModel {
         // ── Pupil breathing rhythm ──
         const breathOffset = Math.sin(now * Math.PI * 2 * PUPIL_BREATH_SPEED) * PUPIL_BREATH_AMPLITUDE;
 
-        // Filter noise
-        const activeEntities = entities.filter(e => e.size > 0.004);
+        // Filter noise — lowered from 0.004 for Centerm USB cam small blob profiles
+        const activeEntities = entities.filter(e => e.size > 0.0008);
 
         // ══════════════════════════════════════════
         // NO ENTITIES: decay to idle
@@ -220,13 +220,32 @@ export class BehaviorModel {
         // ══════════════════════════════════════════
         // X is MIRRORED: entity on camera-left → eye looks right
         this.targetX = -(focusEntity.x - 0.5) * 2 * MAX_OFFSET;
-        this.targetY = (focusEntity.y - 0.5) * 2 * MAX_OFFSET * 0.6;
+        this.targetY = (focusEntity.y - 0.5) * 2 * MAX_OFFSET * 0.5;  // Y range slightly less than X
 
-        // ── Dilation ──
-        let baseDilation = 0.7 + focusEntity.size * 4.5;
-        baseDilation = Math.max(0.5, Math.min(1.6, baseDilation));
+        // ── Dilation — distance-based pupil response ──
+        // Face size roughly maps to distance:
+        //   size < 0.02  = very far (15+ ft)  → neutral pupil, just tracking
+        //   size 0.02-0.05 = far (5-15 ft)    → neutral pupil, just tracking
+        //   size 0.05-0.12 = close (~3-5 ft)  → pupil dilates (interest/arousal)
+        //   size > 0.12 = very close (<3 ft)   → pupil constricts (focused attention)
+        let baseDilation;
+        const CLOSE_THRESHOLD = 0.05;   // ~5 feet — dilation starts here
+        const VERY_CLOSE = 0.12;        // ~3 feet — constriction starts
 
-        // Recognition burst
+        if (focusEntity.size < CLOSE_THRESHOLD) {
+            // Far away — neutral pupil, just tracking
+            baseDilation = 1.0;
+        } else if (focusEntity.size < VERY_CLOSE) {
+            // Within 5 feet — dilate with interest (bigger = closer = more dilation)
+            const proximity = (focusEntity.size - CLOSE_THRESHOLD) / (VERY_CLOSE - CLOSE_THRESHOLD);
+            baseDilation = 1.0 + proximity * 0.45;  // 1.0 → 1.45
+        } else {
+            // Very close — constrict for focused attention
+            baseDilation = 1.45 - Math.min(0.5, (focusEntity.size - VERY_CLOSE) * 3.0);
+        }
+        baseDilation = Math.max(0.7, Math.min(1.5, baseDilation));
+
+        // Recognition burst — pupil dilates when spotting someone new
         if (now < this.recognitionEndTime) {
             baseDilation = Math.max(baseDilation, RECOGNITION_DILATION);
         }
@@ -241,7 +260,7 @@ export class BehaviorModel {
         const smooth = this.isGlancing ? TRANSITION_SMOOTH : TRACKING_SMOOTH;
         this.currentX += (this.targetX - this.currentX) * smooth;
         this.currentY += (this.targetY - this.currentY) * smooth;
-        this.currentDilation += (this.targetDilation - this.currentDilation) * 0.08;
+        this.currentDilation += (this.targetDilation - this.currentDilation) * 0.15;  // faster dilation response
 
         // Expire emotion
         if (now > this.emotionEndTime && this.emotion !== 'neutral') {

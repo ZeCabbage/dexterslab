@@ -1430,3 +1430,505 @@
   cursor: not-allowed;
   animation: none;
 }
+
+/* ═══════════════════════════════════════════
+   V3.1 — Subscription Review
+   ═══════════════════════════════════════════ */
+
+.subsPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+/* ── Summary Stats ── */
+.subsSummary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+}
+
+.subsStat {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-grid);
+  padding: 14px 12px;
+  text-align: center;
+}
+
+.subsStatValue {
+  display: block;
+  font-family: var(--font-title);
+  font-size: 1.6rem;
+  font-weight: 900;
+  color: var(--color-cyan);
+  text-shadow: 0 0 12px rgba(0, 255, 224, 0.3);
+  line-height: 1;
+}
+
+.subsStatLabel {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  color: var(--color-muted);
+  letter-spacing: 2px;
+  margin-top: 4px;
+}
+
+/* ── Sort / Filter / Search ── */
+.subsControls {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.subsControlGroup {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.subsSearchGroup {
+  flex: 1;
+  min-width: 140px;
+}
+
+.subsControlLabel {
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  color: var(--color-muted);
+  letter-spacing: 2px;
+}
+
+.subsSelect {
+  padding: 6px 10px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-grid);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  cursor: pointer;
+  outline: none;
+  transition: border-color 0.15s;
+  appearance: none;
+  -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%2366889a'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 8px center;
+  padding-right: 24px;
+}
+
+.subsSelect:focus {
+  border-color: var(--color-cyan);
+}
+
+.subsSelect option {
+  background: var(--color-bg);
+  color: var(--color-text);
+}
+
+.subsSearchInput {
+  width: 100%;
+  padding: 6px 10px;
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-grid);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+
+.subsSearchInput::placeholder {
+  color: var(--color-muted);
+  letter-spacing: 1px;
+}
+
+.subsSearchInput:focus {
+  border-color: var(--color-cyan);
+}
+
+/* ── Select All Bar ── */
+.subsSelectBar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+}
+
+.selectAllBtn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid var(--color-grid);
+  color: var(--color-label);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.selectAllBtn:hover {
+  border-color: var(--color-cyan);
+  color: var(--color-cyan);
+}
+
+.subsFilterCount {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: var(--color-muted);
+  letter-spacing: 1px;
+}
+
+/* ── Subscription List ── */
+.subsList {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.subsCard {
+  background: var(--color-bg-card);
+  border: 1px solid var(--color-grid);
+  padding: 12px 14px;
+  transition: all 0.2s;
+  animation: fadeIn 0.3s ease both;
+}
+
+.subsCard:hover {
+  border-color: var(--color-text-dim);
+}
+
+.subsCardSelected {
+  border-color: var(--color-cyan) !important;
+  background: rgba(0, 255, 224, 0.03);
+}
+
+.subsCardTrashed {
+  opacity: 0.35;
+  pointer-events: none;
+}
+
+.subsCardRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Custom Checkbox ── */
+.subsCheckbox {
+  position: relative;
+  display: flex;
+  align-items: center;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.subsCheckbox input {
+  position: absolute;
+  opacity: 0;
+  cursor: pointer;
+  width: 0;
+  height: 0;
+}
+
+.subsCheckmark {
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--color-muted);
+  background: transparent;
+  transition: all 0.15s;
+  position: relative;
+  flex-shrink: 0;
+}
+
+.subsCheckbox input:checked ~ .subsCheckmark {
+  border-color: var(--color-cyan);
+  background: rgba(0, 255, 224, 0.15);
+}
+
+.subsCheckbox input:checked ~ .subsCheckmark::after {
+  content: '✓';
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  color: var(--color-cyan);
+  font-size: 0.7rem;
+  font-weight: bold;
+  text-shadow: 0 0 6px rgba(0, 255, 224, 0.5);
+}
+
+.subsCheckbox:hover .subsCheckmark {
+  border-color: var(--color-cyan);
+}
+
+/* ── Card Info ── */
+.subsCardInfo {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.subsCardNameRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.subsCardName {
+  font-family: var(--font-title);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--color-text);
+  letter-spacing: 1px;
+}
+
+.subsCardEmail {
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: var(--color-muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subsCardMeta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: var(--color-label);
+  margin-top: 2px;
+  flex-wrap: wrap;
+}
+
+.subsCardSample {
+  color: var(--color-muted);
+  font-style: italic;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  max-width: 250px;
+}
+
+.subsCardCount {
+  font-family: var(--font-title);
+  font-size: 1.4rem;
+  font-weight: 900;
+  color: var(--color-red);
+  text-shadow: 0 0 10px rgba(255, 68, 102, 0.3);
+  flex-shrink: 0;
+  min-width: 36px;
+  text-align: right;
+}
+
+/* ── Frequency Badge ── */
+.frequencyBadge {
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  font-weight: 700;
+  letter-spacing: 1px;
+  border: 1px solid;
+}
+
+.frequencyBadge[data-freq="high"] {
+  color: var(--color-red);
+  border-color: var(--color-red);
+}
+
+.frequencyBadge[data-freq="med"] {
+  color: var(--color-amber);
+  border-color: var(--color-amber);
+}
+
+.frequencyBadge[data-freq="low"] {
+  color: var(--color-green);
+  border-color: var(--color-green);
+}
+
+/* ── Category Tag ── */
+.categoryTag {
+  padding: 1px 6px;
+  font-family: var(--font-mono);
+  font-size: 0.45rem;
+  letter-spacing: 1.5px;
+  color: var(--color-label);
+  border: 1px solid var(--color-grid);
+  white-space: nowrap;
+}
+
+.categoryTag[data-cat="newsletter"] { border-color: rgba(0, 255, 224, 0.3); color: var(--color-cyan); }
+.categoryTag[data-cat="marketing"] { border-color: rgba(255, 170, 0, 0.3); color: var(--color-amber); }
+.categoryTag[data-cat="social"] { border-color: rgba(136, 100, 255, 0.3); color: #8864ff; }
+.categoryTag[data-cat="notification"] { border-color: rgba(255, 68, 102, 0.3); color: var(--color-red); }
+.categoryTag[data-cat="transactional"] { border-color: rgba(0, 255, 136, 0.3); color: var(--color-green); }
+
+/* ── Card Actions ── */
+.subsCardActions {
+  display: flex;
+  gap: 6px;
+  margin-top: 8px;
+  padding-left: 30px;
+}
+
+.subsUnsubLink {
+  flex: 1;
+  padding: 6px 12px;
+  background: rgba(0, 255, 224, 0.06);
+  border: 1px solid rgba(0, 255, 224, 0.3);
+  color: var(--color-cyan);
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  letter-spacing: 2px;
+  text-decoration: none;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.subsUnsubLink:hover {
+  background: rgba(0, 255, 224, 0.12);
+  border-color: var(--color-cyan);
+}
+
+.subsTrashBtn {
+  flex: 1;
+  padding: 6px 12px;
+  background: rgba(255, 68, 102, 0.06);
+  border: 1px solid var(--color-red);
+  color: var(--color-red);
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+}
+
+.subsTrashBtn:hover:not(:disabled) {
+  background: rgba(255, 68, 102, 0.12);
+}
+
+.subsTrashBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ── Sticky Batch Action Bar ── */
+.subsBatchBar {
+  position: sticky;
+  bottom: 0;
+  background: var(--color-bg);
+  border: 2px solid var(--color-cyan);
+  padding: 14px 18px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  z-index: 50;
+  box-shadow: 0 -4px 20px rgba(0, 255, 224, 0.15);
+  animation: batchBarIn 0.3s ease;
+}
+
+@keyframes batchBarIn {
+  from { opacity: 0; transform: translateY(20px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.batchInfo {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  color: var(--color-cyan);
+  letter-spacing: 1px;
+  text-shadow: 0 0 6px rgba(0, 255, 224, 0.3);
+  white-space: nowrap;
+}
+
+.batchButtons {
+  display: flex;
+  gap: 8px;
+}
+
+.batchTrashBtn {
+  padding: 10px 18px;
+  background: rgba(255, 68, 102, 0.12);
+  border: 1px solid var(--color-red);
+  color: var(--color-red);
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  font-weight: 700;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  animation: nukePulse 2s ease-in-out infinite;
+}
+
+.batchTrashBtn:hover:not(:disabled) {
+  background: rgba(255, 68, 102, 0.25);
+  box-shadow: 0 0 20px rgba(255, 68, 102, 0.3);
+}
+
+.batchArchiveBtn {
+  padding: 10px 14px;
+  background: rgba(255, 170, 0, 0.08);
+  border: 1px solid var(--color-amber);
+  color: var(--color-amber);
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.batchArchiveBtn:hover:not(:disabled) {
+  background: rgba(255, 170, 0, 0.15);
+}
+
+.batchTrashBtn:disabled,
+.batchArchiveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  animation: none;
+}
+
+/* ── Responsive ── */
+@media (max-width: 600px) {
+  .subsSummary {
+    grid-template-columns: repeat(2, 1fr);
+  }
+
+  .subsControls {
+    flex-direction: column;
+  }
+
+  .subsBatchBar {
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .batchButtons {
+    width: 100%;
+  }
+
+  .batchTrashBtn,
+  .batchArchiveBtn {
+    flex: 1;
+  }
+}

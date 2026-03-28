@@ -1,0 +1,2 @@
+{"seq":1,"ts":1774331582100,"ts_hr":"136219062992800","event":"system.startup","payload_size_bytes":61,"payload_summary":"{\"version\":\"1.0.0\",\"observer_mode\":\"v2\",\"platform\":\"windows\"}"}
+{"seq":2,"ts":1774331592099,"type":"metrics_snapshot","data":{"events_total":1,"events_last_10s":1,"event_type_counts":{"system.startup":1},"nodejs_memory_mb":14.550277709960938,"nodejs_uptime_seconds":10.2328076,"active_ws_connections":0,"memory_queue_depth":0,"context_bus_pending":0}}

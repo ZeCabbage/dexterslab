@@ -1,9 +1,10 @@
 'use client';
 
 /**
- * INBOX BUDDY v2.1 — Gmail Assistant Dashboard
+ * INBOX BUDDY v3.1 — Gmail Assistant Dashboard
  * Enhancements: confirmation modals, toast notifications,
- * scrollable panels, download recs, mass purge
+ * scrollable panels, download recs, mass purge,
+ * subscription review & batch unsubscribe
  */
 
 import { useEffect, useState, useCallback, useRef } from 'react';
@@ -64,14 +65,20 @@ interface PurgeCategory {
   selected?: boolean;
 }
 
-interface UnsubCandidate {
+interface SubscriptionEntry {
   senderEmail: string;
   senderName: string;
-  emailCount: number;
+  domain: string;
+  totalEmails: number;
+  frequency: number;
+  lastReceived: string;
+  firstSeen: string;
   unsubscribeLink: string | null;
   unsubscribeMailto: string | null;
-  sampleSubject: string;
+  sampleSubjects: string[];
   messageIds: string[];
+  category: 'newsletter' | 'marketing' | 'social' | 'transactional' | 'notification' | 'other';
+  selected?: boolean;
   trashed?: boolean;
 }
 
@@ -128,10 +135,17 @@ export default function InboxBuddyPage() {
   const [purgingId, setPurgingId] = useState<string | null>(null);
   const [purgeAllLoading, setPurgeAllLoading] = useState(false);
 
-  // Unsubscribe state
-  const [unsubCandidates, setUnsubCandidates] = useState<UnsubCandidate[]>([]);
-  const [unsubLoading, setUnsubLoading] = useState(false);
+  // Subscriptions state
+  const [subscriptions, setSubscriptions] = useState<SubscriptionEntry[]>([]);
+  const [subsLoading, setSubsLoading] = useState(false);
+  const [subsScanned, setSubsScanned] = useState(0);
+  const [subsTotalEmails, setSubsTotalEmails] = useState(0);
+  const [subsWeeklyEmails, setSubsWeeklyEmails] = useState(0);
   const [trashingSender, setTrashingSender] = useState<string | null>(null);
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [subsSort, setSubsSort] = useState<'count' | 'frequency' | 'recent' | 'name'>('count');
+  const [subsFilter, setSubsFilter] = useState<string>('all');
+  const [subsSearch, setSubsSearch] = useState('');
 
   // Confirmation modal
   const [confirmAction, setConfirmAction] = useState<ConfirmAction | null>(null);
@@ -140,7 +154,7 @@ export default function InboxBuddyPage() {
   // Toast notifications
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'vip' | 'deepdive' | 'purge' | 'unsub'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'vip' | 'deepdive' | 'purge' | 'subs'>('overview');
 
   // ── Helpers ──
 
@@ -427,48 +441,127 @@ export default function InboxBuddyPage() {
     });
   }, [purgeCategories, showConfirm, addToast]);
 
-  // ── Unsubscribe ──
-  const scanUnsub = useCallback(async () => {
-    setUnsubLoading(true);
+  // ── Subscriptions ──
+  const scanSubscriptions = useCallback(async () => {
+    setSubsLoading(true);
     setError(null);
+    setSubscriptions([]);
     try {
-      const res = await fetch('/api/inbox-buddy/unsubscribe');
+      const res = await fetch('/api/inbox-buddy/subscriptions');
       const data = await res.json();
       if (!res.ok) { setError(data.error); return; }
-      setUnsubCandidates(data.candidates || []);
-      addToast(`Found ${data.total} senders with unsubscribe links`, 'info');
+      setSubscriptions((data.subscriptions || []).map((s: SubscriptionEntry) => ({ ...s, selected: false })));
+      setSubsScanned(data.scanned || 0);
+      setSubsTotalEmails(data.totalEmails || 0);
+      setSubsWeeklyEmails(data.estimatedWeeklyEmails || 0);
+      addToast(`Found ${data.total} subscriptions across ${data.scanned} emails`, 'info');
     } catch (err: any) { setError(err.message); }
-    finally { setUnsubLoading(false); }
+    finally { setSubsLoading(false); }
   }, [addToast]);
 
-  const trashSender = useCallback(async (candidate: UnsubCandidate) => {
+  const toggleSubSelection = useCallback((email: string) => {
+    setSubscriptions((prev) => prev.map((s) => s.senderEmail === email ? { ...s, selected: !s.selected } : s));
+  }, []);
+
+  const toggleSelectAll = useCallback(() => {
+    setSubscriptions((prev) => {
+      const anyUnselected = prev.some((s) => !s.selected && !s.trashed);
+      return prev.map((s) => s.trashed ? s : { ...s, selected: anyUnselected });
+    });
+  }, []);
+
+  const trashSender = useCallback(async (sub: SubscriptionEntry) => {
     showConfirm({
-      title: `🗑️ TRASH ALL: ${candidate.senderName}`,
-      description: `Trash all ${candidate.emailCount} emails from ${candidate.senderEmail}`,
+      title: `🗑️ TRASH ALL: ${sub.senderName}`,
+      description: `Trash all ${sub.totalEmails} emails from ${sub.senderEmail}`,
       details: [
-        `Sample: "${candidate.sampleSubject}"`,
+        sub.sampleSubjects[0] ? `Sample: "${sub.sampleSubjects[0]}"` : '',
+        `Category: ${sub.category.toUpperCase()}`,
+        `Frequency: ~${sub.frequency} emails/week`,
         'Emails can be recovered from Trash within 30 days',
-      ],
-      actionLabel: `TRASH ${candidate.emailCount} EMAILS`,
+      ].filter(Boolean),
+      actionLabel: `TRASH ${sub.totalEmails} EMAILS`,
       dangerLevel: 'destructive',
       onConfirm: async () => {
-        setTrashingSender(candidate.senderEmail);
+        setTrashingSender(sub.senderEmail);
         try {
-          const res = await fetch('/api/inbox-buddy/unsubscribe', {
+          const res = await fetch('/api/inbox-buddy/subscriptions/batch', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ senderEmail: candidate.senderEmail, messageIds: candidate.messageIds }),
+            body: JSON.stringify({ senders: [{ senderEmail: sub.senderEmail, messageIds: sub.messageIds }], action: 'trash' }),
           });
           const data = await res.json();
           if (res.ok) {
-            setUnsubCandidates((prev) => prev.map((c) => c.senderEmail === candidate.senderEmail ? { ...c, trashed: true } : c));
-            addToast(`✅ Trashed ${data.affected} emails from ${candidate.senderName}`, 'success');
+            setSubscriptions((prev) => prev.map((s) => s.senderEmail === sub.senderEmail ? { ...s, trashed: true, selected: false } : s));
+            addToast(`✅ Trashed ${data.affected} emails from ${sub.senderName}`, 'success');
           } else { setError(data.error); }
         } catch (err: any) { setError(err.message); }
         finally { setTrashingSender(null); }
       },
     });
   }, [showConfirm, addToast]);
+
+  const batchAction = useCallback(async (action: 'trash' | 'archive') => {
+    const selected = subscriptions.filter((s) => s.selected && !s.trashed);
+    if (selected.length === 0) return;
+
+    const totalEmails = selected.reduce((a, s) => a + s.messageIds.length, 0);
+    showConfirm({
+      title: `${action === 'trash' ? '🗑️ TRASH' : '📦 ARCHIVE'} ${selected.length} SUBSCRIPTIONS`,
+      description: `${action === 'trash' ? 'Trash' : 'Archive'} ${totalEmails.toLocaleString()} emails from ${selected.length} senders`,
+      details: [
+        ...selected.slice(0, 8).map((s) => `${s.senderName} (${s.totalEmails} emails)`),
+        selected.length > 8 ? `...and ${selected.length - 8} more senders` : '',
+        '',
+        action === 'trash' ? '⚠ Emails can be recovered from Trash within 30 days' : '📦 Emails will be archived (still searchable)',
+      ].filter(Boolean),
+      actionLabel: `${action.toUpperCase()} ${totalEmails.toLocaleString()} EMAILS`,
+      dangerLevel: 'destructive',
+      onConfirm: async () => {
+        setBatchLoading(true);
+        try {
+          const res = await fetch('/api/inbox-buddy/subscriptions/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              senders: selected.map((s) => ({ senderEmail: s.senderEmail, messageIds: s.messageIds })),
+              action,
+            }),
+          });
+          const data = await res.json();
+          if (res.ok) {
+            const trashedEmails = new Set(selected.map((s) => s.senderEmail));
+            setSubscriptions((prev) => prev.map((s) => trashedEmails.has(s.senderEmail) ? { ...s, trashed: true, selected: false } : s));
+            addToast(`✅ ${action === 'trash' ? 'Trashed' : 'Archived'} ${data.affected} emails from ${data.senderCount} senders`, 'success');
+          } else { setError(data.error); }
+        } catch (err: any) { setError(err.message); }
+        finally { setBatchLoading(false); }
+      },
+    });
+  }, [subscriptions, showConfirm, addToast]);
+
+  // ── Subscription filtering/sorting ──
+  const filteredSubs = subscriptions
+    .filter((s) => {
+      if (subsFilter !== 'all' && s.category !== subsFilter) return false;
+      if (subsSearch) {
+        const q = subsSearch.toLowerCase();
+        return s.senderEmail.includes(q) || s.senderName.toLowerCase().includes(q) || s.domain.includes(q);
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      switch (subsSort) {
+        case 'count': return b.totalEmails - a.totalEmails;
+        case 'frequency': return b.frequency - a.frequency;
+        case 'recent': return new Date(b.lastReceived).getTime() - new Date(a.lastReceived).getTime();
+        case 'name': return a.senderName.localeCompare(b.senderName);
+        default: return 0;
+      }
+    });
+
+  const selectedCount = subscriptions.filter((s) => s.selected && !s.trashed).length;
+  const selectedEmailCount = subscriptions.filter((s) => s.selected && !s.trashed).reduce((a, s) => a + s.messageIds.length, 0);
 
   const formatTime = (iso: string) => {
     const d = new Date(iso);
@@ -571,9 +664,9 @@ export default function InboxBuddyPage() {
         {status === 'authenticated' && (
           <>
             <div className={styles.tabBar}>
-              {(['overview', 'vip', 'deepdive', 'purge', 'unsub'] as const).map((tab) => (
+              {(['overview', 'vip', 'deepdive', 'purge', 'subs'] as const).map((tab) => (
                 <button key={tab} className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`} onClick={() => setActiveTab(tab)}>
-                  {tab === 'overview' ? '🧹 OVERVIEW' : tab === 'vip' ? '⭐ VIP' : tab === 'deepdive' ? '🔬 DEEP DIVE' : tab === 'purge' ? '💣 MASS PURGE' : '🚫 UNSUB'}
+                  {tab === 'overview' ? '🧹 OVERVIEW' : tab === 'vip' ? '⭐ VIP' : tab === 'deepdive' ? '🔬 DEEP DIVE' : tab === 'purge' ? '💣 MASS PURGE' : '📋 SUBS'}
                 </button>
               ))}
             </div>
@@ -842,55 +935,149 @@ export default function InboxBuddyPage() {
                 </div>
               )}
 
-              {/* ═══ UNSUBSCRIBE ═══ */}
-              {activeTab === 'unsub' && (
-                <div className={styles.purgePanel}>
+              {/* ═══ SUBSCRIPTIONS REVIEW ═══ */}
+              {activeTab === 'subs' && (
+                <div className={styles.subsPanel}>
                   <div className={styles.panelHeader}>
                     <div>
-                      <h2 className={styles.panelTitle}>🚫 UNSUBSCRIBE</h2>
-                      <p className={styles.panelDesc}>Find senders with unsubscribe links — click to unsubscribe, then trash all their emails</p>
+                      <h2 className={styles.panelTitle}>📋 SUBSCRIPTION REVIEW</h2>
+                      <p className={styles.panelDesc}>Deep scan your inbox — review all subscriptions, select the ones to nuke</p>
                     </div>
-                    <button className={styles.cleanBtn} onClick={scanUnsub} disabled={unsubLoading} style={{ width: 'auto', padding: '10px 20px' }}>
-                      {unsubLoading ? <><span className={styles.spinner} />SCANNING...</> : '🔍 FIND UNSUBSCRIBE LINKS'}
+                    <button className={styles.cleanBtn} onClick={scanSubscriptions} disabled={subsLoading} style={{ width: 'auto', padding: '10px 20px' }}>
+                      {subsLoading ? <><span className={styles.spinner} />DEEP SCANNING...</> : '🔍 SCAN ALL SUBSCRIPTIONS'}
                     </button>
                   </div>
 
-                  {unsubCandidates.length > 0 && (
-                    <div className={styles.purgeList}>
-                      {unsubCandidates.map((candidate) => (
-                        <div key={candidate.senderEmail} className={styles.purgeCard} style={candidate.trashed ? { opacity: 0.4 } : undefined}>
-                          <div className={styles.purgeCardHeader}>
-                            <span className={styles.purgeIcon}>📧</span>
-                            <div className={styles.purgeCardInfo}>
-                              <span className={styles.purgeCardTitle}>{candidate.senderName}</span>
-                              <span className={styles.purgeCardDesc}>{candidate.senderEmail}</span>
+                  {/* Summary bar */}
+                  {subscriptions.length > 0 && (
+                    <div className={styles.subsSummary}>
+                      <div className={styles.subsStat}>
+                        <span className={styles.subsStatValue}>{subscriptions.length}</span>
+                        <span className={styles.subsStatLabel}>SUBSCRIPTIONS</span>
+                      </div>
+                      <div className={styles.subsStat}>
+                        <span className={styles.subsStatValue}>{subsTotalEmails.toLocaleString()}</span>
+                        <span className={styles.subsStatLabel}>TOTAL EMAILS</span>
+                      </div>
+                      <div className={styles.subsStat}>
+                        <span className={styles.subsStatValue}>~{subsWeeklyEmails}</span>
+                        <span className={styles.subsStatLabel}>EMAILS/WEEK</span>
+                      </div>
+                      <div className={styles.subsStat}>
+                        <span className={styles.subsStatValue}>{subsScanned.toLocaleString()}</span>
+                        <span className={styles.subsStatLabel}>SCANNED</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Sort / Filter / Search */}
+                  {subscriptions.length > 0 && (
+                    <div className={styles.subsControls}>
+                      <div className={styles.subsControlGroup}>
+                        <label className={styles.subsControlLabel}>SORT</label>
+                        <select className={styles.subsSelect} value={subsSort} onChange={(e) => setSubsSort(e.target.value as any)}>
+                          <option value="count">Most Emails</option>
+                          <option value="frequency">Highest Frequency</option>
+                          <option value="recent">Most Recent</option>
+                          <option value="name">Name A-Z</option>
+                        </select>
+                      </div>
+                      <div className={styles.subsControlGroup}>
+                        <label className={styles.subsControlLabel}>FILTER</label>
+                        <select className={styles.subsSelect} value={subsFilter} onChange={(e) => setSubsFilter(e.target.value)}>
+                          <option value="all">All Categories</option>
+                          <option value="newsletter">📰 Newsletters</option>
+                          <option value="marketing">📢 Marketing</option>
+                          <option value="social">👥 Social</option>
+                          <option value="notification">🔔 Notifications</option>
+                          <option value="transactional">🧾 Transactional</option>
+                          <option value="other">📋 Other</option>
+                        </select>
+                      </div>
+                      <div className={`${styles.subsControlGroup} ${styles.subsSearchGroup}`}>
+                        <input
+                          className={styles.subsSearchInput}
+                          type="text"
+                          placeholder="Search sender..."
+                          value={subsSearch}
+                          onChange={(e) => setSubsSearch(e.target.value)}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Select all bar */}
+                  {filteredSubs.length > 0 && (
+                    <div className={styles.subsSelectBar}>
+                      <button className={styles.selectAllBtn} onClick={toggleSelectAll}>
+                        {subscriptions.filter((s) => !s.trashed).every((s) => s.selected) ? '☑ DESELECT ALL' : '☐ SELECT ALL'}
+                      </button>
+                      <span className={styles.subsFilterCount}>
+                        {filteredSubs.length} shown · {selectedCount} selected
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Subscription list */}
+                  {filteredSubs.length > 0 && (
+                    <div className={styles.subsList}>
+                      {filteredSubs.map((sub) => (
+                        <div
+                          key={sub.senderEmail}
+                          className={`${styles.subsCard} ${sub.trashed ? styles.subsCardTrashed : ''} ${sub.selected ? styles.subsCardSelected : ''}`}
+                        >
+                          <div className={styles.subsCardRow}>
+                            {/* Checkbox */}
+                            <label className={styles.subsCheckbox}>
+                              <input
+                                type="checkbox"
+                                checked={sub.selected || false}
+                                disabled={sub.trashed}
+                                onChange={() => toggleSubSelection(sub.senderEmail)}
+                              />
+                              <span className={styles.subsCheckmark} />
+                            </label>
+
+                            {/* Info */}
+                            <div className={styles.subsCardInfo}>
+                              <div className={styles.subsCardNameRow}>
+                                <span className={styles.subsCardName}>{sub.senderName}</span>
+                                <span className={styles.categoryTag} data-cat={sub.category}>
+                                  {sub.category === 'newsletter' ? '📰' : sub.category === 'marketing' ? '📢' : sub.category === 'social' ? '👥' : sub.category === 'notification' ? '🔔' : sub.category === 'transactional' ? '🧾' : '📋'} {sub.category.toUpperCase()}
+                                </span>
+                              </div>
+                              <span className={styles.subsCardEmail}>{sub.senderEmail}</span>
+                              <div className={styles.subsCardMeta}>
+                                <span className={styles.frequencyBadge} data-freq={sub.frequency > 3 ? 'high' : sub.frequency > 1 ? 'med' : 'low'}>
+                                  ~{sub.frequency}/wk
+                                </span>
+                                <span>Last: {new Date(sub.lastReceived).toLocaleDateString('en-GB', { day: '2-digit', month: 'short' })}</span>
+                                {sub.sampleSubjects[0] && <span className={styles.subsCardSample}>&quot;{sub.sampleSubjects[0].slice(0, 40)}{sub.sampleSubjects[0].length > 40 ? '…' : ''}&quot;</span>}
+                              </div>
                             </div>
-                            <span className={styles.purgeCardCount}>{candidate.emailCount}</span>
+
+                            {/* Count */}
+                            <span className={styles.subsCardCount}>{sub.totalEmails}</span>
                           </div>
 
-                          <div className={styles.purgeSamples}>
-                            <span className={styles.sampleLabel}>SAMPLE:</span>
-                            <span>{candidate.sampleSubject}</span>
-                          </div>
-
-                          <div className={styles.purgeActions}>
-                            {candidate.unsubscribeLink && (
+                          {/* Actions */}
+                          <div className={styles.subsCardActions}>
+                            {sub.unsubscribeLink && (
                               <a
-                                href={candidate.unsubscribeLink}
+                                href={sub.unsubscribeLink}
                                 target="_blank"
                                 rel="noopener noreferrer"
-                                className={styles.purgeArchiveBtn}
-                                style={{ textDecoration: 'none', textAlign: 'center' }}
+                                className={styles.subsUnsubLink}
                               >
                                 🔗 UNSUBSCRIBE
                               </a>
                             )}
                             <button
-                              className={styles.purgeTrashBtn}
-                              onClick={() => trashSender(candidate)}
-                              disabled={trashingSender === candidate.senderEmail || candidate.trashed}
+                              className={styles.subsTrashBtn}
+                              onClick={() => trashSender(sub)}
+                              disabled={trashingSender === sub.senderEmail || sub.trashed}
                             >
-                              {candidate.trashed ? '✅ TRASHED' : trashingSender === candidate.senderEmail ? <><span className={styles.spinner} /></> : '🗑️'} TRASH ALL
+                              {sub.trashed ? '✅ TRASHED' : trashingSender === sub.senderEmail ? <><span className={styles.spinner} /></> : '🗑️'} TRASH ALL
                             </button>
                           </div>
                         </div>
@@ -898,10 +1085,33 @@ export default function InboxBuddyPage() {
                     </div>
                   )}
 
-                  {!unsubLoading && unsubCandidates.length === 0 && (
+                  {/* Batch action bar */}
+                  {selectedCount > 0 && (
+                    <div className={styles.subsBatchBar}>
+                      <span className={styles.batchInfo}>{selectedCount} senders selected · {selectedEmailCount.toLocaleString()} emails</span>
+                      <div className={styles.batchButtons}>
+                        <button
+                          className={styles.batchTrashBtn}
+                          onClick={() => batchAction('trash')}
+                          disabled={batchLoading}
+                        >
+                          {batchLoading ? <><span className={styles.spinner} />PROCESSING...</> : `🗑️ TRASH ${selectedEmailCount.toLocaleString()} EMAILS`}
+                        </button>
+                        <button
+                          className={styles.batchArchiveBtn}
+                          onClick={() => batchAction('archive')}
+                          disabled={batchLoading}
+                        >
+                          📦 ARCHIVE
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {!subsLoading && subscriptions.length === 0 && (
                     <div className={styles.emptyState}>
-                      <span>🚫</span>
-                      <p>Scan your inbox to find senders with unsubscribe links — stop junk at the source</p>
+                      <span>📋</span>
+                      <p>Deep scan your inbox to find every subscription — review, select, and mass unsubscribe</p>
                     </div>
                   )}
                 </div>
@@ -920,7 +1130,7 @@ export default function InboxBuddyPage() {
         )}
 
         <footer className={styles.footer}>
-          <span>INBOX BUDDY v3.0</span>
+          <span>INBOX BUDDY v3.1</span>
           <span className={styles.divider}>│</span>
           <span>GEMINI AI</span>
           <span className={styles.divider}>│</span>

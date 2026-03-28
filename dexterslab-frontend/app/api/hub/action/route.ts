@@ -76,21 +76,18 @@ async function startVersion(version: number): Promise<void> {
   await killObserverProcesses();
   await new Promise((r) => setTimeout(r, 2000));
 
-  if (version === 1) {
     exec(
       `${VENV_PYTHON} -m uvicorn server:app --host 0.0.0.0 --port 8000`,
       { cwd: `${BASE_DIR}/backend` }
     );
-  } else if (version === 2) {
     try {
       await execAsync('sudo systemctl restart observer-v2-client', { timeout: 10000 });
     } catch {}
-  }
 
   await new Promise((r) => setTimeout(r, 3000));
 
   // Refresh Chromium (Pi only)
-  const route = version === 2 ? '/observer/v2' : '/observer/v1';
+  const route = '/observer/eye-v2';
   const ts = Math.floor(Date.now() / 1000);
   const url = `http://localhost:7777${route}?v=${ts}`;
   try {
@@ -107,11 +104,6 @@ export async function POST(request: Request) {
     const { action } = body;
 
     switch (action) {
-      case 'start_v1': {
-        await startVersion(1);
-        return NextResponse.json({ success: true, message: 'Observer V1 launched' });
-      }
-
       case 'start_v2': {
         await startVersion(2);
         return NextResponse.json({ success: true, message: 'Observer V2 launched' });

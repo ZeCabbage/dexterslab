@@ -23,7 +23,15 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
 import { GoogleGenAI } from '@google/genai';
+import { MemoryEngine } from './core/memory-engine.js';
+import { bus } from './core/context-bus.js';
 import { EyeStateMachine } from './observer2/eye-state-machine.js';
+import { EventEmitter } from 'events';
+import { AudioIngressServer } from './observer2/audio-ingress.js';
+import { TTSCommander } from './observer2/tts-commander.js';
+import { VideoIngressServer } from './observer2/video-ingress.js';
+import { STTEngine } from './observer2/stt-engine.js';
+import * as fieldTestCapture from './diagnostics/field-test-capture.js';
 
 const execAsync = promisify(exec);
 
@@ -46,6 +54,34 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+// ── Cognitive Layer ──
+const memoryEngine = new MemoryEngine();
+const sessionId = memoryEngine.startSession('v2');
+app.locals.memory = memoryEngine;
+app.locals.sessionId = sessionId;
+
+bus.setMemoryEngine(memoryEngine, sessionId);
+
+const AUDIO_WS_PORT = parseInt(process.env.AUDIO_WS_PORT || '8889', 10);
+const audioEvents = new EventEmitter();
+const audioIngress = new AudioIngressServer(AUDIO_WS_PORT, audioEvents);
+
+audioIngress.start().then(() => {
+  console.log('[server] Audio ingress listening on port', AUDIO_WS_PORT);
+}).catch(err => console.error('[server] Failed to start Audio Ingress:', err));
+
+const ttsCommander = new TTSCommander();
+ttsCommander.connect();
+app.locals.ttsCommander = ttsCommander;
+
+const sttEngine = new STTEngine();
+sttEngine.start();
+
+const VIDEO_UDP_PORT = parseInt(process.env.VIDEO_UDP_PORT || '5600', 10);
+const videoEvents = new EventEmitter();
+const videoIngress = new VideoIngressServer(VIDEO_UDP_PORT, videoEvents);
+videoIngress.start();
+
 // ═══════════════════════════════════════════
 //  REST API
 // ═══════════════════════════════════════════
@@ -53,6 +89,39 @@ app.use(express.json());
 // ── Health Check ──
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', platform: PLATFORM, uptime: process.uptime() });
+});
+
+app.get('/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime_seconds: Math.floor(process.uptime()),
+    observer_mode: process.env.OBSERVER_MODE || null,
+    active_ws_connections: typeof observer2Clients !== 'undefined' ? observer2Clients.size : 0,
+    platform: process.env.PLATFORM || PLATFORM,
+    pi_audio_connected: audioIngress.isClientConnected(),
+    pi_tts_connected: ttsCommander.isConnected(),
+    video_stream_active: videoIngress.isActive(),
+    video_fps: videoIngress.getFramesPerSecond(),
+    memory_queue_depth: memoryEngine.writeQueue.length,
+    memory_total_flushed: memoryEngine.totalFlushed,
+    memory_last_flush_age_ms: Date.now() - memoryEngine.lastFlushTime,
+    gemini_rate_limit_stats: observer2Engine.rateLimiter ? observer2Engine.rateLimiter.getStats() : null,
+    db_schema_version: typeof memoryEngine.getSchemaVersion === 'function' ? memoryEngine.getSchemaVersion() : 0,
+    context_bus_stats: bus.getStats()
+  });
+});
+
+// ── Test TTS ──
+app.get('/api/test/tts', (req, res) => {
+  const { text } = req.query;
+  if (!text) return res.status(400).json({ error: 'Missing text query parameter' });
+  if (app.locals.ttsCommander) {
+    app.locals.ttsCommander.speak(text);
+    res.json({ success: true, text });
+  } else {
+    res.status(500).json({ error: 'TTS Commander not available' });
+  }
 });
 
 // ── System Status ──
@@ -171,18 +240,11 @@ app.post('/api/action', async (req, res) => {
   console.log(`[${timestamp}] ACTION: ${action}`);
 
   switch (action) {
-    case 'start_v1':
-      subProjectState.activeProject = 'v1';
-      subProjectState.log.push({ time: timestamp, action: 'start_v1', status: 'ok' });
-      console.log('  → Observer V1 launch requested');
-      res.json({ success: true, message: 'Observer V1 launched', navigate: '/observer/eye' });
-      break;
-
     case 'start_v2':
       subProjectState.activeProject = 'v2';
       subProjectState.log.push({ time: timestamp, action: 'start_v2', status: 'ok' });
       console.log('  → Observer V2 launch requested');
-      res.json({ success: true, message: 'Observer V2 launched', navigate: '/observer/eye' });
+      res.json({ success: true, message: 'Observer V2 launched', navigate: '/observer/eye-v2' });
       break;
 
     case 'kill':
@@ -683,7 +745,44 @@ app.get('/api/rules-lawyer/status', (_req, res) => {
 //  OBSERVER 2 — PC-Powered Eye Engine
 // ═══════════════════════════════════════════
 
-const observer2Engine = new EyeStateMachine({ genai });
+const observer2Engine = new EyeStateMachine({ genai, sessionId, memory: memoryEngine });
+
+// Initialize ML face detection model (async — must complete before frames are processed)
+observer2Engine.motionProcessor.init().catch(err => {
+  console.error('[server] ML processor init failed:', err.message);
+});
+
+audioEvents.on('client_connected', () => {
+  if (typeof observer2Engine.setPiConnectionState === 'function') {
+    observer2Engine.setPiConnectionState('connected');
+  }
+  bus.publish('system.pi_connected', { timestamp: Date.now() });
+});
+audioEvents.on('client_disconnected', () => {
+  if (typeof observer2Engine.setPiConnectionState === 'function') {
+    observer2Engine.setPiConnectionState('disconnected');
+  }
+  bus.publish('system.pi_disconnected', { timestamp: Date.now() });
+});
+
+audioEvents.on('audio_frame', (pcmBuffer) => {
+  sttEngine.feed(pcmBuffer);
+});
+
+sttEngine.on('transcript', (text) => {
+  console.log('[STT] Transcript:', text);
+  bus.publish('voice.command', { text, timestamp: Date.now() });
+  observer2Engine.handleOracleQuestion(text).then((result) => {
+    // Speak response loudly
+    if (result && result.response && app.locals.ttsCommander) {
+      app.locals.ttsCommander.speak(result.response);
+    }
+  }).catch(() => {});
+});
+
+videoEvents.on('frame', (jpegBuffer) => {
+  observer2Engine.processFrame(jpegBuffer).catch(() => {});
+});
 
 // ── Observer 2 REST Endpoints ──
 
@@ -710,6 +809,142 @@ app.post('/api/observer2/command', (req, res) => {
   res.json({ success: true, command });
 });
 
+// ── Admin Dashboard REST Endpoints ──
+
+app.get('/api/admin/stats', (req, res) => {
+  try {
+    const memStats = memoryEngine.getStats();
+    const busStats = bus.stats;
+    const currentMood = observer2Engine.getObserverMood ? observer2Engine.getObserverMood() : 'unknown';
+    let sessionDurationMin = 0;
+    try {
+      const summary = memoryEngine.getSessionSummary(sessionId);
+      sessionDurationMin = Math.round((Date.now() - summary.startTime) / 60000);
+    } catch(e) {}
+    res.json({ memory: memStats, bus: busStats, mood: currentMood, sessionDurationMin, sessionId });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/entities', (req, res) => {
+  try {
+    const recent = memoryEngine.getRecentEntities(100) || [];
+    const entities = recent.map(ent => observer2Engine.entityTracker.getEntityProfile(ent.id)).filter(Boolean);
+    res.json(entities);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/admin/label-entity', express.json(), (req, res) => {
+  try {
+    const { entityId, label } = req.body;
+    if (!entityId || label === undefined) return res.status(400).json({ error: 'Missing entityId or label' });
+    memoryEngine.labelEntity(entityId, label);
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/observations', (req, res) => {
+  try {
+    const { source, eventType, zone, since, limit } = req.query;
+    const opts = {};
+    if (source) opts.source = source;
+    if (eventType) opts.eventType = eventType;
+    if (zone) opts.zone = zone;
+    if (since) opts.since = parseInt(since, 10);
+    opts.limit = limit ? parseInt(limit, 10) : 100;
+
+    const obs = memoryEngine.getRecentObservations(opts);
+    res.json(obs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/export-observations', (req, res) => {
+  try {
+    const { source, eventType, zone, since } = req.query;
+    const opts = { limit: 10000 };
+    if (source) opts.source = source;
+    if (eventType) opts.eventType = eventType;
+    if (zone) opts.zone = zone;
+    if (since) opts.since = parseInt(since, 10);
+
+    const obs = memoryEngine.getRecentObservations(opts);
+    if (obs.length === 0) return res.send('No data');
+    
+    const headers = ['id', 'session_id', 'timestamp', 'event_type', 'source', 'zone', 'duration_ms', 'metadata'];
+    const csvRows = [headers.join(',')];
+    
+    for (const o of obs) {
+      const row = [
+        o.id, o.session_id, new Date(o.timestamp).toISOString(),
+        o.event_type, o.source, o.zone || '', o.duration_ms || 0,
+        `"${(o.metadata || '').replace(/"/g, '""')}"`
+      ];
+      csvRows.push(row.join(','));
+    }
+    
+    res.setHeader('Content-Type', 'text/csv');
+    res.setHeader('Content-Disposition', 'attachment; filename="observations.csv"');
+    res.send(csvRows.join('\n'));
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/heatmap', (req, res) => {
+  try {
+    const since = Date.now() - (24 * 60 * 60 * 1000);
+    const obs = memoryEngine.getRecentObservations({ since, limit: 10000 });
+    
+    const heatmap = {
+      'TOP_LEFT': 0, 'TOP_CENTER': 0, 'TOP_RIGHT': 0,
+      'MID_LEFT': 0, 'CENTER': 0, 'MID_RIGHT': 0,
+      'BOT_LEFT': 0, 'BOT_CENTER': 0, 'BOT_RIGHT': 0
+    };
+    
+    for (const o of obs) {
+      if (o.zone && heatmap[o.zone] !== undefined) heatmap[o.zone]++;
+    }
+    
+    const currentOccupancy = observer2Engine.spatialModel ? observer2Engine.spatialModel.getCurrentOccupancy() : {};
+    res.json({ heatmap, currentOccupancy });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.get('/api/admin/conversation-log', (req, res) => {
+  try {
+    const session = req.query.sessionId || sessionId;
+    const obs = memoryEngine.getRecentObservations({ sessionId: session, limit: 1000 });
+    
+    const logPairs = [];
+    const interactions = obs.filter(o => o.event_type.startsWith('oracle.') || o.event_type.startsWith('voice.'));
+    
+    for (const o of interactions) {
+       try {
+         const meta = JSON.parse(o.metadata || '{}');
+         if (o.event_type === 'voice.command') {
+            logPairs.push({ role: 'user', text: meta.text || '', timestamp: o.timestamp });
+         } else if (o.event_type === 'oracle.response') {
+            logPairs.push({ role: 'observer', text: meta.response || '', timestamp: o.timestamp });
+         }
+       } catch(e) {}
+    }
+    
+    logPairs.sort((a, b) => a.timestamp - b.timestamp);
+    res.json(logPairs);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 // ═══════════════════════════════════════════
 //  HTTP + WebSocket Server
 // ═══════════════════════════════════════════
@@ -717,61 +952,20 @@ app.post('/api/observer2/command', (req, res) => {
 const server = createServer(app);
 
 // ── WebSocket Servers (noServer mode for multi-path routing) ──
-const wss = new WebSocketServer({ noServer: true });
 const wssObserver2 = new WebSocketServer({ noServer: true });
 
 // Route WebSocket upgrades by path
 server.on('upgrade', (request, socket, head) => {
   const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
 
-  if (pathname === '/ws') {
-    wss.handleUpgrade(request, socket, head, (ws) => {
-      wss.emit('connection', ws, request);
-    });
-  } else if (pathname === '/ws/observer2') {
+  if (pathname === '/ws/observer2') {
     wssObserver2.handleUpgrade(request, socket, head, (ws) => {
       wssObserver2.emit('connection', ws, request);
     });
   } else {
+    console.warn(`[WS] Rejected connection attempt on unknown path: ${request.url}`);
     socket.destroy();
   }
-});
-
-// ── Original V1 WebSocket (/ws) ──
-
-const clients = new Set();
-
-
-wss.on('connection', (ws) => {
-  clients.add(ws);
-  console.log(`📡 WebSocket client connected (total: ${clients.size})`);
-
-  ws.on('message', (data) => {
-    try {
-      const msg = JSON.parse(data.toString());
-      console.log('📡 WS received:', msg.type, msg);
-
-      // Echo voice events to all other clients
-      if (msg.type === 'voice_command' || msg.type === 'voice_partial') {
-        for (const client of clients) {
-          if (client !== ws && client.readyState === 1) {
-            client.send(JSON.stringify(msg));
-          }
-        }
-      }
-    } catch {
-      // Binary or unparseable — ignore
-    }
-  });
-
-  ws.on('close', () => {
-    clients.delete(ws);
-    console.log(`📡 WebSocket client disconnected (total: ${clients.size})`);
-  });
-
-  ws.on('error', () => {
-    clients.delete(ws);
-  });
 });
 
 // ── Observer 2 WebSocket (/ws/observer2) ──
@@ -782,14 +976,6 @@ wssObserver2.on('connection', (ws) => {
   console.log(`👁  Observer 2 client connected (total: ${observer2Clients.size})`);
 
   ws.on('message', (data) => {
-    // Binary data = JPEG camera frame from thin client
-    if (Buffer.isBuffer(data) || data instanceof ArrayBuffer) {
-      const buffer = Buffer.isBuffer(data) ? data : Buffer.from(data);
-      // Process frame asynchronously — don't block WS
-      observer2Engine.processFrame(buffer).catch(() => {});
-      return;
-    }
-
     // Text data = JSON commands
     try {
       const msg = JSON.parse(data.toString());
@@ -837,7 +1023,34 @@ observer2Engine.start((eyeState) => {
 //  Start
 // ═══════════════════════════════════════════
 
+app.get('/diagnostics/status', (_req, res) => {
+  res.json(fieldTestCapture.getStatus());
+});
+
+fieldTestCapture.start(
+  bus,
+  memoryEngine,
+  () => (typeof observer2Clients !== 'undefined' ? observer2Clients.size : 0)
+);
+
+// Graceful Shutdown
+function gracefulShutdown() {
+  console.log('\\n[server] Shutting down gracefully...');
+  if (app.locals.memory && app.locals.sessionId) {
+    app.locals.memory.endSession(app.locals.sessionId, { reason: 'shutdown' });
+    console.log('[server] Cognitive Session closed.');
+  }
+  process.exit(0);
+}
+process.on('SIGINT', gracefulShutdown);
+process.on('SIGTERM', gracefulShutdown);
+
 server.listen(PORT, () => {
+  bus.publish('system.startup', { 
+    version: process.env.npm_package_version || '1.0.0',
+    observer_mode: process.env.OBSERVER_MODE,
+    platform: PLATFORM
+  });
   console.log('');
   console.log('  ╔═══════════════════════════════════════════╗');
   console.log(`  ║  DEXTER'S LAB — Backend Server            ║`);

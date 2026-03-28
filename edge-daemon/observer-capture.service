@@ -1,0 +1,19 @@
+[Unit]
+Description=dexterslab Observer Edge Capture Daemon
+After=network-online.target sound.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+WorkingDirectory=/home/deploy/dexterslab-edge
+ExecStart=/home/deploy/dexterslab-edge/venv/bin/python main.py
+Restart=on-failure
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=observer-capture
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

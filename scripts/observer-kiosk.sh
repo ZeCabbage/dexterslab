@@ -8,10 +8,27 @@
 #  Chromium with all UI chrome hidden.
 # ═══════════════════════════════════════════
 
-OBSERVER_URL="http://localhost:3000/observer/eye"
-MAX_WAIT=90  # seconds to wait for the server
+# ── Identify Target URL ──
+CLOUDFLARE_URL="https://dexterslab.cclottaaworld.com/observer/eye-v2"
 
-LOG_TAG="[observer-kiosk]"
+ENV_FILE="$HOME/dexterslab-edge/.env"
+PC_TAILSCALE_IP=""
+if [ -f "$ENV_FILE" ]; then
+  PC_TAILSCALE_IP=$(grep "^PC_TAILSCALE_IP=" "$ENV_FILE" | cut -d '=' -f2 | tr -d '\r\n')
+fi
+
+FALLBACK_URL="http://${PC_TAILSCALE_IP}:3000/observer/eye-v2"
+
+echo "$LOG_TAG Checking Cloudflare reachability..."
+if curl -s --max-time 5 -o /dev/null "$CLOUDFLARE_URL" 2>/dev/null; then
+  OBSERVER_URL="$CLOUDFLARE_URL"
+  echo "$LOG_TAG ✓ Cloudflare is reachable."
+else
+  echo "$LOG_TAG ⚠ Cloudflare unreachable. Falling back to Tailscale IP."
+  OBSERVER_URL="$FALLBACK_URL"
+fi
+
+MAX_WAIT=90  # seconds to wait for the server
 
 echo "$LOG_TAG Starting kiosk launcher..."
 echo "$LOG_TAG Target: $OBSERVER_URL"
@@ -53,37 +70,41 @@ fi
 echo "$LOG_TAG Launching Chromium kiosk..."
 
 # ── Launch Chromium in fullscreen kiosk mode ──
-# Flags explained:
-#   --app=URL                    : opens without browser chrome (no address bar, tabs)
-#   --kiosk                      : fullscreen kiosk mode (no window decorations)
-#   --start-fullscreen           : ensure fullscreen on Wayland
-#   --noerrdialogs               : suppress error dialogs
-#   --disable-infobars           : no "Chrome is being controlled" bar
-#   --disable-session-crashed-bubble : no "restore pages" prompt
-#   --no-first-run               : skip first-run wizard
-#   --check-for-update-interval  : disable update checks (1 year)
-#   --use-fake-ui-for-media-stream : auto-approve mic permissions (for STT)
-#   --autoplay-policy            : allow auto-playing audio
-#   --disable-features=TranslateUI : no translate popups
-#   --disable-pinch              : disable pinch zoom on touch
-#   --overscroll-history-navigation=0 : disable swipe navigation
-#   --enable-features=UseOzonePlatform : Wayland support
-#   --ozone-platform=wayland     : use Wayland backend
-chromium-browser \
-  --app="$OBSERVER_URL" \
-  --kiosk \
-  --start-fullscreen \
-  --noerrdialogs \
-  --disable-infobars \
-  --disable-session-crashed-bubble \
-  --no-first-run \
-  --check-for-update-interval=31536000 \
-  --use-fake-ui-for-media-stream \
-  --autoplay-policy=no-user-gesture-required \
-  --disable-features=TranslateUI,PipeWireCameraPortal \
-  --disable-pinch \
-  --overscroll-history-navigation=0 \
-  --enable-features=UseOzonePlatform \
-  --enable-experimental-web-platform-features \
-  --ozone-platform=wayland \
-  --remote-debugging-port=9222
+FLAGS=(
+  # Opens without browser chrome (no address bar, tabs)
+  "--app=$OBSERVER_URL"
+  # Fullscreen kiosk mode (no window decorations)
+  "--kiosk"
+  # Ensure fullscreen on Wayland
+  "--start-fullscreen"
+  # Suppress error dialogs
+  "--noerrdialogs"
+  # No "Chrome is being controlled" bar
+  "--disable-infobars"
+  # No "restore pages" prompt
+  "--disable-session-crashed-bubble"
+  # Skip first-run wizard
+  "--no-first-run"
+  # Disable update checks (1 year)
+  "--check-for-update-interval=31536000"
+  # No translate popups and disable PipeWire camera portal
+  "--disable-features=TranslateUI,PipeWireCameraPortal"
+  # Disable pinch zoom on touch
+  "--disable-pinch"
+  # Disable swipe navigation
+  "--overscroll-history-navigation=0"
+  # Wayland support
+  "--enable-features=UseOzonePlatform"
+  # Enable experimental web features for WebGL/rendering
+  "--enable-experimental-web-platform-features"
+  # Use Wayland backend
+  "--ozone-platform=wayland"
+  # Enable remote debugging for headless diagnostics
+  "--remote-debugging-port=9222"
+)
+
+if [ "$OBSERVER_URL" = "$FALLBACK_URL" ] && [ -n "$PC_TAILSCALE_IP" ]; then
+  FLAGS+=("--unsafely-treat-insecure-origin-as-secure=http://${PC_TAILSCALE_IP}:3000")
+fi
+
+chromium-browser "${FLAGS[@]}"

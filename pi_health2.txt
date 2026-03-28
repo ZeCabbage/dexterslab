@@ -1,0 +1,1 @@
+﻿{"status": "degraded", "video_streamer_active": false, "audio_streamer_active": true, "tts_receiver_active": true, "platform": "pi"}

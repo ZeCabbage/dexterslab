@@ -13,8 +13,6 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import RulesLawyerCharacter, { CharacterTheme, CharacterMood } from './RulesLawyerCharacter';
-import { useTTS } from '@/hooks/useTTS';
-import { useVoice } from '../VoiceProvider';
 import styles from './page.module.css';
 
 // ── Default theme (before game is selected) ──
@@ -35,8 +33,6 @@ interface ChatMessage {
 
 export default function RulesLawyerPage() {
   const router = useRouter();
-  const voice = useVoice();
-  const tts = useTTS({ rate: 0.9, pitch: 1.05, preferredVoice: 'Daniel' });
 
   // ── State ──
   const [gameSession, setGameSession] = useState<{
@@ -87,7 +83,6 @@ export default function RulesLawyerPage() {
         setGameSession({ active: true, game: data.game || gameName, theme });
         setMood(data.mood || 'smug');
         addMessage('greeting', data.greeting || `Ah, ${gameName}! Let's do this.`);
-        tts.speak(data.greeting || `Ah, ${gameName}! Let's do this.`);
         // Start ambient tip timer
         startTipTimer();
       } else {
@@ -122,9 +117,6 @@ export default function RulesLawyerPage() {
 
       setMood(data.mood || 'confident');
       addMessage('bot', data.answer || 'Hmm, I seem to have lost my train of thought.', data.rule_reference);
-
-      // Speak the answer
-      tts.speak(data.answer || 'Hmm, I seem to have lost my train of thought.');
 
       // Reset mood after a delay
       setTimeout(() => {
@@ -170,7 +162,6 @@ export default function RulesLawyerPage() {
 
   // ── End session ──
   const endSession = async () => {
-    tts.stop();
     if (tipTimerRef.current) clearInterval(tipTimerRef.current);
     try {
       await fetch('/api/rules-lawyer', {
@@ -185,35 +176,7 @@ export default function RulesLawyerPage() {
     setTip(null);
   };
 
-  // ── Voice input handling ──
-  useEffect(() => {
-    if (!voice.lastFinal) return;
-    const text = voice.lastFinal.trim().toLowerCase();
 
-    // If we're in game select mode, treat voice input as game name
-    if (!gameSession.active) {
-      // Filter out navigation commands
-      if (text.includes('launch') || text.includes('kill') || text.includes('home') || text.includes('hub')) return;
-      if (text.length > 2) {
-        setGameInput(text);
-        startGame(text);
-      }
-      return;
-    }
-
-    // In active session, treat as question (filter out short/command-like speech)
-    if (text.length > 5 && !text.includes('kill') && !text.includes('home') && !text.includes('hub')) {
-      askQuestion(text);
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [voice.lastFinal]);
-
-  // ── Speaking state drives character ──
-  useEffect(() => {
-    if (tts.isSpeaking) {
-      setMood('speaking');
-    }
-  }, [tts.isSpeaking]);
 
   // ═══ RENDER: Game Selection ═══
   if (!gameSession.active) {
@@ -309,7 +272,7 @@ export default function RulesLawyerPage() {
               <RulesLawyerCharacter
                 theme={gameSession.theme}
                 mood={mood}
-                isSpeaking={tts.isSpeaking}
+                isSpeaking={false}
                 width={280}
                 height={340}
               />
@@ -379,12 +342,6 @@ export default function RulesLawyerPage() {
                 ASK
               </button>
             </form>
-            {tts.isSpeaking && (
-              <div className={styles.speakingIndicator}>
-                <span className={styles.speakingDot} />
-                SPEAKING
-              </div>
-            )}
           </div>
         </div>
       </div>

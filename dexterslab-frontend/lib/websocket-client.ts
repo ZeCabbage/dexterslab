@@ -110,10 +110,6 @@ export class WebSocketClient {
                 try {
                     const data: ServerMessage = JSON.parse(event.data);
                     switch (data.type) {
-                        case 'tracking':
-                            // Fallback: legacy JSON tracking (shouldn't happen)
-                            this.onTracking?.(data);
-                            break;
                         case 'oracle_response':
                             this.onOracle?.(data);
                             break;

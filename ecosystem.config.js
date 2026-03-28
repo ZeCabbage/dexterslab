@@ -1,0 +1,27 @@
+module.exports = {
+  apps: [
+    {
+      name: 'dexterslab-frontend',
+      script: 'node_modules/next/dist/bin/next',
+      args: 'start',
+      cwd: './dexterslab-frontend'
+    },
+    {
+      name: 'dexterslab-backend',
+      script: 'server.js',
+      cwd: './dexterslab-backend',
+      interpreter: 'node',
+      watch: false,
+      env: {
+        NODE_ENV: 'production',
+        FFMPEG_PATH: 'C:\\Users\\holme\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin\\ffmpeg.exe',
+        PATH: process.env.PATH + ';C:\\Users\\holme\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin'
+      },
+      error_file: '../logs/backend-error.log',
+      out_file: '../logs/backend-out.log',
+      merge_logs: true,
+      restart_delay: 3000,
+      max_restarts: 10
+    }
+  ]
+};

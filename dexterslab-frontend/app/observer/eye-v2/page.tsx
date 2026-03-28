@@ -13,8 +13,8 @@
 
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { RealisticEyeRenderer } from '@/lib/observer2/realistic-eye-renderer';
-import { WSClientV2, EyeState } from '@/lib/observer2/ws-client-v2';
-import { CameraStreamer } from '@/lib/observer2/camera-streamer';
+import { DisplayConnector } from '@/lib/observer2/display-connector';
+import { EyeState } from '@/lib/observer2/types';
 import Link from 'next/link';
 
 // Default state when no backend packets have arrived yet
@@ -32,13 +32,17 @@ export default function ObserverEyeV2() {
     // Mutable state refs (60fps, no re-renders)
     const stateRef = useRef<EyeState>({ ...DEFAULT_STATE });
     const connectedRef = useRef(false);
+    const connStateRef = useRef<'connecting'|'connected'|'disconnected'|'error'>('connecting');
     const debugRef = useRef(false);
     const fpsRef = useRef({ count: 0, lastTime: 0, value: 0 });
 
     // React state for UI overlays only
-    const [connected, setConnected] = useState(false);
+    const [connState, setConnState] = useState<'connecting'|'connected'|'disconnected'|'error'>('connecting');
     const [overlayText, setOverlayText] = useState('');
     const [overlayType, setOverlayType] = useState('');
+    const [healthOverlay, setHealthOverlay] = useState('');
+    const [trackingActive, setTrackingActive] = useState(false);
+    const [detectionMode, setDetectionMode] = useState('none');
 
     const startApp = useCallback(() => {
         const canvas = canvasRef.current;
@@ -53,10 +57,10 @@ export default function ObserverEyeV2() {
         }
         renderer.resize();
 
-        // ── Initialize WebSocket client ──
-        const ws = new WSClientV2();
+        // ── Initialize display connector ──
+        const ws = new DisplayConnector();
 
-        ws.onEyeState = (state) => {
+        ws.onStateUpdate = (state) => {
             stateRef.current = state;
 
             // Update overlay text (throttled via React state)
@@ -64,23 +68,25 @@ export default function ObserverEyeV2() {
                 setOverlayText(state.overlayText);
                 setOverlayType(state.overlayType);
             }
+
+            // Tracking detection alert
+            setTrackingActive(state.visible && state.entityCount > 0);
+            if (state.detectionMode) setDetectionMode(state.detectionMode);
         };
 
-        ws.onConnectionChange = (isConnected) => {
-            connectedRef.current = isConnected;
-            setConnected(isConnected);
+        ws.onConnectionChange = (state) => {
+            connectedRef.current = state === 'connected';
+            connStateRef.current = state;
+            setConnState(state);
         };
 
         ws.onOracleResponse = (data) => {
             setOverlayText(data.response);
             setOverlayType('oracle');
+            // TTS removed: handled by Pi daemon natively
         };
 
         ws.connect();
-
-        // ── Initialize camera streamer ──
-        const camera = new CameraStreamer();
-        camera.start(ws);
 
         // ── Debug HUD Canvas overlay ──
         const debugCanvas = document.createElement('canvas');
@@ -94,11 +100,11 @@ export default function ObserverEyeV2() {
                 debugRef.current = !debugRef.current;
             }
             // Voice commands via keyboard (fallback)
-            if (e.code === 'KeyS') ws.sendCommand('sleep');
-            else if (e.code === 'KeyW') ws.sendCommand('wake');
-            else if (e.code === 'KeyB') ws.sendCommand('blush');
-            else if (e.code === 'KeyG') ws.sendCommand('goodboy');
-            else if (e.code === 'KeyT') ws.sendCommand('thankyou');
+            if (e.code === 'KeyS') ws.sendInteraction({ type: 'command', command: 'sleep' });
+            else if (e.code === 'KeyW') ws.sendInteraction({ type: 'command', command: 'wake' });
+            else if (e.code === 'KeyB') ws.sendInteraction({ type: 'command', command: 'blush' });
+            else if (e.code === 'KeyG') ws.sendInteraction({ type: 'command', command: 'goodboy' });
+            else if (e.code === 'KeyT') ws.sendInteraction({ type: 'command', command: 'thankyou' });
         }
         window.addEventListener('keydown', onKeyDown);
 
@@ -115,14 +121,36 @@ export default function ObserverEyeV2() {
                 fps.lastTime = now;
             }
 
-            // Render eye from latest backend state
-            renderer.render(stateRef.current);
+            // Render eye from latest backend state (or mock state based on connection)
+            let displayState = { ...stateRef.current };
+            const cs = connStateRef.current;
+            
+            if (canvas) {
+                if (cs === 'disconnected') {
+                    displayState.blink = 1.0;
+                    canvas.style.opacity = '0.3';
+                    canvas.style.filter = 'none';
+                } else if (cs === 'connecting') {
+                    displayState.blink = (Math.sin(now * Math.PI) + 1) / 2; // slow 0.5Hz blink
+                    canvas.style.opacity = '1.0';
+                    canvas.style.filter = 'none';
+                } else if (cs === 'error') {
+                    displayState.blink = 0.5;
+                    canvas.style.opacity = '1.0';
+                    canvas.style.filter = 'drop-shadow(0 0 40px red) sepia(1) hue-rotate(300deg) saturate(3)';
+                } else {
+                    canvas.style.opacity = '1.0';
+                    canvas.style.filter = 'none';
+                }
+            }
+
+            renderer.render(displayState);
 
             // Debug HUD
             debugCanvas.width = window.innerWidth;
             debugCanvas.height = window.innerHeight;
             if (debugRef.current) {
-                renderDebugHUD(debugCtx, stateRef.current, fps.value, connectedRef.current, camera.isActive);
+                renderDebugHUD(debugCtx, stateRef.current, fps.value, connectedRef.current);
             }
 
             animRef.current = requestAnimationFrame(frame);
@@ -136,59 +164,7 @@ export default function ObserverEyeV2() {
         }
         window.addEventListener('resize', onResize);
 
-        // ── Voice recognition (Web Speech API) ──
-        let recognition: any = null;
-        try {
-            const SpeechRecognitionCtor = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-            if (SpeechRecognitionCtor) {
-                recognition = new SpeechRecognitionCtor();
-                recognition.continuous = true;
-                recognition.interimResults = true;
-                recognition.lang = 'en-US';
 
-                recognition.onresult = (event: any) => {
-                    for (let i = event.resultIndex; i < event.results.length; i++) {
-                        const result = event.results[i];
-                        if (result.isFinal) {
-                            const text = result[0].transcript.trim().toLowerCase();
-                            // Check for commands
-                            if (text.includes('sleep') || text.includes('go to sleep')) {
-                                ws.sendCommand('sleep');
-                            } else if (text.includes('wake') || text.includes('wake up')) {
-                                ws.sendCommand('wake');
-                            } else if (text.includes('blush')) {
-                                ws.sendCommand('blush');
-                            } else if (text.includes('good boy')) {
-                                ws.sendCommand('goodboy');
-                            } else if (text.includes('thank you') || text.includes('thanks')) {
-                                ws.sendCommand('thankyou');
-                            } else {
-                                // Send to Oracle
-                                ws.sendOracle(text);
-                            }
-                        }
-                    }
-                };
-
-                recognition.onerror = () => {
-                    // Restart on error
-                    setTimeout(() => {
-                        try { recognition?.start(); } catch { /* ignore */ }
-                    }, 1000);
-                };
-
-                recognition.onend = () => {
-                    // Auto-restart
-                    setTimeout(() => {
-                        try { recognition?.start(); } catch { /* ignore */ }
-                    }, 200);
-                };
-
-                recognition.start();
-            }
-        } catch {
-            console.log('Speech recognition not available');
-        }
 
         // ── Cleanup ──
         return () => {
@@ -196,12 +172,44 @@ export default function ObserverEyeV2() {
             window.removeEventListener('keydown', onKeyDown);
             window.removeEventListener('resize', onResize);
             ws.disconnect();
-            camera.stop();
             renderer.destroy();
             debugCanvas.remove();
-            try { recognition?.stop(); } catch { /* ignore */ }
         };
     // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Task 6.6: Wire /health to HUD (poll every 5s)
+    useEffect(() => {
+        let active = true;
+        const fetchHealth = async () => {
+            try {
+                // Route to API origin based on WS logic natively
+                const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+                const apiUrl = isLocal 
+                    ? 'http://localhost:8888/health' 
+                    : /^192\.168\.|^10\.|^100\.|^172\.(1[6-9]|2\d|3[01])\./.test(window.location.hostname)
+                        ? `http://${window.location.hostname}:8888/health`
+                        : 'https://dexterslab-api.cclottaaworld.com/health';
+                
+                const res = await fetch(apiUrl, { cache: 'no-store' });
+                if (!res.ok) throw new Error('Not OK');
+                const data = await res.json();
+                
+                if (active) {
+                    const vFps = data.video_fps !== undefined ? `${data.video_fps}` : '0';
+                    const aConn = data.pi_audio_connected ? 'connected' : 'offline';
+                    const ttsConn = data.pi_tts_connected ? 'ready' : 'offline';
+                    const wsConn = connStateRef.current;
+                    setHealthOverlay(`VIDEO: ${vFps}fps | AUDIO: ${aConn.toUpperCase()} | TTS: ${ttsConn.toUpperCase()} | WS: ${wsConn.toUpperCase()}`);
+                }
+            } catch {
+                if (active) setHealthOverlay('HUB UNREACHABLE');
+            }
+        };
+
+        fetchHealth();
+        const interval = setInterval(fetchHealth, 5000);
+        return () => { active = false; clearInterval(interval); };
     }, []);
 
     useEffect(() => {
@@ -233,42 +241,107 @@ export default function ObserverEyeV2() {
             />
 
             {/* Connection indicator */}
-            {!connected && (
+            {connState !== 'connected' && (
                 <div style={{
-                    position: 'absolute', bottom: 20, left: 0, right: 0,
+                    position: 'absolute', bottom: 60, left: 0, right: 0,
                     textAlign: 'center', zIndex: 25,
-                    color: 'rgba(255,50,50,0.6)',
+                    color: connState === 'error' ? 'red' : 'rgba(255,200,50,0.8)',
                     fontFamily: 'monospace', fontSize: '14px',
+                    fontWeight: 'bold'
                 }}>
-                    ⚠ BACKEND OFFLINE — Connecting...
+                    ⚠ BACKEND {connState.toUpperCase()}
                 </div>
             )}
 
-            {/* Text overlay (Oracle responses, reactions) */}
+            {/* Health HUD Overlay */}
+            <div style={{
+                position: 'fixed', bottom: 8, right: 8,
+                zIndex: 40, fontFamily: 'monospace', fontSize: '10px',
+                color: 'rgba(0, 255, 200, 0.4)', pointerEvents: 'none'
+            }}>
+                {healthOverlay || 'WAITING FOR TELEMETRY...'}
+            </div>
+
+            {/* Text overlay (Oracle responses, reactions, ambient) */}
             {overlayText && (
                 <div style={{
                     position: 'absolute',
-                    bottom: '15%', left: 0, right: 0,
+                    bottom: overlayType === 'ambient' ? '12%' : '15%',
+                    left: 0, right: 0,
                     textAlign: 'center', zIndex: 25,
-                    fontFamily: "'Courier New', monospace",
-                    fontSize: overlayType === 'oracle' ? '24px' : '32px',
+                    fontFamily: overlayType === 'ambient'
+                        ? "'VT323', 'Courier New', monospace"
+                        : "'Courier New', monospace",
+                    fontSize: overlayType === 'ambient' ? '32px' :
+                              overlayType === 'oracle' ? '24px' : '32px',
                     fontWeight: 'bold',
-                    color: overlayType === 'oracle' ? '#0ff' :
+                    color: overlayType === 'ambient' ? '#00ff88' :
+                           overlayType === 'oracle' ? '#0ff' :
                            overlayType === 'goodboy' ? '#ff88aa' :
                            overlayType === 'thankyou' ? '#0df' : '#0fc',
-                    textShadow: '0 0 20px currentColor',
-                    letterSpacing: '3px',
-                    opacity: 0.9,
-                    animation: 'fadeInUp 0.3s ease-out',
+                    textShadow: overlayType === 'ambient'
+                        ? '0 0 12px #00ff88, 0 0 30px rgba(0,255,136,0.6), 0 0 60px rgba(0,255,136,0.3)'
+                        : '0 0 20px currentColor',
+                    letterSpacing: overlayType === 'ambient' ? '6px' : '3px',
+                    opacity: overlayType === 'ambient' ? 0.9 : 0.9,
+                    animation: overlayType === 'ambient'
+                        ? 'ambientGlitch 0.3s ease-out, ambientPulse 2s ease-in-out infinite'
+                        : 'fadeInUp 0.3s ease-out',
+                    pointerEvents: 'none',
                 }}>
                     {overlayText}
                 </div>
             )}
 
+            {/* Tracking Detection Alert */}
+            {trackingActive && (
+                <div style={{
+                    position: 'absolute',
+                    bottom: '8%', left: 0, right: 0,
+                    textAlign: 'center', zIndex: 25,
+                    fontFamily: "'VT323', 'Courier New', monospace",
+                    fontSize: '22px',
+                    fontWeight: 'bold',
+                    color: '#ff1a1a',
+                    textShadow: '0 0 10px #ff0000, 0 0 20px #ff0000, 0 0 40px #cc0000',
+                    letterSpacing: '4px',
+                    textTransform: 'uppercase',
+                    animation: 'trackingFlicker 0.1s ease-in-out, trackingFadeIn 0.4s ease-out',
+                    pointerEvents: 'none',
+                }}>
+                    {detectionMode === 'face'
+                        ? '▸ HUMAN DETECTED — TRACKING INITIATED ◂'
+                        : '▸ MOVEMENT DETECTED — TRACKING ◂'
+                    }
+                </div>
+            )}
+
             <style>{`
+                @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
                 @keyframes fadeInUp {
                     from { opacity: 0; transform: translateY(10px); }
                     to { opacity: 0.9; transform: translateY(0); }
+                }
+                @keyframes trackingFadeIn {
+                    from { opacity: 0; letter-spacing: 12px; }
+                    to { opacity: 1; letter-spacing: 4px; }
+                }
+                @keyframes trackingFlicker {
+                    0% { opacity: 0.8; }
+                    50% { opacity: 1; }
+                    100% { opacity: 0.9; }
+                }
+                @keyframes ambientGlitch {
+                    0% { opacity: 0; transform: translateX(-4px); }
+                    30% { opacity: 0.9; transform: translateX(2px); }
+                    50% { opacity: 0.4; transform: translateX(-1px); }
+                    100% { opacity: 0.75; transform: translateX(0); }
+                }
+                @keyframes ambientPulse {
+                    0% { opacity: 0.65; }
+                    50% { opacity: 0.85; }
+                    100% { opacity: 0.65; }
                 }
             `}</style>
         </div>
@@ -281,7 +354,6 @@ function renderDebugHUD(
     state: EyeState,
     fps: number,
     connected: boolean,
-    cameraActive: boolean,
 ) {
     const pad = 14;
     const lineH = 18;
@@ -302,7 +374,7 @@ function renderDebugHUD(
     y += lineH + 4;
 
     ctx.fillStyle = connected ? '#0f0' : '#f44';
-    ctx.fillText(`FPS: ${fps}  |  WS: ${connected ? 'CONNECTED' : 'OFFLINE'}  |  CAM: ${cameraActive ? 'ACTIVE' : 'OFF'}`, x, y);
+    ctx.fillText(`FPS: ${fps}  |  WS: ${connected ? 'CONNECTED' : 'OFFLINE'}  |  CAM: DECAPITATED (NATIVE)`, x, y);
     y += lineH;
 
     ctx.fillStyle = '#ccc';

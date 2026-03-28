@@ -1,0 +1,154 @@
+.container {
+  padding: 2rem;
+  font-family: monospace;
+  background-color: #0b0f19;
+  color: #00ffcc;
+  min-height: 100vh;
+}
+
+.title {
+  border-bottom: 2px solid #00ffcc;
+  padding-bottom: 0.5rem;
+  margin-bottom: 2rem;
+  letter-spacing: 0.2rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+  margin-bottom: 2rem;
+}
+
+.panel {
+  background-color: #121826;
+  border: 1px solid #00ffcc;
+  padding: 1.5rem;
+  border-radius: 4px;
+}
+
+.panel h2 {
+  margin-top: 0;
+  border-bottom: 1px dashed #008f73;
+  padding-bottom: 0.5rem;
+  font-size: 1.2rem;
+}
+
+.sysdata {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 0.5rem 1rem;
+}
+
+.sysdata span {
+  color: #fff;
+}
+
+.heatmapGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-rows: 1fr 1fr 1fr;
+  gap: 0.5rem;
+  height: 250px;
+}
+
+.heatmapCell {
+  border: 1px solid #008f73;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  font-size: 0.8rem;
+  transition: background-color 0.5s ease;
+}
+
+.heatmapCell h4 {
+  margin: 0;
+  color: #fff;
+}
+
+.heatmapCell span {
+  font-weight: bold;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.table th, .table td {
+  border: 1px solid #008f73;
+  padding: 0.5rem;
+  text-align: left;
+}
+
+.table th {
+  background-color: #00221c;
+}
+
+.labelInput {
+  background: transparent;
+  border: 1px solid #00ffcc;
+  color: #00ffcc;
+  padding: 0.2rem 0.5rem;
+  font-family: monospace;
+  width: 120px;
+}
+
+.labelInput:focus {
+  outline: none;
+  background-color: #00ffcc;
+  color: #0b0f19;
+}
+
+.button {
+  background-color: #00ffcc;
+  color: #0b0f19;
+  border: none;
+  padding: 0.5rem 1rem;
+  font-family: monospace;
+  font-weight: bold;
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+
+.button:hover {
+  background-color: #fff;
+}
+
+.filterBar {
+  display: flex;
+  gap: 1rem;
+  margin-bottom: 1rem;
+  align-items: center;
+}
+
+.filterBar select, .filterBar input {
+  background: #121826;
+  border: 1px solid #00ffcc;
+  color: #00ffcc;
+  padding: 0.3rem;
+  font-family: monospace;
+}
+
+.logEntry {
+  margin-bottom: 0.5rem;
+  padding-bottom: 0.5rem;
+  border-bottom: 1px solid rgba(0, 255, 204, 0.2);
+}
+
+.logEntry.user {
+  color: #fff;
+}
+
+.logEntry.observer {
+  color: #ff00ff;
+}
+
+.logTime {
+  color: #888;
+  font-size: 0.8rem;
+  margin-right: 1rem;
+}

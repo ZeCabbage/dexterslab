@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SCOTT - Ambulance Rescue 64</title>
+    <meta name="description" content="A Super Mario 64 inspired 3D game where Scott the ambulance driver rescues patients across British Columbia">
+    <link rel="stylesheet" href="style.css">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;600;700;900&display=swap" rel="stylesheet">
+</head>
+<body>
+    <!-- Title Screen -->
+    <div id="title-screen">
+        <div class="title-stars"></div>
+        <div class="title-content">
+            <div class="title-logo">
+                <span class="title-scott">SCOTT</span>
+                <span class="title-sub">AMBULANCE RESCUE 64</span>
+            </div>
+            <div class="title-art">🚑</div>
+            <p class="title-tagline">Rescue patients across British Columbia!</p>
+            <div class="title-prompt">PRESS ENTER TO START</div>
+            <div class="title-controls">
+                <p>WASD / Arrows — Move &nbsp;|&nbsp; Space — Jump &nbsp;|&nbsp; E — Rescue Patient</p>
+                <p>Mouse — Rotate Camera &nbsp;|&nbsp; P — Pause</p>
+            </div>
+        </div>
+    </div>
+
+    <!-- Game HUD -->
+    <div id="hud" class="hidden">
+        <div id="hud-top">
+            <div id="hud-stars">
+                <span class="star-icon">⭐</span>
+                <span id="star-count">0</span> / 6
+            </div>
+            <div id="hud-zone">Ambulance Station</div>
+            <div id="hud-health">
+                <span id="heart-1" class="heart">❤️</span>
+                <span id="heart-2" class="heart">❤️</span>
+                <span id="heart-3" class="heart">❤️</span>
+            </div>
+        </div>
+        <div id="hud-objective" class="hidden">
+            <div id="objective-text"></div>
+        </div>
+        <div id="hud-minimap">
+            <canvas id="minimap-canvas" width="160" height="160"></canvas>
+        </div>
+    </div>
+
+    <!-- Star Collect Overlay -->
+    <div id="star-overlay" class="hidden">
+        <div class="star-collect-anim">⭐</div>
+        <div class="star-collect-text">STAR GET!</div>
+        <div class="star-collect-name" id="star-zone-name"></div>
+    </div>
+
+    <!-- Pause Menu -->
+    <div id="pause-menu" class="hidden">
+        <div class="pause-content">
+            <h2>PAUSED</h2>
+            <div class="pause-stars">
+                <div class="pause-star-list" id="pause-star-list"></div>
+            </div>
+            <p class="pause-hint">Press P to resume</p>
+        </div>
+    </div>
+
+    <!-- Game Over -->
+    <div id="game-over" class="hidden">
+        <div class="gameover-content">
+            <h2>GAME OVER</h2>
+            <p>Press ENTER to try again</p>
+        </div>
+    </div>
+
+    <!-- Win Screen -->
+    <div id="win-screen" class="hidden">
+        <div class="win-content">
+            <h2>🎉 ALL PATIENTS RESCUED! 🎉</h2>
+            <p>British Columbia is safe thanks to Scott!</p>
+            <div class="win-stars">⭐⭐⭐⭐⭐⭐</div>
+            <p class="win-hint">Press ENTER to play again</p>
+        </div>
+    </div>
+
+    <!-- Interaction Prompt -->
+    <div id="interact-prompt" class="hidden">
+        <div class="interact-content">Press <strong>E</strong> to rescue patient</div>
+    </div>
+
+    <!-- Star Gate Prompt -->
+    <div id="gate-prompt" class="hidden">
+        <div class="gate-content" id="gate-text">Need 3 ⭐ to enter</div>
+    </div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script src="game.js"></script>
+</body>
+</html>

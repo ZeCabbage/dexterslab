@@ -1,0 +1,4 @@
+{"seq":1,"ts":1774414118532,"ts_hr":"218755778922100","event":"system.startup","payload_size_bytes":61,"payload_summary":"{\"version\":\"1.0.0\",\"observer_mode\":\"v2\",\"platform\":\"windows\"}"}
+{"seq":2,"ts":1774414119377,"ts_hr":"218756624117700","event":"system.pi_connected","payload_size_bytes":27,"payload_summary":"{\"timestamp\":1774414119377}"}
+{"seq":3,"ts":1774414128533,"type":"metrics_snapshot","data":{"events_total":2,"events_last_10s":2,"event_type_counts":{"system.startup":1,"system.pi_connected":1},"nodejs_memory_mb":16.5751953125,"nodejs_uptime_seconds":10.2975061,"active_ws_connections":1,"memory_queue_depth":0,"context_bus_pending":0}}
+{"seq":3,"ts":1774414138547,"type":"metrics_snapshot","data":{"events_total":2,"events_last_10s":0,"event_type_counts":{"system.startup":1,"system.pi_connected":1},"nodejs_memory_mb":16.747940063476562,"nodejs_uptime_seconds":20.3117908,"active_ws_connections":1,"memory_queue_depth":0,"context_bus_pending":0}}
