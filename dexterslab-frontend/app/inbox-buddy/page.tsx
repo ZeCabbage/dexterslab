@@ -75,11 +75,13 @@ interface SubscriptionEntry {
   firstSeen: string;
   unsubscribeLink: string | null;
   unsubscribeMailto: string | null;
+  hasOneClick: boolean;
   sampleSubjects: string[];
   messageIds: string[];
   category: 'newsletter' | 'marketing' | 'social' | 'transactional' | 'notification' | 'other';
   selected?: boolean;
   trashed?: boolean;
+  unsubscribed?: boolean;
 }
 
 interface ConfirmAction {
@@ -142,6 +144,7 @@ export default function InboxBuddyPage() {
   const [subsTotalEmails, setSubsTotalEmails] = useState(0);
   const [subsWeeklyEmails, setSubsWeeklyEmails] = useState(0);
   const [trashingSender, setTrashingSender] = useState<string | null>(null);
+  const [unsubscribingSender, setUnsubscribingSender] = useState<string | null>(null);
   const [batchLoading, setBatchLoading] = useState(false);
   const [subsSort, setSubsSort] = useState<'count' | 'frequency' | 'recent' | 'name'>('count');
   const [subsFilter, setSubsFilter] = useState<string>('all');
@@ -154,7 +157,17 @@ export default function InboxBuddyPage() {
   // Toast notifications
   const [toasts, setToasts] = useState<Toast[]>([]);
 
-  const [activeTab, setActiveTab] = useState<'overview' | 'vip' | 'deepdive' | 'purge' | 'subs'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'vip' | 'deepdive' | 'purge' | 'subs' | 'protect'>('overview');
+
+  // ── Protect state ──
+  const [protectScanning, setProtectScanning] = useState(false);
+  const [protectThreats, setProtectThreats] = useState<any[]>([]);
+  const [protectScore, setProtectScore] = useState<number | null>(null);
+  const [protectScanned, setProtectScanned] = useState(0);
+  const [protectQuarantined, setProtectQuarantined] = useState(0);
+  const [quarantinedEmails, setQuarantinedEmails] = useState<any[]>([]);
+  const [previewEmail, setPreviewEmail] = useState<any | null>(null);
+  const [threatActionLoading, setThreatActionLoading] = useState<string | null>(null);
 
   // ── Helpers ──
 
@@ -540,6 +553,33 @@ export default function InboxBuddyPage() {
     });
   }, [subscriptions, showConfirm, addToast]);
 
+  const autoUnsubscribe = useCallback(async (sub: SubscriptionEntry) => {
+    setUnsubscribingSender(sub.senderEmail);
+    try {
+      const res = await fetch('/api/inbox-buddy/subscriptions/unsubscribe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          senderEmail: sub.senderEmail,
+          unsubscribeLink: sub.unsubscribeLink,
+          unsubscribeMailto: sub.unsubscribeMailto,
+          hasOneClick: sub.hasOneClick,
+        }),
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSubscriptions((prev) => prev.map((s) => s.senderEmail === sub.senderEmail ? { ...s, unsubscribed: true } : s));
+        addToast(`✅ Unsubscribed from ${sub.senderName} via ${data.method}`, 'success');
+      } else {
+        addToast(`⚠️ Could not auto-unsubscribe from ${sub.senderName}: ${data.detail}`, 'error');
+      }
+    } catch (err: any) {
+      addToast(`❌ Unsubscribe failed: ${err.message}`, 'error');
+    } finally {
+      setUnsubscribingSender(null);
+    }
+  }, [addToast]);
+
   // ── Subscription filtering/sorting ──
   const filteredSubs = subscriptions
     .filter((s) => {
@@ -664,9 +704,9 @@ export default function InboxBuddyPage() {
         {status === 'authenticated' && (
           <>
             <div className={styles.tabBar}>
-              {(['overview', 'vip', 'deepdive', 'purge', 'subs'] as const).map((tab) => (
+              {(['overview', 'vip', 'deepdive', 'purge', 'subs', 'protect'] as const).map((tab) => (
                 <button key={tab} className={`${styles.tab} ${activeTab === tab ? styles.tabActive : ''}`} onClick={() => setActiveTab(tab)}>
-                  {tab === 'overview' ? '🧹 OVERVIEW' : tab === 'vip' ? '⭐ VIP' : tab === 'deepdive' ? '🔬 DEEP DIVE' : tab === 'purge' ? '💣 MASS PURGE' : '📋 SUBS'}
+                  {tab === 'overview' ? '🧹 OVERVIEW' : tab === 'vip' ? '⭐ VIP' : tab === 'deepdive' ? '🔬 DEEP DIVE' : tab === 'purge' ? '💣 MASS PURGE' : tab === 'subs' ? '📋 SUBS' : '🛡️ PROTECT'}
                 </button>
               ))}
             </div>
@@ -1062,15 +1102,14 @@ export default function InboxBuddyPage() {
 
                           {/* Actions */}
                           <div className={styles.subsCardActions}>
-                            {sub.unsubscribeLink && (
-                              <a
-                                href={sub.unsubscribeLink}
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                className={styles.subsUnsubLink}
+                            {(sub.unsubscribeLink || sub.unsubscribeMailto) && (
+                              <button
+                                className={styles.subsUnsubBtn}
+                                onClick={() => autoUnsubscribe(sub)}
+                                disabled={unsubscribingSender === sub.senderEmail || sub.unsubscribed}
                               >
-                                🔗 UNSUBSCRIBE
-                              </a>
+                                {sub.unsubscribed ? '✅ UNSUBSCRIBED' : unsubscribingSender === sub.senderEmail ? <><span className={styles.spinner} />UNSUBSCRIBING...</> : (sub.hasOneClick || sub.unsubscribeMailto) ? '⚡ AUTO UNSUBSCRIBE' : '🔗 UNSUBSCRIBE'}
+                              </button>
                             )}
                             <button
                               className={styles.subsTrashBtn}
@@ -1116,6 +1155,196 @@ export default function InboxBuddyPage() {
                   )}
                 </div>
               )}
+
+              {/* ═══ PROTECT ═══ */}
+              {activeTab === 'protect' && (
+                <div className={styles.protectPanel}>
+                  <div className={styles.protectHeader}>
+                    <div>
+                      <h2 className={styles.panelTitle}>🛡️ DATA PROTECTOR</h2>
+                      <p className={styles.panelDesc}>Scan for spoofed senders, malicious links, and phishing threats</p>
+                    </div>
+                    <button
+                      className={styles.protectScanBtn}
+                      onClick={async () => {
+                        setProtectScanning(true);
+                        setProtectThreats([]);
+                        try {
+                          const res = await fetch('/api/inbox-buddy/protect/scan', { method: 'POST' });
+                          const data = await res.json();
+                          if (res.ok) {
+                            setProtectThreats(data.threats || []);
+                            setProtectScore(data.score);
+                            setProtectScanned(data.scanned);
+                            setProtectQuarantined(data.quarantined);
+                            addToast(`🛡️ Scan complete: ${data.threats?.length || 0} threats found, ${data.quarantined} quarantined`, data.threats?.length > 0 ? 'error' : 'success');
+                            // Fetch quarantined emails
+                            const threatRes = await fetch('/api/inbox-buddy/protect/threats');
+                            const threatData = await threatRes.json();
+                            if (threatRes.ok) setQuarantinedEmails(threatData.threats || []);
+                          } else {
+                            setError(data.error);
+                          }
+                        } catch (err: any) { setError(err.message); }
+                        finally { setProtectScanning(false); }
+                      }}
+                      disabled={protectScanning}
+                    >
+                      {protectScanning ? <><span className={styles.spinner} />SCANNING INBOX...</> : '🔍 RUN SECURITY SCAN'}
+                    </button>
+                  </div>
+
+                  {/* Security Score */}
+                  {protectScore !== null && (
+                    <div className={styles.protectStats}>
+                      <div className={styles.scoreGauge} data-level={protectScore >= 80 ? 'good' : protectScore >= 50 ? 'warn' : 'danger'}>
+                        <span className={styles.scoreNumber}>{protectScore}</span>
+                        <span className={styles.scoreLabel}>SECURITY SCORE</span>
+                      </div>
+                      <div className={styles.protectStatCard}>
+                        <span className={styles.protectStatValue}>{protectScanned}</span>
+                        <span className={styles.protectStatLabel}>EMAILS SCANNED</span>
+                      </div>
+                      <div className={styles.protectStatCard}>
+                        <span className={styles.protectStatValue}>{protectThreats.length}</span>
+                        <span className={styles.protectStatLabel}>THREATS FOUND</span>
+                      </div>
+                      <div className={styles.protectStatCard}>
+                        <span className={styles.protectStatValue}>{protectQuarantined}</span>
+                        <span className={styles.protectStatLabel}>QUARANTINED</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Threat Log */}
+                  {protectThreats.length > 0 && (
+                    <div className={styles.threatLog}>
+                      <h3 className={styles.threatLogTitle}>⚠️ THREAT LOG ({protectThreats.length})</h3>
+                      <div className={styles.threatTable}>
+                        {protectThreats.map((t: any, i: number) => (
+                          <div key={`${t.messageId}-${i}`} className={styles.threatRow} data-severity={t.severity}>
+                            <div className={styles.threatInfo}>
+                              <span className={styles.threatBadge} data-type={t.threatType}>
+                                {t.threatType === 'spoofed' ? '🎭 SPOOFED' : t.threatType === 'phishing' ? '🎣 PHISHING' : t.threatType === 'malware' ? '☠️ MALWARE' : t.threatType === 'malicious_link' ? '🔗 MALICIOUS LINK' : t.threatType === 'deceptive_link' ? '🔀 DECEPTIVE LINK' : '⚠️ SUSPICIOUS'}
+                              </span>
+                              <span className={styles.threatSeverity} data-severity={t.severity}>
+                                {t.severity === 'critical' ? '🔴' : t.severity === 'high' ? '🟠' : t.severity === 'medium' ? '🟡' : '🟢'} {t.severity.toUpperCase()}
+                              </span>
+                            </div>
+                            <div className={styles.threatMeta}>
+                              <span className={styles.threatSender}>{t.senderName} &lt;{t.sender}&gt;</span>
+                              <span className={styles.threatSubject}>{t.subject}</span>
+                            </div>
+                            <div className={styles.threatDetail}>{t.detail}</div>
+                            <div className={styles.threatActions}>
+                              {t.quarantined && <span className={styles.quarantinedBadge}>📦 QUARANTINED</span>}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Quarantined Emails — Action Center */}
+                  {quarantinedEmails.length > 0 && (
+                    <div className={styles.actionCenter}>
+                      <h3 className={styles.threatLogTitle}>📦 ACTION CENTER — QUARANTINED EMAILS ({quarantinedEmails.length})</h3>
+                      <div className={styles.threatTable}>
+                        {quarantinedEmails.map((q: any) => (
+                          <div key={q.messageId} className={styles.threatRow} data-severity="high">
+                            <div className={styles.threatMeta}>
+                              <span className={styles.threatSender}>{q.senderName} &lt;{q.sender}&gt;</span>
+                              <span className={styles.threatSubject}>{q.subject}</span>
+                            </div>
+                            <div className={styles.quarantineActions}>
+                              <button
+                                className={styles.previewBtn}
+                                disabled={threatActionLoading === q.messageId}
+                                onClick={async () => {
+                                  setThreatActionLoading(q.messageId);
+                                  try {
+                                    const res = await fetch('/api/inbox-buddy/protect/threats', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ action: 'preview', messageId: q.messageId }),
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) setPreviewEmail(data);
+                                  } catch {} finally { setThreatActionLoading(null); }
+                                }}
+                              >👁️ SAFE PREVIEW</button>
+                              <button
+                                className={styles.restoreBtn}
+                                disabled={threatActionLoading === q.messageId}
+                                onClick={async () => {
+                                  setThreatActionLoading(q.messageId);
+                                  try {
+                                    const res = await fetch('/api/inbox-buddy/protect/threats', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ action: 'restore', messageId: q.messageId }),
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                      setQuarantinedEmails((prev) => prev.filter((e) => e.messageId !== q.messageId));
+                                      addToast('✅ Email restored to inbox', 'success');
+                                    }
+                                  } catch {} finally { setThreatActionLoading(null); }
+                                }}
+                              >↩️ RESTORE</button>
+                              <button
+                                className={styles.deleteBtn}
+                                disabled={threatActionLoading === q.messageId}
+                                onClick={async () => {
+                                  setThreatActionLoading(q.messageId);
+                                  try {
+                                    const res = await fetch('/api/inbox-buddy/protect/threats', {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ action: 'delete', messageId: q.messageId }),
+                                    });
+                                    const data = await res.json();
+                                    if (data.success) {
+                                      setQuarantinedEmails((prev) => prev.filter((e) => e.messageId !== q.messageId));
+                                      addToast('🗑️ Email permanently deleted', 'success');
+                                    }
+                                  } catch {} finally { setThreatActionLoading(null); }
+                                }}
+                              >🗑️ DELETE</button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Safe Preview Modal */}
+                  {previewEmail && (
+                    <div className={styles.previewOverlay} onClick={() => setPreviewEmail(null)}>
+                      <div className={styles.previewModal} onClick={(e) => e.stopPropagation()}>
+                        <div className={styles.previewHeader}>
+                          <h3>🔒 SAFE PREVIEW — HTML/IMAGES STRIPPED</h3>
+                          <button className={styles.previewClose} onClick={() => setPreviewEmail(null)}>✕</button>
+                        </div>
+                        <div className={styles.previewMeta}>
+                          <div><strong>FROM:</strong> {previewEmail.from}</div>
+                          <div><strong>SUBJECT:</strong> {previewEmail.subject}</div>
+                          <div><strong>DATE:</strong> {previewEmail.date}</div>
+                        </div>
+                        <pre className={styles.previewBody}>{previewEmail.body}</pre>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Empty State */}
+                  {!protectScanning && protectThreats.length === 0 && protectScore === null && (
+                    <div className={styles.emptyState}>
+                      <span>🛡️</span>
+                      <p>Scan your inbox for spoofed senders, malicious links, and phishing threats</p>
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </>
         )}
@@ -1130,7 +1359,7 @@ export default function InboxBuddyPage() {
         )}
 
         <footer className={styles.footer}>
-          <span>INBOX BUDDY v3.1</span>
+          <span>INBOX BUDDY v3.2</span>
           <span className={styles.divider}>│</span>
           <span>GEMINI AI</span>
           <span className={styles.divider}>│</span>

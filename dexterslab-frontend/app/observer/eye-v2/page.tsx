@@ -95,12 +95,23 @@ export default function ObserverEyeV2() {
         const debugCtx = debugCanvas.getContext('2d')!;
 
         // ── Keyboard handlers ──
+        let sentinelOverride = false;
+
         function onKeyDown(e: KeyboardEvent) {
             if (e.code === 'Backquote') {
                 debugRef.current = !debugRef.current;
             }
+            // Theme selection (1-4)
+            if (e.code === 'Digit1') renderer.setTheme(0);
+            else if (e.code === 'Digit2') renderer.setTheme(1);
+            else if (e.code === 'Digit3') renderer.setTheme(2);
+            else if (e.code === 'Digit4') renderer.setTheme(3);
+            else if (e.code === 'Digit5') {
+                sentinelOverride = !sentinelOverride;
+                console.log(`👁 Sentinel Override toggled to: ${sentinelOverride}`);
+            }
             // Voice commands via keyboard (fallback)
-            if (e.code === 'KeyS') ws.sendInteraction({ type: 'command', command: 'sleep' });
+            else if (e.code === 'KeyS') ws.sendInteraction({ type: 'command', command: 'sleep' });
             else if (e.code === 'KeyW') ws.sendInteraction({ type: 'command', command: 'wake' });
             else if (e.code === 'KeyB') ws.sendInteraction({ type: 'command', command: 'blush' });
             else if (e.code === 'KeyG') ws.sendInteraction({ type: 'command', command: 'goodboy' });
@@ -123,6 +134,47 @@ export default function ObserverEyeV2() {
 
             // Render eye from latest backend state (or mock state based on connection)
             let displayState = { ...stateRef.current };
+            if (sentinelOverride) {
+                displayState.sentinel = true;
+            }
+
+            if (displayState.sentinel) {
+                // Procedural Saccadic Scanning Path
+                const sSpeed = 0.4; // 1 cycle every 2.5 seconds
+                const t = now * sSpeed;
+                const tFloor = Math.floor(t);
+                const tFract = t - tFloor;
+                
+                // Smooth jump over 25% of cycle (~0.6 seconds), hold for the rest
+                let jumpBlend = 1;
+                if (tFract < 0.25) {
+                    const x = tFract / 0.25;
+                    jumpBlend = x * x * (3 - 2 * x); // smoothstep
+                }
+
+                // Tame the scanning radius so it stays well within the 5-inch screen and eyeball bounds
+                const targetAmpX = 0.18;
+                const targetAmpY = 0.12;
+                
+                const p1x = Math.sin(tFloor * 13.4) * targetAmpX;
+                const p1y = Math.cos(tFloor * 17.7) * targetAmpY;
+                const p2x = Math.sin((tFloor + 1) * 13.4) * targetAmpX;
+                const p2y = Math.cos((tFloor + 1) * 17.7) * targetAmpY;
+
+                const dartX = p1x + (p2x - p1x) * jumpBlend;
+                const dartY = p1y + (p2y - p1y) * jumpBlend;
+
+                const wanderX = Math.sin(now * 0.6) * 0.04;
+                const wanderY = Math.cos(now * 0.8) * 0.04;
+
+                const limitX = canvas ? canvas.width * 0.5 : 400;
+                const limitY = canvas ? canvas.height * 0.5 : 300;
+                
+                // Override tracking point
+                displayState.ix = (dartX + wanderX) * limitX;
+                displayState.iy = (dartY + wanderY) * limitY;
+            }
+
             const cs = connStateRef.current;
             
             if (canvas) {
@@ -150,7 +202,7 @@ export default function ObserverEyeV2() {
             debugCanvas.width = window.innerWidth;
             debugCanvas.height = window.innerHeight;
             if (debugRef.current) {
-                renderDebugHUD(debugCtx, stateRef.current, fps.value, connectedRef.current);
+                renderDebugHUD(debugCtx, stateRef.current, fps.value, connectedRef.current, renderer.getThemeName(), renderer.getThemeIndex());
             }
 
             animRef.current = requestAnimationFrame(frame);
@@ -263,58 +315,29 @@ export default function ObserverEyeV2() {
             </div>
 
             {/* Text overlay (Oracle responses, reactions, ambient) */}
-            {overlayText && (
+            {overlayText && overlayType !== 'ambient' && (
                 <div style={{
                     position: 'absolute',
-                    bottom: overlayType === 'ambient' ? '12%' : '15%',
+                    bottom: '15%',
                     left: 0, right: 0,
                     textAlign: 'center', zIndex: 25,
-                    fontFamily: overlayType === 'ambient'
-                        ? "'VT323', 'Courier New', monospace"
-                        : "'Courier New', monospace",
-                    fontSize: overlayType === 'ambient' ? '32px' :
-                              overlayType === 'oracle' ? '24px' : '32px',
+                    fontFamily: "'Courier New', monospace",
+                    fontSize: overlayType === 'oracle' ? '24px' : '32px',
                     fontWeight: 'bold',
-                    color: overlayType === 'ambient' ? '#00ff88' :
-                           overlayType === 'oracle' ? '#0ff' :
+                    color: overlayType === 'oracle' ? '#0ff' :
                            overlayType === 'goodboy' ? '#ff88aa' :
                            overlayType === 'thankyou' ? '#0df' : '#0fc',
-                    textShadow: overlayType === 'ambient'
-                        ? '0 0 12px #00ff88, 0 0 30px rgba(0,255,136,0.6), 0 0 60px rgba(0,255,136,0.3)'
-                        : '0 0 20px currentColor',
-                    letterSpacing: overlayType === 'ambient' ? '6px' : '3px',
-                    opacity: overlayType === 'ambient' ? 0.9 : 0.9,
-                    animation: overlayType === 'ambient'
-                        ? 'ambientGlitch 0.3s ease-out, ambientPulse 2s ease-in-out infinite'
-                        : 'fadeInUp 0.3s ease-out',
+                    textShadow: '0 0 20px currentColor',
+                    letterSpacing: '3px',
+                    opacity: 0.9,
+                    animation: 'fadeInUp 0.3s ease-out',
                     pointerEvents: 'none',
                 }}>
                     {overlayText}
                 </div>
             )}
 
-            {/* Tracking Detection Alert */}
-            {trackingActive && (
-                <div style={{
-                    position: 'absolute',
-                    bottom: '8%', left: 0, right: 0,
-                    textAlign: 'center', zIndex: 25,
-                    fontFamily: "'VT323', 'Courier New', monospace",
-                    fontSize: '22px',
-                    fontWeight: 'bold',
-                    color: '#ff1a1a',
-                    textShadow: '0 0 10px #ff0000, 0 0 20px #ff0000, 0 0 40px #cc0000',
-                    letterSpacing: '4px',
-                    textTransform: 'uppercase',
-                    animation: 'trackingFlicker 0.1s ease-in-out, trackingFadeIn 0.4s ease-out',
-                    pointerEvents: 'none',
-                }}>
-                    {detectionMode === 'face'
-                        ? '▸ HUMAN DETECTED — TRACKING INITIATED ◂'
-                        : '▸ MOVEMENT DETECTED — TRACKING ◂'
-                    }
-                </div>
-            )}
+            {/* Tracking Detection Alert (Disabled per user request) */}
 
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
@@ -354,17 +377,18 @@ function renderDebugHUD(
     state: EyeState,
     fps: number,
     connected: boolean,
+    themeName: string,
+    themeIndex: number,
 ) {
-    const pad = 14;
     const lineH = 18;
     let y = 40;
     const x = 12;
 
     ctx.fillStyle = 'rgba(0,0,0,0.75)';
-    ctx.fillRect(x - 8, y - 20, 380, 220);
+    ctx.fillRect(x - 8, y - 20, 420, 260);
     ctx.strokeStyle = 'rgba(0,255,200,0.4)';
     ctx.lineWidth = 1;
-    ctx.strokeRect(x - 8, y - 20, 380, 220);
+    ctx.strokeRect(x - 8, y - 20, 420, 260);
 
     ctx.font = '13px monospace';
     ctx.textAlign = 'left';
@@ -374,7 +398,12 @@ function renderDebugHUD(
     y += lineH + 4;
 
     ctx.fillStyle = connected ? '#0f0' : '#f44';
-    ctx.fillText(`FPS: ${fps}  |  WS: ${connected ? 'CONNECTED' : 'OFFLINE'}  |  CAM: DECAPITATED (NATIVE)`, x, y);
+    ctx.fillText(`FPS: ${fps}  |  WS: ${connected ? 'CONNECTED' : 'OFFLINE'}  |  CAM: NATIVE`, x, y);
+    y += lineH;
+
+    const themeColors = ['#68f', '#f44', '#fa0', '#0ed'];
+    ctx.fillStyle = themeColors[themeIndex] || '#fff';
+    ctx.fillText(`THEME: [${themeIndex + 1}] ${themeName}  |  Keys: 1-4 to switch`, x, y);
     y += lineH;
 
     ctx.fillStyle = '#ccc';

@@ -21,6 +21,7 @@ export interface Subscription {
   firstSeen: string; // ISO
   unsubscribeLink: string | null;
   unsubscribeMailto: string | null;
+  hasOneClick: boolean; // RFC 8058 one-click unsubscribe support
   sampleSubjects: string[];
   messageIds: string[];
   category: 'newsletter' | 'marketing' | 'social' | 'transactional' | 'notification' | 'other';
@@ -61,7 +62,8 @@ export async function GET() {
   const gmail = getGmailClient(accessToken);
 
   try {
-    // Paginate through messages with List-Unsubscribe header
+    // Paginate through messages that contain "unsubscribe" (body/subject/headers)
+    // This catches virtually all subscription emails since they have unsubscribe links in footers
     const allMessageIds: { id: string }[] = [];
     let pageToken: string | undefined;
     const MAX_MESSAGES = 2000;
@@ -69,7 +71,7 @@ export async function GET() {
     while (allMessageIds.length < MAX_MESSAGES) {
       const params: any = {
         userId: 'me',
-        q: 'list:unsubscribe',
+        q: 'unsubscribe',
         maxResults: 500,
       };
       if (pageToken) params.pageToken = pageToken;
@@ -77,6 +79,7 @@ export async function GET() {
       const { data } = await gmail.users.messages.list(params);
       const msgs = data.messages || [];
       allMessageIds.push(...msgs.map((m: any) => ({ id: m.id! })));
+      console.log(`[Subscriptions] Fetched page: ${allMessageIds.length} message IDs so far`);
 
       pageToken = data.nextPageToken ?? undefined;
       if (!pageToken || allMessageIds.length >= MAX_MESSAGES) break;
@@ -84,6 +87,7 @@ export async function GET() {
 
     // Cap at MAX_MESSAGES
     const messagesToProcess = allMessageIds.slice(0, MAX_MESSAGES);
+    console.log(`[Subscriptions] Total messages to process: ${messagesToProcess.length}`);
 
     if (messagesToProcess.length === 0) {
       return NextResponse.json({ subscriptions: [], total: 0, scanned: 0 });
@@ -96,6 +100,7 @@ export async function GET() {
       count: number;
       unsubLink: string | null;
       unsubMailto: string | null;
+      hasOneClick: boolean;
       subjects: string[];
       ids: string[];
       timestamps: number[];
@@ -104,6 +109,7 @@ export async function GET() {
     const BATCH_SIZE = 25;
     for (let i = 0; i < messagesToProcess.length; i += BATCH_SIZE) {
       const batch = messagesToProcess.slice(i, i + BATCH_SIZE);
+      console.log(`[Subscriptions] Processing batch ${Math.floor(i / BATCH_SIZE) + 1}/${Math.ceil(messagesToProcess.length / BATCH_SIZE)} (${i + batch.length}/${messagesToProcess.length})`);
 
       const details = await Promise.all(
         batch.map((msg) =>
@@ -111,7 +117,7 @@ export async function GET() {
             userId: 'me',
             id: msg.id,
             format: 'metadata',
-            metadataHeaders: ['From', 'Subject', 'List-Unsubscribe', 'Date'],
+            metadataHeaders: ['From', 'Subject', 'List-Unsubscribe', 'List-Unsubscribe-Post', 'Date'],
           }).catch(() => null)
         )
       );
@@ -123,6 +129,7 @@ export async function GET() {
         const fromRaw = headers.find((h: any) => h.name === 'From')?.value || '';
         const subject = headers.find((h: any) => h.name === 'Subject')?.value || '(no subject)';
         const unsubHeader = headers.find((h: any) => h.name === 'List-Unsubscribe')?.value || '';
+        const unsubPostHeader = headers.find((h: any) => h.name === 'List-Unsubscribe-Post')?.value || '';
         const dateHeader = headers.find((h: any) => h.name === 'Date')?.value || '';
 
         // Parse sender
@@ -138,6 +145,7 @@ export async function GET() {
         // Parse unsubscribe links
         let unsubLink: string | null = null;
         let unsubMailto: string | null = null;
+        const hasOneClick = unsubPostHeader.toLowerCase().includes('list-unsubscribe=one-click');
         if (unsubHeader) {
           const httpMatch = unsubHeader.match(/<(https?:\/\/[^>]+)>/);
           if (httpMatch) unsubLink = httpMatch[1];
@@ -152,6 +160,7 @@ export async function GET() {
             count: 0,
             unsubLink,
             unsubMailto,
+            hasOneClick,
             subjects: [],
             ids: [],
             timestamps: [],
@@ -167,6 +176,7 @@ export async function GET() {
         }
         if (!entry.unsubLink && unsubLink) entry.unsubLink = unsubLink;
         if (!entry.unsubMailto && unsubMailto) entry.unsubMailto = unsubMailto;
+        if (hasOneClick) entry.hasOneClick = true;
       }
     }
 
@@ -195,6 +205,7 @@ export async function GET() {
           unsubscribeMailto: v.unsubMailto,
           sampleSubjects: v.subjects,
           messageIds: v.ids,
+          hasOneClick: v.hasOneClick,
           category: categorize(email, v.name, v.subjects),
         };
       })

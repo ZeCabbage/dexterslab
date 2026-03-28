@@ -1776,7 +1776,7 @@
   padding-left: 30px;
 }
 
-.subsUnsubLink {
+.subsUnsubBtn {
   flex: 1;
   padding: 6px 12px;
   background: rgba(0, 255, 224, 0.06);
@@ -1785,8 +1785,6 @@
   font-family: var(--font-mono);
   font-size: 0.55rem;
   letter-spacing: 2px;
-  text-decoration: none;
-  text-align: center;
   cursor: pointer;
   transition: all 0.15s;
   display: flex;
@@ -1795,9 +1793,14 @@
   gap: 4px;
 }
 
-.subsUnsubLink:hover {
+.subsUnsubBtn:hover:not(:disabled) {
   background: rgba(0, 255, 224, 0.12);
   border-color: var(--color-cyan);
+}
+
+.subsUnsubBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .subsTrashBtn {
@@ -1930,5 +1933,425 @@
   .batchTrashBtn,
   .batchArchiveBtn {
     flex: 1;
+  }
+}
+
+/* ═══════════════════════════════════════
+   PROTECT DASHBOARD
+   ═══════════════════════════════════════ */
+
+.protectPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.protectHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.protectScanBtn {
+  padding: 10px 24px;
+  background: linear-gradient(135deg, rgba(255, 68, 68, 0.15), rgba(255, 170, 0, 0.15));
+  border: 1px solid rgba(255, 68, 68, 0.4);
+  color: #ff4466;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 2px;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.protectScanBtn:hover:not(:disabled) {
+  background: linear-gradient(135deg, rgba(255, 68, 68, 0.25), rgba(255, 170, 0, 0.25));
+  border-color: #ff4466;
+  box-shadow: 0 0 20px rgba(255, 68, 68, 0.2);
+}
+
+.protectScanBtn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ── Security Score & Stats ── */
+
+.protectStats {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
+  gap: 12px;
+}
+
+.scoreGauge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  border: 2px solid;
+  background: rgba(0, 0, 0, 0.4);
+  position: relative;
+}
+
+.scoreGauge[data-level="good"] {
+  border-color: rgba(0, 255, 136, 0.5);
+  background: rgba(0, 255, 136, 0.05);
+}
+
+.scoreGauge[data-level="warn"] {
+  border-color: rgba(255, 170, 0, 0.5);
+  background: rgba(255, 170, 0, 0.05);
+}
+
+.scoreGauge[data-level="danger"] {
+  border-color: rgba(255, 68, 68, 0.5);
+  background: rgba(255, 68, 68, 0.05);
+}
+
+.scoreNumber {
+  font-family: var(--font-mono);
+  font-size: 2.2rem;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.scoreGauge[data-level="good"] .scoreNumber { color: #00ff88; }
+.scoreGauge[data-level="warn"] .scoreNumber { color: #ffaa00; }
+.scoreGauge[data-level="danger"] .scoreNumber { color: #ff4466; }
+
+.scoreLabel {
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 3px;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 6px;
+}
+
+.protectStatCard {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.protectStatValue {
+  font-family: var(--font-mono);
+  font-size: 1.6rem;
+  font-weight: 700;
+  color: var(--color-cyan);
+}
+
+.protectStatLabel {
+  font-family: var(--font-mono);
+  font-size: 0.45rem;
+  letter-spacing: 2px;
+  color: rgba(255, 255, 255, 0.4);
+  margin-top: 4px;
+}
+
+/* ── Threat Log ── */
+
+.threatLog, .actionCenter {
+  border: 1px solid rgba(255, 68, 68, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+  padding: 16px;
+}
+
+.actionCenter {
+  border-color: rgba(255, 170, 0, 0.3);
+}
+
+.threatLogTitle {
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  letter-spacing: 3px;
+  color: #ff4466;
+  margin-bottom: 12px;
+}
+
+.threatTable {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.threatRow {
+  padding: 12px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  background: rgba(0, 0, 0, 0.2);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  transition: border-color 0.15s;
+}
+
+.threatRow[data-severity="critical"] {
+  border-left: 3px solid #ff4466;
+}
+
+.threatRow[data-severity="high"] {
+  border-left: 3px solid #ffaa00;
+}
+
+.threatRow[data-severity="medium"] {
+  border-left: 3px solid #ffdd00;
+}
+
+.threatRow[data-severity="low"] {
+  border-left: 3px solid #00ff88;
+}
+
+.threatInfo {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.threatBadge {
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  background: rgba(255, 68, 68, 0.15);
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  color: #ff4466;
+}
+
+.threatBadge[data-type="phishing"] {
+  background: rgba(255, 170, 0, 0.15);
+  border-color: rgba(255, 170, 0, 0.3);
+  color: #ffaa00;
+}
+
+.threatBadge[data-type="malware"] {
+  background: rgba(255, 0, 0, 0.2);
+  border-color: rgba(255, 0, 0, 0.4);
+  color: #ff3333;
+}
+
+.threatBadge[data-type="deceptive_link"] {
+  background: rgba(255, 221, 0, 0.15);
+  border-color: rgba(255, 221, 0, 0.3);
+  color: #ffdd00;
+}
+
+.threatBadge[data-type="suspicious_domain"] {
+  background: rgba(255, 170, 0, 0.1);
+  border-color: rgba(255, 170, 0, 0.2);
+  color: #ffaa00;
+}
+
+.threatSeverity {
+  font-family: var(--font-mono);
+  font-size: 0.45rem;
+  letter-spacing: 1px;
+}
+
+.threatMeta {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.threatSender {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.threatSubject {
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: rgba(255, 255, 255, 0.4);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.threatDetail {
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  color: rgba(255, 255, 255, 0.3);
+  padding: 4px 8px;
+  background: rgba(0, 0, 0, 0.3);
+  border-left: 2px solid rgba(255, 68, 68, 0.3);
+}
+
+.threatActions {
+  display: flex;
+  gap: 8px;
+}
+
+.quarantinedBadge {
+  font-family: var(--font-mono);
+  font-size: 0.45rem;
+  letter-spacing: 1px;
+  padding: 2px 8px;
+  background: rgba(255, 68, 68, 0.2);
+  border: 1px solid rgba(255, 68, 68, 0.4);
+  color: #ff6688;
+}
+
+/* ── Quarantine Action Buttons ── */
+
+.quarantineActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.previewBtn, .restoreBtn, .deleteBtn {
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 0.5rem;
+  letter-spacing: 1px;
+  cursor: pointer;
+  transition: all 0.15s;
+  border: 1px solid;
+}
+
+.previewBtn {
+  background: rgba(0, 255, 224, 0.06);
+  border-color: rgba(0, 255, 224, 0.3);
+  color: var(--color-cyan);
+}
+
+.previewBtn:hover:not(:disabled) {
+  background: rgba(0, 255, 224, 0.12);
+}
+
+.restoreBtn {
+  background: rgba(0, 255, 136, 0.06);
+  border-color: rgba(0, 255, 136, 0.3);
+  color: #00ff88;
+}
+
+.restoreBtn:hover:not(:disabled) {
+  background: rgba(0, 255, 136, 0.12);
+}
+
+.deleteBtn {
+  background: rgba(255, 68, 68, 0.06);
+  border-color: rgba(255, 68, 68, 0.3);
+  color: #ff4466;
+}
+
+.deleteBtn:hover:not(:disabled) {
+  background: rgba(255, 68, 68, 0.12);
+}
+
+.previewBtn:disabled, .restoreBtn:disabled, .deleteBtn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* ── Safe Preview Modal ── */
+
+.previewOverlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  background: rgba(0, 0, 0, 0.85);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
+.previewModal {
+  width: 90%;
+  max-width: 800px;
+  max-height: 80vh;
+  background: #0a0e14;
+  border: 1px solid rgba(255, 68, 68, 0.3);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.previewHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  background: rgba(255, 68, 68, 0.1);
+  border-bottom: 1px solid rgba(255, 68, 68, 0.2);
+}
+
+.previewHeader h3 {
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  letter-spacing: 2px;
+  color: #ff4466;
+}
+
+.previewClose {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  color: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
+  font-size: 0.75rem;
+}
+
+.previewClose:hover {
+  border-color: #ff4466;
+  color: #ff4466;
+}
+
+.previewMeta {
+  padding: 12px 16px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: var(--font-mono);
+  font-size: 0.55rem;
+  color: rgba(255, 255, 255, 0.6);
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.previewMeta strong {
+  color: var(--color-cyan);
+}
+
+.previewBody {
+  padding: 16px;
+  font-family: var(--font-mono);
+  font-size: 0.6rem;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.7);
+  overflow-y: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  flex: 1;
+}
+
+/* ── Responsive ── */
+
+@media (max-width: 640px) {
+  .protectStats {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .protectHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .quarantineActions {
+    flex-wrap: wrap;
   }
 }

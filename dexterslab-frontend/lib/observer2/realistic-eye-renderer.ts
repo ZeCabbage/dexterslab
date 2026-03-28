@@ -1,23 +1,16 @@
-/**
- * THE OBSERVER 2 — Photorealistic Eye Renderer (WebGL2)
- *
- * A single, perfected realistic eye rendered entirely via GPU shaders.
- * No textures — everything is procedurally generated:
- *
- *   Sclera      — Smooth white with subtle vein noise, edge shadow
- *   Iris        — Multi-layered stroma fibers, crypts, collarette,
- *                 limbal ring, procedural color variation
- *   Pupil       — Clean black with feathered edge, dilation-driven sizing
- *   Corneal     — Bright specular highlights that shift with gaze
- *   Wet layer   — Glossy reflection pass for depth
- *   Lid shadow  — Soft shadow from the upper lid
- *
- * Accepts EyeState from the backend and renders at 60fps.
- */
-
 import { EyeState } from './types';
 
-// ── Vertex shader (full-screen quad) ──
+// ── Constants ──
+const THEME_COUNT = 4;
+const THEME_NAMES = ['Classic', 'HAL-9000', 'Obsidian Void', 'Vector Reticle'];
+
+// Transition constants
+const TRANSITION_CLOSE_MS = 1500;
+const TRANSITION_OPEN_MS = 2500;
+const MIN_INTERVAL_S = 180.0;
+const MAX_INTERVAL_S = 900.0;
+
+// ── Vertex shader ──
 const VERT_SOURCE = `#version 300 es
 precision highp float;
 in vec2 aPos;
@@ -27,359 +20,449 @@ void main() {
     gl_Position = vec4(aPos, 0.0, 1.0);
 }`;
 
-// ── Fragment shader (the entire eye) ──
+// ── Fragment shader ──
 const FRAG_SOURCE = `#version 300 es
 precision highp float;
 
 in vec2 vUV;
 out vec4 fragColor;
 
-// Uniforms from eye state
 uniform float uTime;
-uniform vec2 uIrisOffset;    // normalized iris center offset (-1..1)
-uniform float uDilation;     // pupil dilation (0.5 - 1.8)
-uniform float uBlink;        // lid closure (0=open, 1=closed)
-uniform float uBlush;        // blush intensity
-uniform vec2 uResolution;    // canvas size
+uniform vec2 uIrisOffset;
+uniform float uDilation;
+uniform float uBlink;
+uniform float uBlush;
+uniform vec2 uResolution;
+uniform int uTheme;
+uniform float uSentinel;
 
-// ── Constants ──
+uniform sampler2D uMatCapSclera;
+uniform sampler2D uMatCapIris;
+uniform sampler2D uMatCapMetal;
+uniform sampler2D uMatCapCrimson;
+
 const float EYE_RADIUS = 0.42;
 const float IRIS_RADIUS = 0.155;
 const float PUPIL_BASE = 0.055;
-const float LIMBAL_WIDTH = 0.008;
-const float COLLARETTE_RADIUS = 0.09;
+const float PI = 3.14159265;
 
-// ── Noise functions ──
 float hash(vec2 p) {
     return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453);
 }
 
-float noise(vec2 p) {
-    vec2 i = floor(p);
-    vec2 f = fract(p);
-    f = f * f * (3.0 - 2.0 * f);
-    float a = hash(i);
-    float b = hash(i + vec2(1.0, 0.0));
-    float c = hash(i + vec2(0.0, 1.0));
-    float d = hash(i + vec2(1.0, 1.0));
-    return mix(mix(a, b, f.x), mix(c, d, f.x), f.y);
-}
-
-float fbm(vec2 p) {
-    float f = 0.0;
-    f += 0.5000 * noise(p); p *= 2.01;
-    f += 0.2500 * noise(p); p *= 2.02;
-    f += 0.1250 * noise(p); p *= 2.03;
-    f += 0.0625 * noise(p);
-    return f;
-}
-
-// ── Smooth circle SDF ──
 float circleSDF(vec2 p, vec2 center, float radius) {
     return length(p - center) - radius;
 }
 
+// ── Parallax & Depth ──
+vec2 calculateParallax(vec2 uv, vec2 gaze, float depth) {
+    return uv + (gaze * depth);
+}
+
+vec3 calculateSphereNormal(vec2 uv, vec2 center, float radius) {
+    vec2 rel = uv - center;
+    float distSq = dot(rel, rel);
+    float rSq = radius * radius;
+    if(distSq >= rSq) return vec3(0.0, 0.0, 1.0);
+    float z = sqrt(rSq - distSq);
+    return normalize(vec3(rel.x, rel.y, z));
+}
+
+vec3 calculateBowlNormal(vec2 uv, vec2 center, float radius) {
+    vec2 rel = uv - center;
+    float distSq = dot(rel, rel);
+    float rSq = radius * radius;
+    if(distSq >= rSq) return vec3(0.0, 0.0, 1.0);
+    float z = sqrt(rSq - distSq);
+    return normalize(vec3(rel.x, rel.y, -z)); // pointing inward
+}
+
+vec3 getMatcap(sampler2D tex, vec3 normal) {
+    return texture(tex, normal.xy * 0.5 + 0.5).rgb;
+}
+
+// ════════════════════════════════════
+//  THEME 0: CLASSIC (Stylized Realism)
+// ════════════════════════════════════
+vec3 themeClassic(vec2 uv, vec2 ic, float pupilR, float sd) {
+    // 1. Sclera (Bulging out)
+    vec3 nSclera = calculateSphereNormal(uv, vec2(0.0), EYE_RADIUS);
+    vec3 col = getMatcap(uMatCapSclera, nSclera);
+
+    // 2. Parallax Iris (Sinking inward)
+    vec2 irisUV = calculateParallax(uv, ic, 0.09);
+    float irisDist = circleSDF(irisUV, ic, IRIS_RADIUS);
+
+    if (irisDist < 0.0) {
+        vec3 nIris = calculateBowlNormal(irisUV, ic, IRIS_RADIUS);
+        vec3 irisCol = getMatcap(uMatCapIris, nIris);
+        col = irisCol;
+    }
+
+    // 3. Parallax Pupil (Deepest drop)
+    vec2 pupilUV = calculateParallax(uv, ic, 0.16);
+    float sPulse = sin(uTime * 2.5) * 0.15 + 1.0; 
+    float effPupilR = mix(pupilR, pupilR * sPulse, uSentinel);
+    float pupilDist = circleSDF(pupilUV, ic, effPupilR);
+
+    if (pupilDist < 0.0) {
+        col = mix(col, vec3(0.01), smoothstep(0.002, -0.002, pupilDist));
+    }
+
+    // 4. Cornea (Glass dome pop-out)
+    vec2 corneaUV = calculateParallax(uv, -ic, 0.04);
+    vec3 nCornea = calculateSphereNormal(corneaUV, ic, IRIS_RADIUS);
+    
+    vec3 lightDir = normalize(vec3(0.5, 0.6, 0.9));
+    float spec = pow(max(0.0, dot(nCornea, lightDir)), 80.0);
+    vec3 lightDir2 = normalize(vec3(-0.4, 0.3, 0.6));
+    float spec2 = pow(max(0.0, dot(nCornea, lightDir2)), 40.0);
+    
+    float cMask = smoothstep(0.02, 0.0, circleSDF(uv, ic, IRIS_RADIUS * 1.05));
+    col += vec3(1.0, 0.95, 0.9) * spec * 1.5 * cMask;
+    col += vec3(0.8, 0.85, 1.0) * spec2 * 0.7 * cMask;
+
+    return col;
+}
+
+// ════════════════════════════════════
+//  THEME 1: HAL-9000
+// ════════════════════════════════════
+vec3 themeHAL(vec2 uv, vec2 ic, float pupilR, float sd) {
+    // 1. Metal Housing (Static background)
+    vec3 nMetal = calculateBowlNormal(uv, vec2(0.0), EYE_RADIUS);
+    vec3 col = getMatcap(uMatCapMetal, nMetal);
+
+    // 2. Heavy Beveled Ridge around Lens
+    float lensR = 0.21;
+    float distToLens = length(uv) - lensR;
+    if (distToLens > 0.0 && distToLens < 0.02) {
+        // Create an inward bevel using normal offset
+        vec3 bevelN = calculateSphereNormal(uv, vec2(0.0), lensR + 0.02);
+        col = getMatcap(uMatCapMetal, bevelN) * 0.6; // Darker bevel
+    }
+
+    // 3. The Crimson Lens (Sunk inward)
+    vec2 lensUV = calculateParallax(uv, ic, 0.06);
+    float lensDist = circleSDF(lensUV, vec2(0.0), lensR);
+
+    if (lensDist < 0.0) {
+        // Base crimson bowl
+        vec3 nCrimson = calculateBowlNormal(lensUV, vec2(0.0), lensR);
+        vec3 lCol = getMatcap(uMatCapCrimson, nCrimson);
+        
+        // 4. Inner Golden Ring (Mid depth)
+        vec2 ringUV = calculateParallax(uv, ic, 0.11);
+        float rDist = length(ringUV - ic);
+        float ringThick = smoothstep(0.002, 0.0, abs(rDist - 0.12));
+        lCol += vec3(1.0, 0.7, 0.1) * ringThick * 0.4;
+        
+        // 5. Deep Tracking Core (Deepest depth, actively pulsing)
+        vec2 coreUV = calculateParallax(uv, ic, 0.18);
+        float coreDist = length(coreUV - ic);
+        float coreK = 90.0 / max(0.5, uDilation * 1.2);
+        float pInt = mix(1.0, sin(uTime * 4.0) * 0.3 + 0.7, uSentinel); // Sentinel breathing
+        
+        // Primary core laser
+        lCol += vec3(1.0, 0.8, 0.4) * exp(-coreDist * coreDist * coreK * 1.5) * 1.2 * pInt;
+        // Bleed glow
+        lCol += vec3(0.8, 0.15, 0.02) * exp(-coreDist * coreDist * coreK * 0.2) * 0.5 * pInt;
+        // Central sharp pinpoint
+        lCol += vec3(1.0, 1.0, 1.0) * smoothstep(0.005, 0.0, coreDist) * 0.8 * pInt;
+
+        // 6. Surface Glass Dome (Popped outward)
+        vec2 glassUV = calculateParallax(uv, -ic, 0.04);
+        vec3 nGlass = calculateSphereNormal(glassUV, vec2(0.0), lensR);
+        
+        // Soft room reflection
+        vec3 lightTop = normalize(vec3(0.0, 0.8, 0.6));
+        float spec1 = pow(max(0.0, dot(nGlass, lightTop)), 40.0);
+        lCol += vec3(1.0, 0.9, 0.8) * spec1 * 0.6;
+        
+        vec3 lightSide = normalize(vec3(-0.7, 0.2, 0.5));
+        float spec2 = pow(max(0.0, dot(nGlass, lightSide)), 12.0);
+        lCol += vec3(1.0, 0.95, 1.0) * spec2 * 0.15;
+
+        col = lCol;
+    }
+    
+    // Vignette shadow inside the housing ring
+    col *= smoothstep(0.0, 0.012, -circleSDF(uv, vec2(0.0), lensR));
+
+    // Outer Sentinel Sweep on Metal
+    float ang = atan(uv.y, uv.x);
+    float radarWarp = fract((ang / (2.0 * PI)) - uTime * 0.4);
+    float radarSweep = smoothstep(1.0, 0.8, radarWarp) * smoothstep(0.0, 0.05, radarWarp);
+    col += vec3(0.8, 0.1, 0.1) * radarSweep * uSentinel * smoothstep(-0.02, -EYE_RADIUS*0.8, sd) * 0.6;
+
+    return col;
+}
+
+// ════════════════════════════════════
+//  THEME 2: OBSIDIAN VOID (Cosmic)
+// ════════════════════════════════════
+vec3 themeVoid(vec2 uv, vec2 ic, float pupilR, float sd) {
+    vec3 col = vec3(0.012, 0.006, 0.028);
+    col += vec3(0.035, 0.012, 0.055) * smoothstep(-EYE_RADIUS, -EYE_RADIUS * 0.3, sd) * 0.5;
+
+    float dist = length(uv - ic);
+    float hR = pupilR * 1.8 + 0.035;
+    hR = mix(hR, hR * (sin(uTime * 4.0) * 0.15 + 1.0), uSentinel); 
+    float rDist = abs(dist - hR);
+    vec3 gold = vec3(1.0, 0.72, 0.22);
+
+    col += gold * 0.85 * exp(-rDist * rDist * 6000.0);
+    col += gold * 0.22 * exp(-rDist * rDist * 300.0);
+    float r2 = abs(dist - hR * 1.7);
+    col += gold * 0.18 * exp(-r2 * r2 * 10000.0);
+    float r3 = abs(dist - hR * 2.4);
+    col += gold * 0.08 * exp(-r3 * r3 * 15000.0);
+
+    float theta = atan(uv.y - ic.y, uv.x - ic.x);
+    float fZone = smoothstep(hR * 0.9, hR * 1.5, dist) * smoothstep(EYE_RADIUS * 0.95, EYE_RADIUS * 0.45, dist);
+    float tS1 = uTime * mix(0.4, 1.5, uSentinel);
+    float tS2 = uTime * mix(0.3, 1.2, uSentinel);
+    float s1 = smoothstep(0.6, 1.0, sin(theta * 3.0 + dist * 35.0 - tS1));
+    float s2 = smoothstep(0.72, 1.0, sin(theta * 5.0 - dist * 25.0 + tS2));
+    col += gold * 0.11 * (s1 + s2 * 0.5) * fZone;
+
+    col *= 1.0 - smoothstep(hR * 0.85, hR * 0.2, dist) * 0.97;
+
+    float stars = step(0.988, hash(floor((uv - ic) * 180.0)));
+    float starBr = hash(floor((uv - ic) * 180.0) + vec2(7.0, 13.0));
+    col += vec3(0.45, 0.35, 0.25) * stars * starBr * 0.25 * step(hR * 0.5, dist);
+
+    return col;
+}
+
+// ════════════════════════════════════
+//  THEME 3: VECTOR RETICLE (HUD)
+// ════════════════════════════════════
+vec3 themeReticle(vec2 uv, vec2 ic, float pupilR, float sd) {
+    vec3 teal = vec3(0.0, 0.95, 0.85);
+    vec3 col = vec3(0.008, 0.014, 0.02);
+
+    float gridPulse = mix(1.0, sin(uTime * 5.0) * 0.5 + 0.5 + 0.5, uSentinel);
+    float gs = 0.05;
+    float gx = smoothstep(0.0012, 0.0, abs(mod(uv.x + gs * 0.5, gs) - gs * 0.5));
+    float gy = smoothstep(0.0012, 0.0, abs(mod(uv.y + gs * 0.5, gs) - gs * 0.5));
+    col += teal * (gx + gy) * 0.025 * gridPulse;
+
+    float scan = sin((uv.y * 150.0 + uTime * 6.0) * PI) * 0.5 + 0.5;
+    col += teal * 0.01 * scan;
+
+    float dist = length(uv);
+    col += teal * 0.45 * smoothstep(0.0012, 0.0, abs(dist - 0.08));
+    col += teal * 0.38 * smoothstep(0.0012, 0.0, abs(dist - 0.16));
+    col += teal * 0.30 * smoothstep(0.0012, 0.0, abs(dist - 0.24));
+    col += teal * 0.24 * smoothstep(0.0012, 0.0, abs(dist - 0.32));
+    col += teal * 0.18 * smoothstep(0.0012, 0.0, abs(dist - 0.40));
+
+    col += teal * 0.10 * smoothstep(0.0006, 0.0, abs(uv.y)) * step(0.05, dist);
+    col += teal * 0.10 * smoothstep(0.0006, 0.0, abs(uv.x)) * step(0.05, dist);
+
+    // Holographic Parallax Target Gimbal (The "Pupil")
+    // Compiling 3 distinct layers that offset differently to create a floating 3D mechanical effect
+
+    float baseR = pupilR * 0.6 + 0.005;
+
+    // Layer 1: Deep Base Target (recessed, rotating slowly CW)
+    vec2 pUV1 = calculateParallax(uv, ic, 0.15); // Deep inward
+    float d1 = length(pUV1 - ic);
+    float a1 = atan(pUV1.y - ic.y, pUV1.x - ic.x) + uTime * 0.8;
+    float ring1 = smoothstep(0.0015, 0.0, abs(d1 - baseR * 2.5));
+    // Dotted pattern
+    ring1 *= step(0.0, sin(a1 * 16.0));
+    col += teal * ring1 * 0.35;
+
+    // Layer 2: Mid Bracket Gimbal (mid-depth, rotating fast CCW)
+    vec2 pUV2 = calculateParallax(uv, ic, 0.06); // Mid depth
+    float d2 = length(pUV2 - ic);
+    float a2 = atan(pUV2.y - ic.y, pUV2.x - ic.x) - uTime * 1.5;
+    float ring2 = smoothstep(0.002, 0.0, abs(d2 - baseR * 1.4));
+    // Dashed locking brackets
+    ring2 *= step(0.6, cos(a2 * 4.0));
+    col += teal * ring2 * 0.8;
+
+    // Static Crosshair tying targeting scope to center
+    float cDist = length(uv - ic);
+    float gap = smoothstep(0.035, 0.05, cDist);
+    float cH = smoothstep(0.0008, 0.0, abs(uv.y - ic.y)) * smoothstep(0.35, 0.12, abs(uv.x - ic.x)) * gap;
+    float cV = smoothstep(0.0008, 0.0, abs(uv.x - ic.x)) * smoothstep(0.35, 0.12, abs(uv.y - ic.y)) * gap;
+    col += teal * (cH + cV) * 0.35;
+
+    // Layer 3: Pop-out Core Tracker Dot (floating above screen)
+    vec2 pUV3 = calculateParallax(uv, ic, -0.06); // Popped outward
+    float d3 = length(pUV3 - ic);
+    
+    // Crisp inner dot
+    col += teal * 0.95 * smoothstep(baseR + 0.002, baseR, d3);
+    // Core intense laser glow
+    col += vec3(0.5, 1.0, 0.9) * 0.6 * exp(-d3 * d3 * 3000.0);
+    // Outer floating lock-ring
+    col += teal * 0.6 * smoothstep(0.0015, 0.0, abs(d3 - baseR * 0.6));
+
+    float edgeR = smoothstep(-0.005, -0.001, sd);
+    col += teal * 0.12 * (1.0 - edgeR) * smoothstep(-0.025, -0.003, sd);
+
+    float rAng = atan(uv.y, uv.x);
+    float rsAngle = fract(rAng / (2.0 * PI) + uTime * 0.6); 
+    float rSweep = smoothstep(1.0, 0.8, rsAngle) * smoothstep(0.0, 0.05, rsAngle);
+    col += teal * rSweep * uSentinel * 0.25 * step(0.05, dist) * smoothstep(-0.02, -0.05, sd);
+
+    return col;
+}
+
 void main() {
-    // Aspect-correct coordinates centered at (0,0)
     vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
     vec2 uv = (vUV - 0.5) * aspect;
-
-    // Iris center offset (mapped from pixel to UV space)
-    // 0.22 = balanced: clearly tracking but iris stays within the eye
     vec2 irisCenter = uIrisOffset * 0.22;
 
-    // ═══════════════════════════════════════
-    //  BACKGROUND (pure black)
-    // ═══════════════════════════════════════
-    vec3 color = vec3(0.0);
-    float alpha = 1.0;
-
-    // ═══════════════════════════════════════
-    //  SCLERA (white of the eye)
-    // ═══════════════════════════════════════
     float scleraDist = circleSDF(uv, vec2(0.0), EYE_RADIUS);
+    float pupilR = PUPIL_BASE * uDilation;
 
+    vec3 color = vec3(0.0);
     if (scleraDist < 0.0) {
-        // Base white with warmth
-        vec3 scleraBase = vec3(0.97, 0.95, 0.93);
-
-        // Edge shadow (limbus shadow + curvature)
-        float edgeFactor = smoothstep(-0.02, -EYE_RADIUS * 0.85, scleraDist);
-        vec3 edgeShadow = vec3(0.82, 0.78, 0.76);
-        scleraBase = mix(scleraBase, edgeShadow, edgeFactor * 0.6);
-
-        // Upper lid shadow
-        float lidShadow = smoothstep(0.12, -0.15, uv.y) * 0.25;
-        scleraBase -= lidShadow;
-
-        // Subtle veins (red/pink noise)
-        float veinNoise = fbm(uv * 25.0 + vec2(uTime * 0.01, 0.0));
-        float veinMask = smoothstep(0.55, 0.7, veinNoise);
-        // Only show veins near edges, fading toward center
-        float veinEdge = smoothstep(-EYE_RADIUS * 0.3, -EYE_RADIUS * 0.8, scleraDist);
-        vec3 veinColor = vec3(0.85, 0.55, 0.5);
-        scleraBase = mix(scleraBase, veinColor, veinMask * veinEdge * 0.15);
-
-        // Subtle wet specular on sclera
-        float wetHighlight = pow(max(0.0, 1.0 - length(uv - vec2(0.08, -0.12))), 8.0) * 0.12;
-        scleraBase += wetHighlight;
-
-        color = scleraBase;
+        if (uTheme == 0) color = themeClassic(uv, irisCenter, pupilR, scleraDist);
+        else if (uTheme == 1) color = themeHAL(uv, irisCenter, pupilR, scleraDist);
+        else if (uTheme == 2) color = themeVoid(uv, irisCenter, pupilR, scleraDist);
+        else color = themeReticle(uv, irisCenter, pupilR, scleraDist);
     }
 
-    // ═══════════════════════════════════════
-    //  IRIS
-    // ═══════════════════════════════════════
-    float irisDist = circleSDF(uv, irisCenter, IRIS_RADIUS);
-
-    if (irisDist < 0.0 && scleraDist < 0.0) {
-        // Polar coordinates relative to iris center
-        vec2 irisUV = uv - irisCenter;
-        float r = length(irisUV) / IRIS_RADIUS;
-        float theta = atan(irisUV.y, irisUV.x);
-
-        // ── Limbal ring (dark outer border) ──
-        float limbalMask = smoothstep(0.0, LIMBAL_WIDTH / IRIS_RADIUS, -irisDist / IRIS_RADIUS);
-        vec3 limbalColor = vec3(0.12, 0.08, 0.05);
-
-        // ── Base iris color (blue-grey) ──
-        vec3 irisBase = vec3(0.25, 0.45, 0.6);
-        vec3 irisDeep = vec3(0.1, 0.2, 0.35);
-
-        // Radial color gradient (darker toward pupil)
-        float radialGrad = smoothstep(0.3, 0.95, r);
-        vec3 irisColor = mix(irisDeep, irisBase, radialGrad);
-
-        // ── Stroma fibers (radial lines) ──
-        float fiberCount = 120.0;
-        float fiber = sin(theta * fiberCount) * 0.5 + 0.5;
-        fiber = pow(fiber, 3.0);
-        // Modulate fiber with radius (stronger further from pupil)
-        float fiberStrength = smoothstep(0.25, 0.5, r) * (1.0 - smoothstep(0.85, 1.0, r));
-        vec3 fiberColor = vec3(0.35, 0.55, 0.72);
-        irisColor = mix(irisColor, fiberColor, fiber * fiberStrength * 0.35);
-
-        // ── Crypts (darker irregular patches) ──
-        float cryptNoise = fbm(vec2(theta * 4.0, r * 8.0) + 42.0);
-        float cryptMask = smoothstep(0.45, 0.6, cryptNoise) * smoothstep(0.3, 0.5, r) * (1.0 - smoothstep(0.8, 1.0, r));
-        vec3 cryptColor = vec3(0.08, 0.15, 0.22);
-        irisColor = mix(irisColor, cryptColor, cryptMask * 0.4);
-
-        // ── Collarette ring (darker band around pupil) ──
-        float collaretteR = COLLARETTE_RADIUS / IRIS_RADIUS;
-        float collaretteMask = 1.0 - smoothstep(0.0, 0.06, abs(r - collaretteR));
-        vec3 collaretteColor = vec3(0.18, 0.3, 0.42);
-        irisColor = mix(irisColor, collaretteColor, collaretteMask * 0.5);
-
-        // ── Color variation rings (concentric subtle hue shifts) ──
-        float ringVar = sin(r * 30.0) * 0.5 + 0.5;
-        irisColor += vec3(0.03, 0.02, -0.01) * ringVar * 0.3;
-
-        // ── Apply limbal ring ──
-        irisColor = mix(irisColor, limbalColor, (1.0 - limbalMask) * 0.8);
-
-        // ── Subsurface scattering (warm glow at edges) ──
-        float sss = pow(1.0 - abs(r - 0.75), 4.0) * 0.08;
-        irisColor += vec3(0.15, 0.08, 0.02) * sss;
-
-        color = irisColor;
-    }
-
-    // ═══════════════════════════════════════
-    //  PUPIL
-    // ═══════════════════════════════════════
-    float pupilRadius = PUPIL_BASE * uDilation;
-    float pupilDist = circleSDF(uv, irisCenter, pupilRadius);
-
-    if (pupilDist < 0.0 && scleraDist < 0.0) {
-        // Feathered edge for realism
-        float feather = smoothstep(0.0, 0.004, -pupilDist);
-        color = mix(color, vec3(0.01, 0.01, 0.015), feather);
-    }
-
-    // ═══════════════════════════════════════
-    //  CORNEAL REFLECTIONS (specular highlights)
-    // ═══════════════════════════════════════
-    if (scleraDist < 0.0) {
-        // Primary light source (large window/light)
-        // Primary light source (large window/light) — shifts with iris
-        vec2 specPos1 = vec2(0.06 + irisCenter.x * 0.5, -0.09 + irisCenter.y * 0.4);
-        float spec1 = pow(max(0.0, 1.0 - length(uv - specPos1) / 0.035), 3.0);
-
-        // Secondary smaller highlight
-        vec2 specPos2 = vec2(-0.04 + irisCenter.x * 0.35, 0.03 + irisCenter.y * 0.3);
-        float spec2 = pow(max(0.0, 1.0 - length(uv - specPos2) / 0.015), 4.0);
-
-        // Apply highlights
-        color += vec3(1.0, 0.98, 0.95) * spec1 * 0.9;
-        color += vec3(0.9, 0.92, 1.0) * spec2 * 0.5;
-    }
-
-    // ═══════════════════════════════════════
-    //  WET LAYER (overall corneal sheen)
-    // ═══════════════════════════════════════
-    if (scleraDist < 0.0) {
-        // Subtle overall glossy reflection
-        float wetAngle = atan(uv.y, uv.x);
-        float wetGloss = pow(max(0.0, 1.0 - abs(uv.y + 0.05)), 12.0) * 0.04;
-        color += wetGloss;
-    }
-
-    // ═══════════════════════════════════════
-    //  ANTI-ALIASED SCLERA EDGE
-    // ═══════════════════════════════════════
     if (scleraDist > -0.005 && scleraDist < 0.005) {
-        float edgeAA = smoothstep(0.003, -0.003, scleraDist);
-        color *= edgeAA;
+        color *= smoothstep(0.003, -0.003, scleraDist);
     } else if (scleraDist >= 0.005) {
         color = vec3(0.0);
     }
 
-    // ═══════════════════════════════════════
-    //  METALLIC SHUTTER BLINK
-    //  Two horizontal metal panels close from top/bottom
-    //  Like robotic eyelids — mechanical version of a human blink
-    // ═══════════════════════════════════════
+    // ══════════════════════════════════
+    //  METALLIC SHUTTER BLINK (shared)
+    // ══════════════════════════════════
     if (uBlink > 0.01) {
         float eyeMask = smoothstep(0.005, -0.005, scleraDist);
-
         if (eyeMask > 0.01) {
-            // How far the shutters have closed toward center
-            // At uBlink=0: edges are at ±EYE_RADIUS (fully retracted behind rim)
-            // At uBlink=1: edges meet at y=0 (fully closed)
             float shutterTravel = uBlink * EYE_RADIUS;
-            float upperEdge = EYE_RADIUS - shutterTravel;    // starts at top, moves DOWN
-            float lowerEdge = -EYE_RADIUS + shutterTravel;   // starts at bottom, moves UP
+            float upperEdge = EYE_RADIUS - shutterTravel;
+            float lowerEdge = -EYE_RADIUS + shutterTravel;
 
-            // Upper panel: covers from top of eye DOWN to upperEdge
-            // When uv.y is ABOVE upperEdge, the panel is there
             float upperMask = smoothstep(upperEdge - 0.004, upperEdge + 0.006, uv.y) * eyeMask;
-            // Lower panel: covers from bottom of eye UP to lowerEdge  
-            // When uv.y is BELOW lowerEdge, the panel is there
             float lowerMask = smoothstep(lowerEdge + 0.004, lowerEdge - 0.006, uv.y) * eyeMask;
-
-            // Combined panel mask
             float panelMask = max(upperMask, lowerMask);
 
             if (panelMask > 0.01) {
-                // === METAL MATERIAL ===
                 vec3 metalBase = vec3(0.42, 0.44, 0.48);
                 vec3 metalDark = vec3(0.18, 0.19, 0.22);
                 vec3 metalLight = vec3(0.62, 0.65, 0.70);
 
-                // Determine which panel this pixel belongs to
                 float isUpper = step(0.0, uv.y);
+                float edgeDistU = abs(uv.y - upperEdge);
+                float edgeDistL = abs(uv.y - lowerEdge);
+                float edgeDist = isUpper > 0.5 ? edgeDistU : edgeDistL;
 
-                // Distance from the panel's leading edge (for gradient)
-                float edgeDistUpper = abs(uv.y - upperEdge);
-                float edgeDistLower = abs(uv.y - lowerEdge);
-                float edgeDist = isUpper > 0.5 ? edgeDistUpper : edgeDistLower;
+                float depthU = (EYE_RADIUS - uv.y) / (2.0 * EYE_RADIUS);
+                float depthL = (EYE_RADIUS + uv.y) / (2.0 * EYE_RADIUS);
+                float panelDepth = isUpper > 0.5 ? depthU : depthL;
 
-                // Distance from panel's home edge (outer rim)
-                float depthUpper = (EYE_RADIUS - uv.y) / (2.0 * EYE_RADIUS);
-                float depthLower = (EYE_RADIUS + uv.y) / (2.0 * EYE_RADIUS);
-                float panelDepth = isUpper > 0.5 ? depthUpper : depthLower;
-
-                // Vertical gradient: darker near leading edge, lighter near housing
                 vec3 metalColor = mix(metalDark, metalBase, panelDepth * 0.8 + 0.2);
 
-                // === BRUSHED METAL TEXTURE ===
-                // Horizontal machining lines (like real brushed steel)
                 float brushH = sin(uv.y * 600.0) * 0.5 + 0.5;
-                float brushFine = sin(uv.y * 1400.0 + uv.x * 50.0) * 0.5 + 0.5;
-                float brushMark = mix(brushH, brushFine, 0.25);
-                metalColor = mix(metalColor, metalLight, brushMark * 0.12);
+                float brushF = sin(uv.y * 1400.0 + uv.x * 50.0) * 0.5 + 0.5;
+                metalColor = mix(metalColor, metalLight, mix(brushH, brushF, 0.25) * 0.12);
 
-                // Subtle horizontal bands (panel segments)
-                float bandUpper = smoothstep(0.003, 0.0, abs(mod(uv.y + 0.02, 0.08) - 0.04));
-                float bandLower = smoothstep(0.003, 0.0, abs(mod(-uv.y + 0.02, 0.08) - 0.04));
-                float band = isUpper > 0.5 ? bandUpper : bandLower;
-                metalColor = mix(metalColor, metalDark, band * 0.3);
+                float bandU = smoothstep(0.003, 0.0, abs(mod(uv.y + 0.02, 0.08) - 0.04));
+                float bandL = smoothstep(0.003, 0.0, abs(mod(-uv.y + 0.02, 0.08) - 0.04));
+                metalColor = mix(metalColor, metalDark, (isUpper > 0.5 ? bandU : bandL) * 0.3);
 
-                // === SPECULAR HIGHLIGHT ===
-                // Overhead light reflecting off the flat metal surface
                 float specY = isUpper > 0.5 ? (uv.y - 0.1) : (-uv.y - 0.1);
-                float spec = pow(max(0.0, 1.0 - abs(specY) * 6.0), 3.0);
-                spec *= smoothstep(0.0, 0.15, abs(uv.x)) * 0.5 + 0.5;  // wider in center
-                metalColor += vec3(0.85, 0.87, 0.92) * spec * 0.18;
+                metalColor += vec3(0.85, 0.87, 0.92) * pow(max(0.0, 1.0 - abs(specY) * 6.0), 3.0) * 0.18
+                              * (smoothstep(0.0, 0.15, abs(uv.x)) * 0.5 + 0.5);
 
-                // === LEADING EDGE HIGHLIGHT ===
-                // Bright chamfered edge where the panel meets the eye
-                float leadingHighlight = smoothstep(0.010, 0.001, edgeDist);
-                vec3 edgeColor = vec3(0.75, 0.78, 0.82);
-                metalColor = mix(metalColor, edgeColor, leadingHighlight * 0.6);
+                metalColor = mix(metalColor, vec3(0.75, 0.78, 0.82), smoothstep(0.010, 0.001, edgeDist) * 0.6);
+                metalColor = mix(metalColor, vec3(0.05, 0.05, 0.07), smoothstep(0.003, 0.0, edgeDist) * 0.5);
 
-                // Thin dark gap line at the very leading edge
-                float gapLine = smoothstep(0.003, 0.0, edgeDist);
-                metalColor = mix(metalColor, vec3(0.05, 0.05, 0.07), gapLine * 0.5);
-
-                // === CENTER SEAM ===
-                // When nearly closed, show the seam where panels meet
                 if (uBlink > 0.85) {
                     float seamY = (upperEdge + lowerEdge) * 0.5;
-                    float seam = smoothstep(0.005, 0.0, abs(uv.y - seamY));
-                    metalColor = mix(metalColor, vec3(0.02, 0.02, 0.03), seam * 0.8);
+                    metalColor = mix(metalColor, vec3(0.02, 0.02, 0.03), smoothstep(0.005, 0.0, abs(uv.y - seamY)) * 0.8);
                 }
 
-                // === RIVET DETAILS ===
-                // Small circular rivets along each panel for mechanical feel
-                float rivetSpacing = 0.12;
-                float rivetY = isUpper > 0.5 ? (upperEdge + 0.04) : (lowerEdge - 0.04);
-                for (float rx = -0.3; rx <= 0.3; rx += rivetSpacing) {
-                    float rivetDist = length(uv - vec2(rx, rivetY));
-                    float rivet = smoothstep(0.008, 0.005, rivetDist);
-                    float rivetHighlight = smoothstep(0.007, 0.005, rivetDist) *
-                                           smoothstep(0.004, 0.005, rivetDist);
-                    metalColor = mix(metalColor, metalDark * 0.8, rivet * 0.4);
-                    metalColor += vec3(0.5) * rivetHighlight * 0.15;
-                }
-
-                // === SHADOW ON EYE SURFACE ===
-                // Panels cast a subtle shadow just ahead of their leading edge
-                float shadowUpper = smoothstep(upperEdge + 0.025, upperEdge, uv.y) * (1.0 - upperMask);
-                float shadowLower = smoothstep(lowerEdge - 0.025, lowerEdge, uv.y) * (1.0 - lowerMask);
-                color *= 1.0 - (shadowUpper + shadowLower) * 0.2 * eyeMask;
-
-                // === COMPOSITE ===
-                color = mix(color, metalColor, panelMask * 0.97);
+                color = mix(color, metalColor, panelMask);
             }
         }
     }
 
-    // ═══════════════════════════════════════
-    //  BLUSH MARKS
-    // ═══════════════════════════════════════
-    if (uBlush > 0.01) {
-        float blushY = -0.12;
-        float blushSpread = 0.15;
-        float blushLeft = smoothstep(0.04, 0.0, length(uv - vec2(-blushSpread, blushY)));
-        float blushRight = smoothstep(0.04, 0.0, length(uv - vec2(blushSpread, blushY)));
-        vec3 blushColor = vec3(1.0, 0.4, 0.45);
-        color = mix(color, blushColor, (blushLeft + blushRight) * uBlush * 0.35);
-    }
-
     fragColor = vec4(color, 1.0);
-}`;
+}
+`;
 
 export class RealisticEyeRenderer {
     private gl: WebGL2RenderingContext | null = null;
     private program: WebGLProgram | null = null;
     private canvas: HTMLCanvasElement | null = null;
+    private currentTheme = 0;
+    private nextTransitionTime = 0;
 
-    // Uniform locations
-    private uTime = -1;
-    private uIrisOffset = -1;
-    private uDilation = -1;
-    private uBlink = -1;
-    private uBlush = -1;
-    private uResolution = -1;
+    private tSclera: WebGLTexture | null = null;
+    private tIris: WebGLTexture | null = null;
+    private tMetal: WebGLTexture | null = null;
+    private tCrimson: WebGLTexture | null = null;
 
-    // Animation state
+    private uTime: WebGLUniformLocation | null = null;
+    private uIrisOffset: WebGLUniformLocation | null = null;
+    private uDilation: WebGLUniformLocation | null = null;
+    private uBlink: WebGLUniformLocation | null = null;
+    private uBlush: WebGLUniformLocation | null = null;
+    private uResolution: WebGLUniformLocation | null = null;
+    private uTheme: WebGLUniformLocation | null = null;
+    private uSentinel: WebGLUniformLocation | null = null;
+    
+    // Matcap uniforms
+    private uMatCapSclera: WebGLUniformLocation | null = null;
+    private uMatCapIris: WebGLUniformLocation | null = null;
+    private uMatCapMetal: WebGLUniformLocation | null = null;
+    private uMatCapCrimson: WebGLUniformLocation | null = null;
+
     private startTime = 0;
+    private transitionPhase: 'idle' | 'closing' | 'opening' = 'idle';
+    private transitionStart = 0;
 
-    /**
-     * Initialize WebGL2 on the given canvas.
-     */
+    private _randomInterval() {
+        return MIN_INTERVAL_S + Math.random() * (MAX_INTERVAL_S - MIN_INTERVAL_S);
+    }
+
+    private _loadTexture(gl: WebGL2RenderingContext, url: string, unit: number): WebGLTexture | null {
+        const tex = gl.createTexture();
+        gl.activeTexture(gl.TEXTURE0 + unit);
+        gl.bindTexture(gl.TEXTURE_2D, tex);
+        // Placeholder
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, 1, 1, 0, gl.RGB, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0]));
+
+        const img = new Image();
+        img.onload = () => {
+            gl.activeTexture(gl.TEXTURE0 + unit);
+            gl.bindTexture(gl.TEXTURE_2D, tex);
+            gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, img);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+            gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+        };
+        img.src = url;
+        return tex;
+    }
+
+    private _compileShader(type: number, source: string): WebGLShader | null {
+        const gl = this.gl!;
+        const shader = gl.createShader(type)!;
+        gl.shaderSource(shader, source);
+        gl.compileShader(shader);
+        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
+            console.error('Shader validation failed:', gl.getShaderInfoLog(shader));
+            gl.deleteShader(shader);
+            return null;
+        }
+        return shader;
+    }
+
     init(canvas: HTMLCanvasElement): boolean {
         this.canvas = canvas;
         const gl = canvas.getContext('webgl2', {
@@ -394,12 +477,10 @@ export class RealisticEyeRenderer {
         this.gl = gl;
         this.startTime = performance.now() / 1000;
 
-        // Compile shaders
         const vertShader = this._compileShader(gl.VERTEX_SHADER, VERT_SOURCE);
         const fragShader = this._compileShader(gl.FRAGMENT_SHADER, FRAG_SOURCE);
         if (!vertShader || !fragShader) return false;
 
-        // Link program
         const program = gl.createProgram()!;
         gl.attachShader(program, vertShader);
         gl.attachShader(program, fragShader);
@@ -411,19 +492,31 @@ export class RealisticEyeRenderer {
         this.program = program;
         gl.useProgram(program);
 
-        // Get uniform locations
-        this.uTime = gl.getUniformLocation(program, 'uTime') as number;
-        this.uIrisOffset = gl.getUniformLocation(program, 'uIrisOffset') as number;
-        this.uDilation = gl.getUniformLocation(program, 'uDilation') as number;
-        this.uBlink = gl.getUniformLocation(program, 'uBlink') as number;
-        this.uBlush = gl.getUniformLocation(program, 'uBlush') as number;
-        this.uResolution = gl.getUniformLocation(program, 'uResolution') as number;
+        this.uTime = gl.getUniformLocation(program, 'uTime');
+        this.uIrisOffset = gl.getUniformLocation(program, 'uIrisOffset');
+        this.uDilation = gl.getUniformLocation(program, 'uDilation');
+        this.uBlink = gl.getUniformLocation(program, 'uBlink');
+        this.uBlush = gl.getUniformLocation(program, 'uBlush');
+        this.uResolution = gl.getUniformLocation(program, 'uResolution');
+        this.uTheme = gl.getUniformLocation(program, 'uTheme');
+        this.uSentinel = gl.getUniformLocation(program, 'uSentinel');
 
-        // Full-screen quad (2 triangles)
-        const quadVerts = new Float32Array([
-            -1, -1, 1, -1, -1, 1,
-            -1, 1, 1, -1, 1, 1,
-        ]);
+        this.uMatCapSclera = gl.getUniformLocation(program, 'uMatCapSclera');
+        this.uMatCapIris = gl.getUniformLocation(program, 'uMatCapIris');
+        this.uMatCapMetal = gl.getUniformLocation(program, 'uMatCapMetal');
+        this.uMatCapCrimson = gl.getUniformLocation(program, 'uMatCapCrimson');
+
+        gl.uniform1i(this.uMatCapSclera, 0);
+        gl.uniform1i(this.uMatCapIris, 1);
+        gl.uniform1i(this.uMatCapMetal, 2);
+        gl.uniform1i(this.uMatCapCrimson, 3);
+
+        this.tSclera = this._loadTexture(gl, '/matcaps/sclera.bmp', 0);
+        this.tIris = this._loadTexture(gl, '/matcaps/iris.bmp', 1);
+        this.tMetal = this._loadTexture(gl, '/matcaps/metal.bmp', 2);
+        this.tCrimson = this._loadTexture(gl, '/matcaps/crimson.bmp', 3);
+
+        const quadVerts = new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]);
         const vbo = gl.createBuffer()!;
         gl.bindBuffer(gl.ARRAY_BUFFER, vbo);
         gl.bufferData(gl.ARRAY_BUFFER, quadVerts, gl.STATIC_DRAW);
@@ -432,16 +525,14 @@ export class RealisticEyeRenderer {
         gl.enableVertexAttribArray(posLoc);
         gl.vertexAttribPointer(posLoc, 2, gl.FLOAT, false, 0, 0);
 
-        // Set clear color
         gl.clearColor(0, 0, 0, 1);
 
-        console.log('👁 WebGL2 Realistic Eye Renderer initialized');
+        this.currentTheme = 0; // Force Classic theme to demonstrate Parallax
+        this.nextTransitionTime = performance.now() / 1000 + this._randomInterval();
+
         return true;
     }
 
-    /**
-     * Render one frame with the given eye state.
-     */
     render(state: EyeState) {
         const gl = this.gl;
         if (!gl || !this.program) return;
@@ -450,27 +541,43 @@ export class RealisticEyeRenderer {
         gl.viewport(0, 0, canvas.width, canvas.height);
         gl.clear(gl.COLOR_BUFFER_BIT);
 
-        const now = performance.now() / 1000 - this.startTime;
+        const now = performance.now() / 1000;
+        const shaderTime = now - this.startTime;
 
-        // Map eye state to shader uniforms
-        // ix/iy are pixel offsets, normalize to -1..1 range based on canvas size
-        // 3.0x amplification — balanced tracking visibility
+        const blinkOverride = this._updateTransition(now);
+        const blink = blinkOverride !== null ? Math.max(state.blink, blinkOverride) : state.blink;
+
         const normX = (state.ix / (canvas.width * 0.5)) * 3.0;
-        const normY = -(state.iy / (canvas.height * 0.5)) * 3.0; // flip Y for GL
+        const normY = -(state.iy / (canvas.height * 0.5)) * 3.0;
 
-        gl.uniform1f(this.uTime, now);
+        gl.uniform1f(this.uTime, shaderTime);
         gl.uniform2f(this.uIrisOffset, normX, normY);
         gl.uniform1f(this.uDilation, state.dilation);
-        gl.uniform1f(this.uBlink, state.blink);
+        gl.uniform1f(this.uBlink, blink);
         gl.uniform1f(this.uBlush, state.blush || 0);
         gl.uniform2f(this.uResolution, canvas.width, canvas.height);
+        gl.uniform1i(this.uTheme, this.currentTheme);
+        gl.uniform1f(this.uSentinel, state.sentinel ? 1.0 : 0.0);
+
+        // Re-bind textures explicitly in render loop to ensure safety across states
+        gl.activeTexture(gl.TEXTURE0); gl.bindTexture(gl.TEXTURE_2D, this.tSclera);
+        gl.activeTexture(gl.TEXTURE1); gl.bindTexture(gl.TEXTURE_2D, this.tIris);
+        gl.activeTexture(gl.TEXTURE2); gl.bindTexture(gl.TEXTURE_2D, this.tMetal);
+        gl.activeTexture(gl.TEXTURE3); gl.bindTexture(gl.TEXTURE_2D, this.tCrimson);
 
         gl.drawArrays(gl.TRIANGLES, 0, 6);
     }
 
-    /**
-     * Resize the canvas to match the window.
-     */
+    getThemeName(): string { return THEME_NAMES[this.currentTheme] || 'UNKNOWN'; }
+    getThemeIndex(): number { return this.currentTheme; }
+
+    setTheme(theme: number) {
+        if (theme < 0 || theme >= THEME_COUNT || theme === this.currentTheme) return;
+        if (this.transitionPhase !== 'idle') return;
+        this.currentTheme = theme;
+        this.nextTransitionTime = performance.now() / 1000 + this._randomInterval();
+    }
+
     resize() {
         if (!this.canvas) return;
         const dpr = Math.min(window.devicePixelRatio || 1, 2);
@@ -479,24 +586,48 @@ export class RealisticEyeRenderer {
     }
 
     destroy() {
-        if (this.gl && this.program) {
-            this.gl.deleteProgram(this.program);
-        }
+        if (this.gl && this.program) this.gl.deleteProgram(this.program);
         this.gl = null;
         this.program = null;
     }
 
-    // ── Private shader compilation ──
-    private _compileShader(type: number, source: string): WebGLShader | null {
-        const gl = this.gl!;
-        const shader = gl.createShader(type)!;
-        gl.shaderSource(shader, source);
-        gl.compileShader(shader);
-        if (!gl.getShaderParameter(shader, gl.COMPILE_STATUS)) {
-            console.error('Shader compile error:', gl.getShaderInfoLog(shader));
-            gl.deleteShader(shader);
+    private _updateTransition(now: number): number | null {
+        if (this.transitionPhase === 'idle') {
+            if (now >= this.nextTransitionTime) {
+                this.transitionPhase = 'closing';
+                this.transitionStart = now;
+            }
             return null;
         }
-        return shader;
+        if (this.transitionPhase === 'closing') {
+            const elapsed = (now - this.transitionStart) * 1000;
+            const raw = Math.min(1, elapsed / TRANSITION_CLOSE_MS);
+            const eased = raw * raw * (3 - 2 * raw);
+            if (raw >= 1) {
+                this._pickNextTheme();
+                this.transitionPhase = 'opening';
+                this.transitionStart = now;
+                return 1.0;
+            }
+            return eased;
+        }
+        if (this.transitionPhase === 'opening') {
+            const elapsed = (now - this.transitionStart) * 1000;
+            const raw = Math.min(1, elapsed / TRANSITION_OPEN_MS);
+            const eased = raw * raw * (3 - 2 * raw);
+            if (raw >= 1) {
+                this.transitionPhase = 'idle';
+                this.nextTransitionTime = now + this._randomInterval();
+                return null;
+            }
+            return 1 - eased;
+        }
+        return null;
+    }
+
+    private _pickNextTheme() {
+        let next: number;
+        do { next = Math.floor(Math.random() * THEME_COUNT); } while (next === this.currentTheme);
+        this.currentTheme = next;
     }
 }

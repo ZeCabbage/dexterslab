@@ -13,6 +13,7 @@ export interface EyeState {
     goodBoy: number;
     thankYou: number;
     t: number;
+    detectionMode?: 'face' | 'motion' | 'none';
 }
 
 export interface OracleResponse {

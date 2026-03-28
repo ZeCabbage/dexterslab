@@ -31,6 +31,7 @@ import { AudioIngressServer } from './observer2/audio-ingress.js';
 import { TTSCommander } from './observer2/tts-commander.js';
 import { VideoIngressServer } from './observer2/video-ingress.js';
 import { STTEngine } from './observer2/stt-engine.js';
+import { RecordClerkEngine } from './record-clerk/engine.js';
 import * as fieldTestCapture from './diagnostics/field-test-capture.js';
 
 const execAsync = promisify(exec);
@@ -746,6 +747,7 @@ app.get('/api/rules-lawyer/status', (_req, res) => {
 // ═══════════════════════════════════════════
 
 const observer2Engine = new EyeStateMachine({ genai, sessionId, memory: memoryEngine });
+const recordClerkEngine = new RecordClerkEngine({ genai });
 
 // Initialize ML face detection model (async — must complete before frames are processed)
 observer2Engine.motionProcessor.init().catch(err => {
@@ -772,16 +774,28 @@ audioEvents.on('audio_frame', (pcmBuffer) => {
 sttEngine.on('transcript', (text) => {
   console.log('[STT] Transcript:', text);
   bus.publish('voice.command', { text, timestamp: Date.now() });
-  observer2Engine.handleOracleQuestion(text).then((result) => {
-    // Speak response loudly
-    if (result && result.response && app.locals.ttsCommander) {
-      app.locals.ttsCommander.speak(result.response);
-    }
-  }).catch(() => {});
+  
+  if (subProjectState.activeProject === 'record-clerk') {
+    recordClerkEngine.handleConversation(text).then((result) => {
+      if (result && result.response && app.locals.ttsCommander) {
+        app.locals.ttsCommander.speak(result.response);
+      }
+    }).catch(() => {});
+  } else {
+    observer2Engine.handleOracleQuestion(text).then((result) => {
+      if (result && result.response && app.locals.ttsCommander) {
+        app.locals.ttsCommander.speak(result.response);
+      }
+    }).catch(() => {});
+  }
 });
 
 videoEvents.on('frame', (jpegBuffer) => {
-  observer2Engine.processFrame(jpegBuffer).catch(() => {});
+  if (subProjectState.activeProject === 'record-clerk') {
+    recordClerkEngine.processFrame(jpegBuffer).catch(() => {});
+  } else {
+    observer2Engine.processFrame(jpegBuffer).catch(() => {});
+  }
 });
 
 // ── Observer 2 REST Endpoints ──
@@ -953,6 +967,7 @@ const server = createServer(app);
 
 // ── WebSocket Servers (noServer mode for multi-path routing) ──
 const wssObserver2 = new WebSocketServer({ noServer: true });
+const wssRecordClerk = new WebSocketServer({ noServer: true });
 
 // Route WebSocket upgrades by path
 server.on('upgrade', (request, socket, head) => {
@@ -961,6 +976,10 @@ server.on('upgrade', (request, socket, head) => {
   if (pathname === '/ws/observer2') {
     wssObserver2.handleUpgrade(request, socket, head, (ws) => {
       wssObserver2.emit('connection', ws, request);
+    });
+  } else if (pathname === '/ws/recordclerk') {
+    wssRecordClerk.handleUpgrade(request, socket, head, (ws) => {
+      wssRecordClerk.emit('connection', ws, request);
     });
   } else {
     console.warn(`[WS] Rejected connection attempt on unknown path: ${request.url}`);
@@ -1016,6 +1035,31 @@ observer2Engine.start((eyeState) => {
     if (client.readyState === 1) {
       client.send(packet);
     }
+  }
+});
+
+// ── Record Clerk WebSocket (/ws/recordclerk) ──
+const recordClerkClients = new Set();
+wssRecordClerk.on('connection', (ws) => {
+  recordClerkClients.add(ws);
+  subProjectState.activeProject = 'record-clerk';
+  console.log(`🌼  Record Clerk client connected (total: ${recordClerkClients.size})`);
+  ws.on('close', () => {
+    recordClerkClients.delete(ws);
+    if (recordClerkClients.size === 0 && subProjectState.activeProject === 'record-clerk') {
+      subProjectState.activeProject = null;
+    }
+  });
+  ws.on('error', () => {
+    recordClerkClients.delete(ws);
+  });
+});
+
+recordClerkEngine.start((state) => {
+  if (recordClerkClients.size === 0) return;
+  const packet = JSON.stringify(state);
+  for (const client of recordClerkClients) {
+    if (client.readyState === 1) client.send(packet);
   }
 });
 

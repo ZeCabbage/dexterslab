@@ -1,30 +1,37 @@
-[
-  {
-    "name": "OBSERVER HUB",
-    "route": "/observer",
-    "description": "Voice-controlled command center for the circular display — system control, version switching, diagnostics",
-    "status": "active",
-    "icon": "◈"
-  },
-  {
-    "name": "OBSERVER EYE V2",
-    "route": "/observer/eye-v2",
-    "description": "PC-powered photorealistic eye — thin client architecture, server-side tracking & behavior",
-    "status": "wip",
-    "icon": "👁️"
-  },
-  {
-    "name": "RULES LAWYER",
-    "route": "/observer/rules-lawyer",
-    "description": "LLM-powered board game rules assistant — 32-bit character, voice I/O, game-themed persona",
-    "status": "active",
-    "icon": "🎲"
-  },
-  {
-    "name": "INBOX BUDDY",
-    "route": "/inbox-buddy",
-    "description": "Gmail assistant — inbox cleanup, VIP alerts, security scans, weekly reports",
-    "status": "wip",
-    "icon": "📬"
-  }
+﻿[
+    {
+        "name":  "OBSERVER HUB",
+        "route":  "/observer",
+        "description":  "Voice-controlled command center for the circular display â€” system control, version switching, diagnostics",
+        "status":  "active",
+        "icon":  "â—ˆ"
+    },
+    {
+        "name":  "OBSERVER EYE V2",
+        "route":  "/observer/eye-v2",
+        "description":  "PC-powered photorealistic eye â€” thin client architecture, server-side tracking \u0026 behavior",
+        "status":  "wip",
+        "icon":  "ðŸ‘ï¸"
+    },
+    {
+        "name":  "RULES LAWYER",
+        "route":  "/observer/rules-lawyer",
+        "description":  "LLM-powered board game rules assistant â€” 32-bit character, voice I/O, game-themed persona",
+        "status":  "active",
+        "icon":  "ðŸŽ²"
+    },
+    {
+        "name":  "INBOX BUDDY",
+        "route":  "/inbox-buddy",
+        "description":  "Gmail assistant â€” inbox cleanup, VIP alerts, security scans, weekly reports",
+        "status":  "wip",
+        "icon":  "ðŸ“¬"
+    },
+    {
+        "name":  "The Record Clerk",
+        "route":  "/record-clerk",
+        "description":  "Digital assistant for Dandelion Records",
+        "status":  "wip",
+        "icon":  "🌼"
+    }
 ]
