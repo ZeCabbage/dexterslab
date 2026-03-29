@@ -48,11 +48,12 @@ try:
             break
             
         if rec.AcceptWaveform(data):
-            res = rec.Result()
-            print(res, flush=True)
+            res = json.loads(rec.Result())
+            print(json.dumps(res), flush=True)
         else:
-            res = rec.PartialResult()
-            print(res, flush=True)
+            res = json.loads(rec.PartialResult())
+            if res.get("partial", "") != "":
+                print(json.dumps(res), flush=True)
 except KeyboardInterrupt:
     pass
 except Exception as e:

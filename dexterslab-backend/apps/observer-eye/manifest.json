@@ -1,0 +1,9 @@
+{
+  "id": "observer-eye",
+  "name": "Observer Eye V2",
+  "target": "pi",
+  "hardware": ["camera", "mic", "tts", "display"],
+  "wsPath": "/ws/observer2",
+  "icon": "👁️",
+  "priority": 10
+}

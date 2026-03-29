@@ -1,0 +1,332 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Offline Observer Hub</title>
+  <style>
+    body, html {
+      margin: 0; padding: 0;
+      width: 100vw; height: 100vh;
+      background-color: #000;
+      color: #0fc;
+      font-family: monospace;
+      overflow: hidden;
+      cursor: none;
+    }
+    canvas {
+      display: block;
+      width: 100%; height: 100%;
+    }
+    #hud {
+      position: absolute;
+      top: 10px; left: 10px;
+      z-index: 10;
+      pointer-events: none;
+      background: rgba(0,0,0,0.7);
+      padding: 10px;
+      border: 1px solid rgba(0,255,200,0.5);
+      border-radius: 4px;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+    .hud-line { margin: 0; }
+    .hud-warn { color: #f44; }
+    #video { display: none; }
+  </style>
+</head>
+<body>
+  <div id="hud">
+    <p class="hud-line">◈ OFFLINE OBSERVER V1 ◈</p>
+    <p class="hud-line" id="hud-status">Initializing System...</p>
+    <p class="hud-line" id="hud-voice">Mic: Waiting...</p>
+    <p class="hud-line" id="hud-face">Vision: Offline</p>
+    <p class="hud-line" id="hud-fps">FPS: 0</p>
+  </div>
+  <video id="video" autoplay playsinline></video>
+  <canvas id="eye"></canvas>
+
+  <script>
+    const canvas = document.getElementById('eye');
+    const ctx = canvas.getContext('2d');
+    const video = document.getElementById('video');
+
+    // UI HUD Elements
+    const hudStatus = document.getElementById('hud-status');
+    const hudVoice = document.getElementById('hud-voice');
+    const hudFace = document.getElementById('hud-face');
+    const hudFps = document.getElementById('hud-fps');
+
+    // State
+    const state = {
+      cx: 0, cy: 0, size: 0, // canvas dimensions
+      targetX: 0, targetY: 0,
+      currentX: 0, currentY: 0,
+      dilation: 1.0, currentDilation: 1.0,
+      blinkPhase: 0, blinkTarget: 0, lastBlinkTime: 0,
+      sentinelActive: true, lastFaceTime: 0,
+      voiceSupported: false,
+      faceSupported: false,
+      speechSynth: window.speechSynthesis,
+      fps: 0, frames: 0, lastFpsTime: performance.now()
+    };
+
+    // Style
+    const style = {
+      scleraColor: 'rgb(250, 250, 250)',
+      scleraShadow: 'rgba(50, 60, 80, 0.6)',
+      irisRim: 'rgb(10, 20, 40)',
+      irisBase: 'rgb(0, 150, 255)',
+      irisHighlight: 'rgb(100, 220, 255)',
+      pupilColor: 'rgb(5, 5, 10)',
+    };
+
+    // Resize
+    function resize() {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+      state.cx = canvas.width / 2;
+      state.cy = canvas.height / 2;
+      state.size = Math.min(canvas.width, canvas.height) * 0.9;
+    }
+    window.addEventListener('resize', resize);
+    resize();
+
+    // Lerp helper
+    const lerp = (a, b, t) => a + (b - a) * t;
+
+    // Eye Renderer
+    function renderEye(offsetX, offsetY, dilation, blinkPhase) {
+      const s = state.size;
+      const scleraR = s * 0.45;
+      const irisR = s * 0.22;
+      const pupilR = s * 0.08 * Math.max(0.4, Math.min(2.0, dilation));
+      const ix = state.cx + offsetX;
+      const iy = state.cy + offsetY;
+
+      ctx.save();
+      ctx.shadowBlur = 0;
+
+      // Sclera
+      ctx.fillStyle = style.scleraColor;
+      ctx.beginPath();
+      ctx.arc(state.cx, state.cy, scleraR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Sclera Shadow
+      ctx.fillStyle = style.scleraShadow;
+      ctx.beginPath();
+      ctx.arc(state.cx, state.cy, scleraR, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.beginPath();
+      ctx.ellipse(state.cx, state.cy - scleraR * 0.3, scleraR * 1.5, scleraR * 0.7, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Iris Rim
+      ctx.fillStyle = style.irisRim;
+      ctx.beginPath();
+      ctx.arc(ix, iy, irisR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Iris Base
+      ctx.fillStyle = style.irisBase;
+      ctx.beginPath();
+      ctx.arc(ix, iy, irisR * 0.9, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Iris Highlight
+      ctx.fillStyle = style.irisHighlight;
+      ctx.beginPath();
+      ctx.arc(ix, iy, irisR * 0.85, 0, Math.PI * 2);
+      ctx.arc(ix, iy + irisR * 0.1, irisR * 0.85, 0, Math.PI * 2, true);
+      ctx.fill();
+
+      // Pupil
+      ctx.fillStyle = style.pupilColor;
+      ctx.beginPath();
+      ctx.arc(ix, iy, pupilR, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Specular Highlight
+      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      ctx.beginPath();
+      ctx.arc(ix + irisR * 0.3, iy - irisR * 0.4, irisR * 0.2, 0, Math.PI * 2);
+      ctx.fill();
+      ctx.beginPath();
+      ctx.arc(ix - irisR * 0.4, iy + irisR * 0.2, irisR * 0.08, 0, Math.PI * 2);
+      ctx.fill();
+
+      ctx.restore();
+
+      // Lids (Blinking)
+      if (blinkPhase > 0) {
+        ctx.fillStyle = '#000';
+        const lidY = scleraR * 1.1;
+        const upperLidLimit = state.cy - lidY + (lidY * 2 * blinkPhase);
+        const lowerLidLimit = state.cy + lidY - (lidY * 2 * blinkPhase);
+
+        ctx.fillRect(0, 0, canvas.width, upperLidLimit);
+        ctx.fillRect(0, lowerLidLimit, canvas.width, canvas.height - lowerLidLimit);
+      }
+    }
+
+    // Speech Output
+    function speak(text) {
+      if (!state.speechSynth) return;
+      const utter = new SpeechSynthesisUtterance(text);
+      utter.pitch = 0.8;
+      utter.rate = 1.1;
+      state.speechSynth.speak(utter);
+      hudStatus.innerText = `Speaking: "${text}"`;
+      setTimeout(() => { if(hudStatus.innerText.includes('Speaking')) hudStatus.innerText = 'System Active'; }, 3000);
+    }
+
+    // Vision Setup
+    async function initVision() {
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 } });
+        video.srcObject = stream;
+        video.play();
+        state.faceSupported = 'FaceDetector' in window;
+        hudFace.innerText = state.faceSupported ? 'Vision: Face Tracking Active' : 'Vision: Camera Active (No FaceTracker)';
+        
+        let faceDetector;
+        if (state.faceSupported) {
+          faceDetector = new window.FaceDetector({ maxDetectedFaces: 1 });
+        }
+
+        const detect = async () => {
+          if (video.readyState === video.HAVE_ENOUGH_DATA) {
+            if (faceDetector) {
+              const faces = await faceDetector.detect(video);
+              if (faces.length > 0) {
+                const face = faces[0].boundingBox;
+                // Map face center to screen coords (-1 to 1)
+                const fx = (face.x + face.width / 2) / video.videoWidth;
+                const fy = (face.y + face.height / 2) / video.videoHeight;
+                state.targetX = (0.5 - fx) * state.size * 0.4;
+                state.targetY = (fy - 0.5) * state.size * 0.4;
+                state.dilation = 1.6;
+                state.sentinelActive = false;
+                state.lastFaceTime = performance.now();
+                hudFace.innerText = 'Vision: Target Acquired';
+              } else {
+                hudFace.innerText = 'Vision: Scanning...';
+              }
+            } else {
+              // Simulated tracker based on motion/random if no facedetector
+            }
+          }
+          requestAnimationFrame(detect);
+        };
+        detect();
+      } catch (err) {
+        hudFace.className = 'hud-line hud-warn';
+        hudFace.innerText = `Vision: OFF (${err.message})`;
+      }
+    }
+
+    // Voice Input Setup
+    function initVoice() {
+      window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (window.SpeechRecognition) {
+        state.voiceSupported = true;
+        const recognition = new window.SpeechRecognition();
+        recognition.continuous = true;
+        recognition.interimResults = false;
+        
+        recognition.onresult = (evt) => {
+          const text = evt.results[evt.results.length - 1][0].transcript.trim().toLowerCase();
+          hudVoice.innerText = `Mic: "${text}"`;
+          
+          if (text.includes('sleep') || text.includes('shutdown')) {
+            speak('Hibernation protocol enacted.');
+            state.blinkTarget = 1.0;
+          } else if (text.includes('wake') || text.includes('online')) {
+            speak('Systems online. Greetings.');
+            state.blinkTarget = 0.0;
+          } else if (text.includes('status')) {
+            speak('I am operating in offline mode. Local surveillance active.');
+          } else if (text.includes('thank you') || text.includes('good boy')) {
+            speak('You are welcome, human.');
+            state.blinkTarget = 0.0;
+            state.dilation = 2.0;
+            setTimeout(() => state.dilation = 1.0, 2000);
+          }
+        };
+
+        recognition.onend = () => recognition.start(); // auto restart
+        recognition.onerror = (e) => console.warn('Speech err', e);
+        
+        try {
+          recognition.start();
+          hudVoice.innerText = 'Mic: Listening...';
+        } catch (e) {
+          hudVoice.innerText = 'Mic: Auto-start blocked';
+        }
+
+        // Must click to interact on some browsers
+        window.addEventListener('click', () => {
+          if (state.speechSynth && state.speechSynth.getVoices().length === 0) {
+            // Warmup
+            const u = new SpeechSynthesisUtterance('');
+            state.speechSynth.speak(u);
+          }
+        }, { once: true });
+      } else {
+        hudVoice.className = 'hud-line hud-warn';
+        hudVoice.innerText = 'Mic: Web Speech API unsupported';
+      }
+    }
+
+    // Main Loop
+    function loop(time) {
+      // FPS
+      state.frames++;
+      if (time - state.lastFpsTime >= 1000) {
+        state.fps = state.frames;
+        state.frames = 0;
+        state.lastFpsTime = time;
+        hudFps.innerText = `FPS: ${state.fps}`;
+      }
+
+      // Blink Logic
+      if (state.blinkTarget === 0 && Math.random() < 0.01 && time - state.lastBlinkTime > 3000) {
+        state.blinkTarget = 1;
+        state.lastBlinkTime = time;
+        setTimeout(() => { if (state.blinkTarget === 1) state.blinkTarget = 0; }, 150);
+      }
+      state.blinkPhase = lerp(state.blinkPhase, state.blinkTarget, 0.3);
+
+      // Sentinel Mode (Random wandering)
+      if (time - state.lastFaceTime > 4000) {
+        state.sentinelActive = true;
+      }
+      if (state.sentinelActive) {
+        const t = time * 0.001;
+        state.targetX = Math.sin(t * 1.5) * state.size * 0.15 + Math.sin(t * 0.7) * state.size * 0.05;
+        state.targetY = Math.cos(t * 1.2) * state.size * 0.1 + Math.sin(t * 0.5) * state.size * 0.05;
+        state.dilation = 1.0 + Math.sin(t * 3) * 0.2;
+      }
+
+      // Smooth tracking
+      state.currentX = lerp(state.currentX, state.targetX, 0.1);
+      state.currentY = lerp(state.currentY, state.targetY, 0.1);
+      state.currentDilation = lerp(state.currentDilation, state.dilation, 0.05);
+
+      // Render
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+      renderEye(state.currentX, state.currentY, state.currentDilation, state.blinkPhase);
+
+      requestAnimationFrame(loop);
+    }
+
+    // Init
+    initVision();
+    initVoice();
+    hudStatus.innerText = 'System Active — LOCAL OFFLINE MODE';
+    requestAnimationFrame(loop);
+
+  </script>
+</body>
+</html>

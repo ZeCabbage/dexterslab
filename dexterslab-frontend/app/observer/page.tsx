@@ -42,6 +42,7 @@ interface SubProject {
 const SUB_PROJECTS: SubProject[] = [
   { name: 'EYE V2', route: '/observer/eye-v2', icon: '👁️', voiceCmd: '"open eye v2"' },
   { name: 'RULES LAWYER', route: '/observer/rules-lawyer', icon: '🎲', voiceCmd: '"launch rules lawyer"' },
+  { name: 'OFFLINE EYE', route: '/offline-observer.html', icon: '🔋', voiceCmd: '"launch offline eye"' },
 ];
 
 export default function ObserverHub() {
@@ -177,7 +178,8 @@ export default function ObserverHub() {
   };
 
   return (
-    <div className={styles.container}>
+    <div className="theme-80s-retro">
+      <div className={styles.container}>
       {/* Back to dashboard */}
       <Link href="/" className={styles.backLink}>← LAB</Link>
 
@@ -320,6 +322,7 @@ export default function ObserverHub() {
           VOICE: &quot;Launch Rules Lawyer&quot; • &quot;Kill Application&quot; • &quot;Sync Code&quot; • &quot;Go Home&quot;
         </div>
       </div>
+    </div>
     </div>
   );
 }

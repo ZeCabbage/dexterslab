@@ -1,0 +1,9 @@
+{
+  "id": "rules-lawyer",
+  "name": "Rules Lawyer",
+  "target": "pi",
+  "hardware": ["display"],
+  "wsPath": null,
+  "icon": "🎲",
+  "priority": 5
+}

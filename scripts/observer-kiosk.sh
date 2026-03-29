@@ -16,8 +16,7 @@ PC_TAILSCALE_IP=""
 if [ -f "$ENV_FILE" ]; then
   PC_TAILSCALE_IP=$(grep "^PC_TAILSCALE_IP=" "$ENV_FILE" | cut -d '=' -f2 | tr -d '\r\n')
 fi
-
-FALLBACK_URL="http://${PC_TAILSCALE_IP}:3000/observer/eye-v2"
+FALLBACK_URL="http://${PC_TAILSCALE_IP}:7777/observer/eye-v2"
 
 echo "$LOG_TAG Checking Cloudflare reachability..."
 if curl -s --max-time 5 -o /dev/null "$CLOUDFLARE_URL" 2>/dev/null; then
@@ -34,14 +33,16 @@ echo "$LOG_TAG Starting kiosk launcher..."
 echo "$LOG_TAG Target: $OBSERVER_URL"
 
 # ── Wait for the Next.js server to be ready ──
-echo "$LOG_TAG Waiting for Next.js server on port 3000..."
+echo "$LOG_TAG Waiting for Next.js server on port 7777..."
 elapsed=0
 while ! curl -s -o /dev/null -w '' "$OBSERVER_URL" 2>/dev/null; do
   sleep 2
   elapsed=$((elapsed + 2))
   if [ "$elapsed" -ge "$MAX_WAIT" ]; then
     echo "$LOG_TAG ✕ Timed out waiting for server after ${MAX_WAIT}s"
-    exit 1
+    echo "$LOG_TAG ⚠ Auto-launching OFFLINE OBSERVER fallback..."
+    bash "$HOME/Desktop/dexterslab/scripts/launch-offline-observer.sh"
+    exit 0
   fi
   echo "$LOG_TAG   waiting... (${elapsed}s / ${MAX_WAIT}s)"
 done
@@ -104,7 +105,7 @@ FLAGS=(
 )
 
 if [ "$OBSERVER_URL" = "$FALLBACK_URL" ] && [ -n "$PC_TAILSCALE_IP" ]; then
-  FLAGS+=("--unsafely-treat-insecure-origin-as-secure=http://${PC_TAILSCALE_IP}:3000")
+  FLAGS+=("--unsafely-treat-insecure-origin-as-secure=http://${PC_TAILSCALE_IP}:7777")
 fi
 
 chromium-browser "${FLAGS[@]}"

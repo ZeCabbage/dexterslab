@@ -1,4 +1,4 @@
-﻿[
+[
     {
         "name":  "OBSERVER HUB",
         "route":  "/observer",
@@ -11,7 +11,14 @@
         "route":  "/observer/eye-v2",
         "description":  "PC-powered photorealistic eye â€” thin client architecture, server-side tracking \u0026 behavior",
         "status":  "wip",
-        "icon":  "ðŸ‘ï¸"
+        "icon":  "ðŸ‘ ï¸ "
+    },
+    {
+        "name":  "OFFLINE OBSERVER",
+        "route":  "/offline-observer.html",
+        "description":  "Standalone offline V1 observer with FaceDetector and WebSpeech APIs",
+        "status":  "active",
+        "icon":  "🔋"
     },
     {
         "name":  "RULES LAWYER",

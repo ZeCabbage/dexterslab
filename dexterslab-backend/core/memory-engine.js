@@ -219,15 +219,17 @@ export class MemoryEngine {
     try {
       const insertMany = this.db.transaction((items) => {
         for (const item of items) {
-          // Defensive: SQLite can only bind numbers, strings, bigints, buffers, and null
-          // Coerce any objects/undefined to safe values
-          if (item.zone != null && typeof item.zone === 'object') {
-            item.zone = JSON.stringify(item.zone);
-          }
-          if (item.durationMs === undefined) item.durationMs = null;
-          if (item.zone === undefined) item.zone = null;
-          if (item.metadataStr === undefined) item.metadataStr = null;
-          this.preparedInsertObservation.run(item);
+          // Strict coercion to SQLite-compatible types (Number, String, Null)
+          const safeItem = {
+            queuedAt: Number(item.queuedAt) || Date.now(),
+            source: item.source != null ? (typeof item.source === 'object' ? JSON.stringify(item.source) : String(item.source)) : 'unknown',
+            eventType: item.eventType != null ? (typeof item.eventType === 'object' ? JSON.stringify(item.eventType) : String(item.eventType)) : 'unknown',
+            zone: item.zone != null ? (typeof item.zone === 'object' ? JSON.stringify(item.zone) : String(item.zone)) : null,
+            durationMs: item.durationMs != null ? Number(item.durationMs) : null,
+            metadataStr: item.metadataStr != null ? (typeof item.metadataStr === 'object' ? JSON.stringify(item.metadataStr) : String(item.metadataStr)) : null,
+            sessionId: item.sessionId != null ? (typeof item.sessionId === 'object' ? JSON.stringify(item.sessionId) : String(item.sessionId)) : 'unknown'
+          };
+          this.preparedInsertObservation.run(safeItem);
         }
       });
       

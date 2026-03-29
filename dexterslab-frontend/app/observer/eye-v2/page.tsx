@@ -270,9 +270,11 @@ export default function ObserverEyeV2() {
     }, [startApp]);
 
     return (
+        <div className="theme-modern-dystopian">
         <div style={{
             width: '100vw', height: '100vh',
-            backgroundColor: '#000',
+            backgroundColor: 'var(--bg-primary)',
+            color: 'var(--text-primary)',
             overflow: 'hidden',
             position: 'relative',
             cursor: 'none',
@@ -319,16 +321,18 @@ export default function ObserverEyeV2() {
                 <div style={{
                     position: 'absolute',
                     bottom: '15%',
-                    left: 0, right: 0,
+                    left: '5vw', right: '5vw', // Prevent horizontal overflow
                     textAlign: 'center', zIndex: 25,
-                    fontFamily: "'Courier New', monospace",
-                    fontSize: overlayType === 'oracle' ? '24px' : '32px',
+                    fontFamily: 'var(--font-main)',
+                    fontSize: overlayType === 'oracle' ? 'clamp(16px, 4vw, 24px)' : 'clamp(20px, 6vw, 32px)',
+                    lineHeight: '1.4',
+                    wordWrap: 'break-word',
                     fontWeight: 'bold',
                     color: overlayType === 'oracle' ? '#0ff' :
                            overlayType === 'goodboy' ? '#ff88aa' :
                            overlayType === 'thankyou' ? '#0df' : '#0fc',
                     textShadow: '0 0 20px currentColor',
-                    letterSpacing: '3px',
+                    letterSpacing: '2px',
                     opacity: 0.9,
                     animation: 'fadeInUp 0.3s ease-out',
                     pointerEvents: 'none',
@@ -367,6 +371,7 @@ export default function ObserverEyeV2() {
                     100% { opacity: 0.65; }
                 }
             `}</style>
+        </div>
         </div>
     );
 }

@@ -16,7 +16,16 @@ const ALLOWED_TAXONOMY = new Set([
   'system.shutdown',
   'system.pi_connected',
   'system.pi_disconnected',
-  'system.health_degraded'
+  'system.health_degraded',
+  'app.activated',
+  'app.deactivated',
+  'app.error',
+  'hardware.camera.claimed',
+  'hardware.camera.released',
+  'hardware.mic.claimed',
+  'hardware.mic.released',
+  'hardware.tts.claimed',
+  'hardware.tts.released'
 ]);
 
 export class ContextBus extends EventEmitter {

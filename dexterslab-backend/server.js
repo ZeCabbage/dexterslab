@@ -25,14 +25,13 @@ import os from 'os';
 import { GoogleGenAI } from '@google/genai';
 import { MemoryEngine } from './core/memory-engine.js';
 import { bus } from './core/context-bus.js';
-import { EyeStateMachine } from './observer2/eye-state-machine.js';
 import { EventEmitter } from 'events';
-import { AudioIngressServer } from './observer2/audio-ingress.js';
-import { TTSCommander } from './observer2/tts-commander.js';
-import { VideoIngressServer } from './observer2/video-ingress.js';
-import { STTEngine } from './observer2/stt-engine.js';
-import { RecordClerkEngine } from './record-clerk/engine.js';
 import * as fieldTestCapture from './diagnostics/field-test-capture.js';
+
+import { AppManager, HardwareBroker, AIProvider, WSRouter, RESTRouter } from './platform/index.js';
+import ObserverEyeApp from './apps/observer-eye/index.js';
+import RulesLawyerApp from './apps/rules-lawyer/index.js';
+import RecordClerkApp from './apps/record-clerk/index.js';
 
 const execAsync = promisify(exec);
 
@@ -55,6 +54,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
+const server = createServer(app);
+
+// ── Platform Layer ──
+const aiProvider = new AIProvider();
+const genai = aiProvider.getGenAI();
+
+const hardwareBroker = new HardwareBroker({
+  audioPort: parseInt(process.env.AUDIO_WS_PORT || '8889', 10),
+  videoPort: parseInt(process.env.VIDEO_UDP_PORT || '5600', 10)
+});
+const wsRouter = new WSRouter(server);
+const restRouter = new RESTRouter(app);
+const appManager = new AppManager();
+
 // ── Cognitive Layer ──
 const memoryEngine = new MemoryEngine();
 const sessionId = memoryEngine.startSession('v2');
@@ -63,25 +76,23 @@ app.locals.sessionId = sessionId;
 
 bus.setMemoryEngine(memoryEngine, sessionId);
 
-const AUDIO_WS_PORT = parseInt(process.env.AUDIO_WS_PORT || '8889', 10);
-const audioEvents = new EventEmitter();
-const audioIngress = new AudioIngressServer(AUDIO_WS_PORT, audioEvents);
+const platform = { appManager, hardwareBroker, aiProvider, wsRouter, restRouter, memory: memoryEngine, sessionId, bus };
 
-audioIngress.start().then(() => {
-  console.log('[server] Audio ingress listening on port', AUDIO_WS_PORT);
-}).catch(err => console.error('[server] Failed to start Audio Ingress:', err));
+// Initialize hardware
+await hardwareBroker.init();
+app.locals.ttsCommander = hardwareBroker.ttsCommander;
 
-const ttsCommander = new TTSCommander();
-ttsCommander.connect();
-app.locals.ttsCommander = ttsCommander;
+// Register Apps
+const observerApp = appManager.registerApp(ObserverEyeApp, platform);
+observerApp.getWsHandler(); // Initialize its WS routes
 
-const sttEngine = new STTEngine();
-sttEngine.start();
+const rulesLawyerApp = appManager.registerApp(RulesLawyerApp, platform);
+restRouter.registerAppRoutes('rules-lawyer', rulesLawyerApp.getRoutes());
 
-const VIDEO_UDP_PORT = parseInt(process.env.VIDEO_UDP_PORT || '5600', 10);
-const videoEvents = new EventEmitter();
-const videoIngress = new VideoIngressServer(VIDEO_UDP_PORT, videoEvents);
-videoIngress.start();
+const recordClerkApp = appManager.registerApp(RecordClerkApp, platform);
+recordClerkApp.getWsHandler();
+
+await appManager.activateDisplayApp('observer-eye');
 
 // ═══════════════════════════════════════════
 //  REST API
@@ -98,16 +109,13 @@ app.get('/health', (_req, res) => {
     timestamp: new Date().toISOString(),
     uptime_seconds: Math.floor(process.uptime()),
     observer_mode: process.env.OBSERVER_MODE || null,
-    active_ws_connections: typeof observer2Clients !== 'undefined' ? observer2Clients.size : 0,
+    active_ws_connections: observerApp && observerApp.wsClients ? observerApp.wsClients.size : 0,
     platform: process.env.PLATFORM || PLATFORM,
-    pi_audio_connected: audioIngress.isClientConnected(),
-    pi_tts_connected: ttsCommander.isConnected(),
-    video_stream_active: videoIngress.isActive(),
-    video_fps: videoIngress.getFramesPerSecond(),
+    ...hardwareBroker.getPlatformStatus(),
     memory_queue_depth: memoryEngine.writeQueue.length,
     memory_total_flushed: memoryEngine.totalFlushed,
     memory_last_flush_age_ms: Date.now() - memoryEngine.lastFlushTime,
-    gemini_rate_limit_stats: observer2Engine.rateLimiter ? observer2Engine.rateLimiter.getStats() : null,
+    gemini_rate_limit_stats: observerApp ? observerApp.engine.rateLimiter?.getStats() : null,
     db_schema_version: typeof memoryEngine.getSchemaVersion === 'function' ? memoryEngine.getSchemaVersion() : 0,
     context_bus_stats: bus.getStats()
   });
@@ -244,6 +252,7 @@ app.post('/api/action', async (req, res) => {
     case 'start_v2':
       subProjectState.activeProject = 'v2';
       subProjectState.log.push({ time: timestamp, action: 'start_v2', status: 'ok' });
+      appManager.activateDisplayApp('observer-eye').catch(console.error);
       console.log('  → Observer V2 launch requested');
       res.json({ success: true, message: 'Observer V2 launched', navigate: '/observer/eye-v2' });
       break;
@@ -251,6 +260,7 @@ app.post('/api/action', async (req, res) => {
     case 'kill':
       subProjectState.activeProject = null;
       subProjectState.log.push({ time: timestamp, action: 'kill', status: 'ok' });
+      appManager.deactivateDisplayApp().catch(console.error);
       console.log('  → All sub-projects killed');
       res.json({ success: true, message: 'All processes stopped' });
       break;
@@ -259,6 +269,7 @@ app.post('/api/action', async (req, res) => {
       const { project } = req.body;
       subProjectState.activeProject = project;
       subProjectState.log.push({ time: timestamp, action: `launch_${project}`, status: 'ok' });
+      appManager.activateDisplayApp(project).catch(e => { /* Ignore missing app */ });
       console.log(`  → Sub-project "${project}" launched`);
       res.json({ success: true, message: `Project ${project} launched` });
       break;
@@ -438,365 +449,7 @@ app.get('/api/oracle/ambient', (_req, res) => {
   res.json({ phrase: AMBIENT_PHRASES[Math.floor(Math.random() * AMBIENT_PHRASES.length)] });
 });
 
-// ═══════════════════════════════════════════
-//  RULES LAWYER — Gemini-Powered Board Game Assistant
-// ═══════════════════════════════════════════
-
-// ── Theme mapping: game genre → character persona ──
-const GAME_THEMES = {
-  economic: {
-    games: ['monopoly', 'acquire', 'power grid', 'food chain magnate', 'brass', 'le havre', 'great western trail'],
-    hat: 'tophat',
-    accessory: 'monocle',
-    palette: { primary: '#d4af37', secondary: '#2d5a2d', bg: '#1a1a0a' },
-    genre: 'economic',
-    description: 'Top hat, monocle, and a distinguished moustache. Gold and green palette.',
-  },
-  fantasy: {
-    games: ['catan', 'settlers', 'dungeons', 'gloomhaven', 'descent', 'mage knight', 'spirit island', 'everdell', 'root'],
-    hat: 'wizard',
-    accessory: 'beard',
-    palette: { primary: '#9945ff', secondary: '#d4af37', bg: '#0a0818' },
-    genre: 'fantasy',
-    description: 'Wizard hat, flowing beard, mystical aura. Purple and gold palette.',
-  },
-  space: {
-    games: ['twilight imperium', 'eclipse', 'star wars', 'cosmic encounter', 'terraforming mars', 'galaxy trucker', 'race for the galaxy', 'star realms'],
-    hat: 'helmet',
-    accessory: 'antenna',
-    palette: { primary: '#44ddff', secondary: '#8899bb', bg: '#060616' },
-    genre: 'space',
-    description: 'Space helmet with antenna. Blue and silver palette.',
-  },
-  horror: {
-    games: ['arkham horror', 'betrayal', 'mansions of madness', 'eldritch', 'fury of dracula', 'dead of winter', 'zombicide'],
-    hat: 'hood',
-    accessory: 'glowing_eyes',
-    palette: { primary: '#ff4466', secondary: '#440022', bg: '#0a0004' },
-    genre: 'horror',
-    description: 'Dark hood, glowing red eyes. Crimson and shadow palette.',
-  },
-  war: {
-    games: ['risk', 'axis', 'war of the ring', 'memoir', 'undaunted', 'commands and colors', 'twilight struggle'],
-    hat: 'military',
-    accessory: 'medals',
-    palette: { primary: '#88aa66', secondary: '#cc9944', bg: '#0a0a04' },
-    genre: 'war',
-    description: 'Military cap, medals on chest. Olive and khaki palette.',
-  },
-  party: {
-    games: ['codenames', 'dixit', 'wavelength', 'just one', 'skull', 'coup', 'love letter', 'the resistance', 'secret hitler', 'werewolf'],
-    hat: 'party',
-    accessory: 'bow_tie',
-    palette: { primary: '#ff2d95', secondary: '#ffaa00', bg: '#0e0818' },
-    genre: 'party',
-    description: 'Party hat, snazzy bow tie. Magenta and gold palette.',
-  },
-  default: {
-    games: [],
-    hat: 'cap',
-    accessory: 'glasses',
-    palette: { primary: '#00ffe0', secondary: '#ffaa00', bg: '#06060e' },
-    genre: 'default',
-    description: 'Baseball cap, friendly glasses. Cyan and amber palette.',
-  },
-};
-
-function detectTheme(gameName) {
-  const lower = gameName.toLowerCase();
-  for (const [key, theme] of Object.entries(GAME_THEMES)) {
-    if (key === 'default') continue;
-    for (const game of theme.games) {
-      if (lower.includes(game)) return theme;
-    }
-  }
-  return GAME_THEMES.default;
-}
-
-// ── Gemini session state ──
-let rulesLawyerState = {
-  active: false,
-  game: null,
-  theme: null,
-  chat: null,  // Gemini chat session
-};
-
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
-let genai = null;
-
-if (GEMINI_API_KEY) {
-  genai = new GoogleGenAI({ apiKey: GEMINI_API_KEY });
-  console.log('🎲 Rules Lawyer: Gemini API initialized');
-} else {
-  console.warn('⚠️  Rules Lawyer: No GEMINI_API_KEY — LLM features disabled');
-}
-
-function buildSystemPrompt(gameName) {
-  return `You are RULES LAWYER, a kitchy, witty board game rules expert. You are currently helping players with the game "${gameName}".
-
-PERSONALITY:
-- You are enthusiastic about board games but slightly pompous — you LOVE being right about rules
-- You speak in short, punchy sentences. No walls of text.
-- You occasionally use board game puns and references
-- You are helpful but have a playful ego about your expertise
-- Keep responses concise: 1-3 short paragraphs max for rules answers
-- For simple yes/no rules questions, keep it to 1-2 sentences
-
-RESPONSE FORMAT:
-Always respond with valid JSON in this exact format:
-{
-  "answer": "Your response text here",
-  "mood": "one of: confident, thinking, excited, confused, smug, disappointed, surprised",
-  "rule_reference": "Optional: specific rulebook section or page if known"
-}
-
-RULES:
-1. ONLY answer questions about "${gameName}" or general board game etiquette
-2. If asked about a different game, say you're focused on ${gameName} right now
-3. If you're unsure about a specific rule, say so honestly — don't make things up
-4. When giving strategy tips, frame them as suggestions not commands
-5. Your mood should reflect your confidence in the answer
-6. ALWAYS respond with valid JSON, nothing else`;
-}
-
-function buildSuggestPrompt(gameName) {
-  return `You are RULES LAWYER helping with "${gameName}". Give ONE short, helpful strategy tip or commonly-forgotten rule reminder for this game. Keep it to 1-2 sentences max. Be witty.
-
-Respond with valid JSON:
-{
-  "tip": "Your tip here",
-  "mood": "one of: smug, excited, thinking",
-  "category": "one of: strategy, forgotten_rule, etiquette"
-}`;
-}
-
-/**
- * Strip markdown code fences from Gemini responses.
- * Gemini often wraps JSON in ```json ... ``` blocks.
- */
-function cleanJsonResponse(text) {
-  if (!text) return text;
-  let cleaned = text.trim();
-  // Remove ```json ... ``` or ``` ... ```
-  cleaned = cleaned.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
-  return cleaned.trim();
-}
-
-// ── Rules Lawyer Endpoints ──
-
-app.post('/api/rules-lawyer/start', async (req, res) => {
-  const { game } = req.body;
-  if (!game) return res.status(400).json({ error: 'No game specified' });
-
-  const theme = detectTheme(game);
-
-  if (!genai) {
-    // No API key — return theme info only with a mock response
-    rulesLawyerState = { active: true, game, theme, chat: null };
-    return res.json({
-      success: true,
-      game,
-      persona: theme,
-      greeting: `Ah, ${game}! An excellent choice. I know EVERY rule. Try me.`,
-      mood: 'smug',
-    });
-  }
-
-  try {
-    // Create a new Gemini chat session
-    const chat = genai.chats.create({
-      model: 'gemini-2.5-pro',
-      config: {
-        systemInstruction: buildSystemPrompt(game),
-        temperature: 0.7,
-      },
-    });
-
-    rulesLawyerState = { active: true, game, theme, chat };
-
-    // Get an intro greeting
-    const response = await chat.sendMessage({
-      message: `The players just told you they're playing ${game}. Introduce yourself in character and show you know this game. Keep it to 2-3 sentences.`,
-    });
-
-    let greeting = `Ah, ${game}! An excellent choice. I know EVERY rule. Try me.`;
-    let mood = 'smug';
-
-    try {
-      const parsed = JSON.parse(cleanJsonResponse(response.text));
-      greeting = parsed.answer || greeting;
-      mood = parsed.mood || mood;
-    } catch {
-      // If response isn't JSON, use it as plain text
-      if (response.text) greeting = response.text;
-    }
-
-    res.json({
-      success: true,
-      game,
-      persona: theme,
-      greeting,
-      mood,
-    });
-  } catch (err) {
-    console.error('Rules Lawyer start error:', err);
-    rulesLawyerState = { active: true, game, theme, chat: null };
-    res.json({
-      success: true,
-      game,
-      persona: theme,
-      greeting: `Ah, ${game}! An excellent choice. I know EVERY rule. Try me.`,
-      mood: 'smug',
-    });
-  }
-});
-
-app.post('/api/rules-lawyer/ask', async (req, res) => {
-  const { question } = req.body;
-  if (!question) return res.status(400).json({ error: 'No question provided' });
-
-  if (!rulesLawyerState.active) {
-    return res.status(400).json({ error: 'No game session active. Call /start first.' });
-  }
-
-  // Fallback for no API key
-  if (!genai || !rulesLawyerState.chat) {
-    return res.json({
-      answer: `Hmm, interesting question about ${rulesLawyerState.game}! I'd love to help but my brain seems disconnected. Check the API key!`,
-      mood: 'confused',
-      rule_reference: null,
-    });
-  }
-
-  try {
-    const response = await rulesLawyerState.chat.sendMessage({ message: question });
-    let answer = 'I... actually don\'t know. That\'s a first.';
-    let mood = 'confused';
-    let rule_reference = null;
-
-    try {
-      const parsed = JSON.parse(cleanJsonResponse(response.text));
-      answer = parsed.answer || answer;
-      mood = parsed.mood || mood;
-      rule_reference = parsed.rule_reference || null;
-    } catch {
-      if (response.text) answer = response.text;
-      mood = 'confident';
-    }
-
-    res.json({ answer, mood, rule_reference });
-  } catch (err) {
-    console.error('Rules Lawyer ask error:', err);
-    res.json({
-      answer: 'My brain glitched for a moment. Could you ask that again?',
-      mood: 'confused',
-      rule_reference: null,
-    });
-  }
-});
-
-app.post('/api/rules-lawyer/suggest', async (req, res) => {
-  if (!rulesLawyerState.active || !rulesLawyerState.game) {
-    return res.status(400).json({ error: 'No game session active.' });
-  }
-
-  if (!genai) {
-    const fallbackTips = [
-      { tip: `Don't forget to check the ${rulesLawyerState.game} FAQ online — there are always edge cases!`, mood: 'smug', category: 'strategy' },
-      { tip: 'Remember: read the card. Then read it again. THEN play it.', mood: 'thinking', category: 'etiquette' },
-      { tip: 'The best strategy is the one your opponents don\'t see coming.', mood: 'excited', category: 'strategy' },
-    ];
-    return res.json(fallbackTips[Math.floor(Math.random() * fallbackTips.length)]);
-  }
-
-  try {
-    const response = await genai.models.generateContent({
-      model: 'gemini-2.5-pro',
-      contents: buildSuggestPrompt(rulesLawyerState.game),
-      config: { temperature: 0.9 },
-    });
-
-    try {
-      const parsed = JSON.parse(cleanJsonResponse(response.text));
-      res.json(parsed);
-    } catch {
-      res.json({ tip: response.text || 'Stay sharp out there!', mood: 'smug', category: 'strategy' });
-    }
-  } catch (err) {
-    console.error('Rules Lawyer suggest error:', err);
-    res.json({ tip: 'Always double-check the rules when in doubt!', mood: 'thinking', category: 'etiquette' });
-  }
-});
-
-app.post('/api/rules-lawyer/end', (_req, res) => {
-  rulesLawyerState = { active: false, game: null, theme: null, chat: null };
-  res.json({ success: true, message: 'Rules Lawyer session ended.' });
-});
-
-app.get('/api/rules-lawyer/status', (_req, res) => {
-  res.json({
-    active: rulesLawyerState.active,
-    game: rulesLawyerState.game,
-    theme: rulesLawyerState.theme,
-    hasLLM: !!genai,
-  });
-});
-
-// ═══════════════════════════════════════════
-//  OBSERVER 2 — PC-Powered Eye Engine
-// ═══════════════════════════════════════════
-
-const observer2Engine = new EyeStateMachine({ genai, sessionId, memory: memoryEngine });
-const recordClerkEngine = new RecordClerkEngine({ genai });
-
-// Initialize ML face detection model (async — must complete before frames are processed)
-observer2Engine.motionProcessor.init().catch(err => {
-  console.error('[server] ML processor init failed:', err.message);
-});
-
-audioEvents.on('client_connected', () => {
-  if (typeof observer2Engine.setPiConnectionState === 'function') {
-    observer2Engine.setPiConnectionState('connected');
-  }
-  bus.publish('system.pi_connected', { timestamp: Date.now() });
-});
-audioEvents.on('client_disconnected', () => {
-  if (typeof observer2Engine.setPiConnectionState === 'function') {
-    observer2Engine.setPiConnectionState('disconnected');
-  }
-  bus.publish('system.pi_disconnected', { timestamp: Date.now() });
-});
-
-audioEvents.on('audio_frame', (pcmBuffer) => {
-  sttEngine.feed(pcmBuffer);
-});
-
-sttEngine.on('transcript', (text) => {
-  console.log('[STT] Transcript:', text);
-  bus.publish('voice.command', { text, timestamp: Date.now() });
-  
-  if (subProjectState.activeProject === 'record-clerk') {
-    recordClerkEngine.handleConversation(text).then((result) => {
-      if (result && result.response && app.locals.ttsCommander) {
-        app.locals.ttsCommander.speak(result.response);
-      }
-    }).catch(() => {});
-  } else {
-    observer2Engine.handleOracleQuestion(text).then((result) => {
-      if (result && result.response && app.locals.ttsCommander) {
-        app.locals.ttsCommander.speak(result.response);
-      }
-    }).catch(() => {});
-  }
-});
-
-videoEvents.on('frame', (jpegBuffer) => {
-  if (subProjectState.activeProject === 'record-clerk') {
-    recordClerkEngine.processFrame(jpegBuffer).catch(() => {});
-  } else {
-    observer2Engine.processFrame(jpegBuffer).catch(() => {});
-  }
-});
+// Legacy sub-projects have been migrated to the new Apps architecture.
 
 // ── Observer 2 REST Endpoints ──
 
@@ -804,8 +457,13 @@ app.post('/api/observer2/oracle', async (req, res) => {
   const { text } = req.body;
   if (!text) return res.status(400).json({ error: 'No text provided' });
   try {
-    const result = await observer2Engine.handleOracleQuestion(text);
-    res.json(result);
+    const obApp = appManager.getApp('observer-eye');
+    if (obApp) {
+      const result = await obApp.engine.handleOracleQuestion(text);
+      res.json(result);
+    } else {
+      res.json({ response: '[SYSTEM ERROR: App Not Found]', category: 'oracle', emotion: 'neutral' });
+    }
   } catch (err) {
     console.error('Observer 2 Oracle error:', err);
     res.json({ response: '[SYSTEM ERROR]', category: 'oracle', emotion: 'neutral' });
@@ -813,13 +471,15 @@ app.post('/api/observer2/oracle', async (req, res) => {
 });
 
 app.get('/api/observer2/ambient', (_req, res) => {
-  res.json({ phrase: observer2Engine.getAmbientPhrase() });
+  const obApp = appManager.getApp('observer-eye');
+  res.json({ phrase: obApp ? obApp.engine.getAmbientPhrase() : '' });
 });
 
 app.post('/api/observer2/command', (req, res) => {
   const { command } = req.body;
   if (!command) return res.status(400).json({ error: 'No command provided' });
-  observer2Engine.handleCommand(command);
+  const obApp = appManager.getApp('observer-eye');
+  if (obApp) obApp.engine.handleCommand(command);
   res.json({ success: true, command });
 });
 
@@ -829,7 +489,8 @@ app.get('/api/admin/stats', (req, res) => {
   try {
     const memStats = memoryEngine.getStats();
     const busStats = bus.stats;
-    const currentMood = observer2Engine.getObserverMood ? observer2Engine.getObserverMood() : 'unknown';
+    const obApp = appManager.getApp('observer-eye');
+    const currentMood = obApp && obApp.engine.getObserverMood ? obApp.engine.getObserverMood() : 'unknown';
     let sessionDurationMin = 0;
     try {
       const summary = memoryEngine.getSessionSummary(sessionId);
@@ -844,7 +505,8 @@ app.get('/api/admin/stats', (req, res) => {
 app.get('/api/admin/entities', (req, res) => {
   try {
     const recent = memoryEngine.getRecentEntities(100) || [];
-    const entities = recent.map(ent => observer2Engine.entityTracker.getEntityProfile(ent.id)).filter(Boolean);
+    const obApp = appManager.getApp('observer-eye');
+    const entities = recent.map(ent => obApp && obApp.engine.entityTracker ? obApp.engine.entityTracker.getEntityProfile(ent.id) : null).filter(Boolean);
     res.json(entities);
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -926,7 +588,8 @@ app.get('/api/admin/heatmap', (req, res) => {
       if (o.zone && heatmap[o.zone] !== undefined) heatmap[o.zone]++;
     }
     
-    const currentOccupancy = observer2Engine.spatialModel ? observer2Engine.spatialModel.getCurrentOccupancy() : {};
+    const obApp = appManager.getApp('observer-eye');
+    const currentOccupancy = obApp && obApp.engine.spatialModel ? obApp.engine.spatialModel.getCurrentOccupancy() : {};
     res.json({ heatmap, currentOccupancy });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -963,105 +626,7 @@ app.get('/api/admin/conversation-log', (req, res) => {
 //  HTTP + WebSocket Server
 // ═══════════════════════════════════════════
 
-const server = createServer(app);
 
-// ── WebSocket Servers (noServer mode for multi-path routing) ──
-const wssObserver2 = new WebSocketServer({ noServer: true });
-const wssRecordClerk = new WebSocketServer({ noServer: true });
-
-// Route WebSocket upgrades by path
-server.on('upgrade', (request, socket, head) => {
-  const pathname = new URL(request.url, `http://${request.headers.host}`).pathname;
-
-  if (pathname === '/ws/observer2') {
-    wssObserver2.handleUpgrade(request, socket, head, (ws) => {
-      wssObserver2.emit('connection', ws, request);
-    });
-  } else if (pathname === '/ws/recordclerk') {
-    wssRecordClerk.handleUpgrade(request, socket, head, (ws) => {
-      wssRecordClerk.emit('connection', ws, request);
-    });
-  } else {
-    console.warn(`[WS] Rejected connection attempt on unknown path: ${request.url}`);
-    socket.destroy();
-  }
-});
-
-// ── Observer 2 WebSocket (/ws/observer2) ──
-const observer2Clients = new Set();
-
-wssObserver2.on('connection', (ws) => {
-  observer2Clients.add(ws);
-  console.log(`👁  Observer 2 client connected (total: ${observer2Clients.size})`);
-
-  ws.on('message', (data) => {
-    // Text data = JSON commands
-    try {
-      const msg = JSON.parse(data.toString());
-      if (msg.type === 'command') {
-        observer2Engine.handleCommand(msg.command);
-      } else if (msg.type === 'oracle') {
-        observer2Engine.handleOracleQuestion(msg.text).then(result => {
-          ws.send(JSON.stringify({ type: 'oracle_response', ...result }));
-        }).catch(() => {});
-      } else if (msg.type === 'voice_partial') {
-        // Broadcast voice partial to other observer2 clients
-        for (const client of observer2Clients) {
-          if (client !== ws && client.readyState === 1) {
-            client.send(JSON.stringify(msg));
-          }
-        }
-      }
-    } catch {
-      // Ignore unparseable
-    }
-  });
-
-  ws.on('close', () => {
-    observer2Clients.delete(ws);
-    console.log(`👁  Observer 2 client disconnected (total: ${observer2Clients.size})`);
-  });
-
-  ws.on('error', () => {
-    observer2Clients.delete(ws);
-  });
-});
-
-// Start Observer 2 engine — broadcasts eye state at 60fps
-observer2Engine.start((eyeState) => {
-  if (observer2Clients.size === 0) return;
-  const packet = JSON.stringify(eyeState);
-  for (const client of observer2Clients) {
-    if (client.readyState === 1) {
-      client.send(packet);
-    }
-  }
-});
-
-// ── Record Clerk WebSocket (/ws/recordclerk) ──
-const recordClerkClients = new Set();
-wssRecordClerk.on('connection', (ws) => {
-  recordClerkClients.add(ws);
-  subProjectState.activeProject = 'record-clerk';
-  console.log(`🌼  Record Clerk client connected (total: ${recordClerkClients.size})`);
-  ws.on('close', () => {
-    recordClerkClients.delete(ws);
-    if (recordClerkClients.size === 0 && subProjectState.activeProject === 'record-clerk') {
-      subProjectState.activeProject = null;
-    }
-  });
-  ws.on('error', () => {
-    recordClerkClients.delete(ws);
-  });
-});
-
-recordClerkEngine.start((state) => {
-  if (recordClerkClients.size === 0) return;
-  const packet = JSON.stringify(state);
-  for (const client of recordClerkClients) {
-    if (client.readyState === 1) client.send(packet);
-  }
-});
 
 // ═══════════════════════════════════════════
 //  Start
@@ -1074,7 +639,7 @@ app.get('/diagnostics/status', (_req, res) => {
 fieldTestCapture.start(
   bus,
   memoryEngine,
-  () => (typeof observer2Clients !== 'undefined' ? observer2Clients.size : 0)
+  () => (observerApp && observerApp.wsClients ? observerApp.wsClients.size : 0)
 );
 
 // Graceful Shutdown
