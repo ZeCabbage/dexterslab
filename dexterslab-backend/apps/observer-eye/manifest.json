@@ -4,6 +4,7 @@
   "target": "pi",
   "hardware": ["camera", "mic", "tts", "display"],
   "wsPath": "/ws/observer2",
-  "icon": "👁️",
+  "frontendRoute": "/observer/eye-v2",
+  "icon": "◉",
   "priority": 10
 }

@@ -7,7 +7,8 @@ export default class RulesLawyerApp {
     target: 'pi',
     hardware: ['display'],
     wsPath: null,
-    icon: '🎲',
+    frontendRoute: '/observer/rules-lawyer',
+    icon: '§',
     priority: 5
   };
 

@@ -49,8 +49,7 @@ export default function Home() {
   };
 
   return (
-    <div className="theme-80s-retro">
-      <div className={styles.container}>
+    <div className={styles.container}>
       {/* CRT scanlines */}
       <div className="crt-scanlines" />
 
@@ -106,7 +105,6 @@ export default function Home() {
           <span>VOICE CONTROLLED</span>
         </footer>
       </div>
-    </div>
     </div>
   );
 }

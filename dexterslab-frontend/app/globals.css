@@ -8,56 +8,38 @@
 
 /* ── Fallback Base ── */
 :root {
-  --bg-primary: #000;
-  --text-primary: #fff;
-  --font-main: monospace;
-}
-
-/* ── THEME 1: 80s RETRO ── */
-.theme-80s-retro {
-  --bg-primary: #06060e;
-  --bg-panel: #0a0a14;
-  --bg-card: rgba(10, 10, 20, 0.85);
-
-  --text-primary: #33ffc4;
-  --text-secondary: #ffaa00;
-  --text-dim: #1a6050;
-  --text-label: #6688aa;
-
-  --border-color: #1a6050;
-  --border-width: 4px;
-  --border-radius: 0px;
-
-  --font-main: 'VT323', 'Courier New', monospace;
-  --font-header: 'Press Start 2P', monospace;
-
-  --accent-1: #00ffe0;
-  --accent-2: #ffaa00;
-  --accent-danger: #ff4466;
-
-  /* Apply to DOM */
-  background-color: var(--bg-primary);
-  color: var(--text-primary);
-  font-family: var(--font-main);
-  min-height: 100vh;
-
-  /* Backward Compatibility */
-  --color-bg: var(--bg-primary);
-  --color-bg-panel: var(--bg-panel);
-  --color-bg-card: var(--bg-card);
-  --color-text: var(--text-primary);
-  --color-text-dim: var(--text-dim);
-  --color-label: var(--text-label);
-  --color-cyan: var(--accent-1);
-  --color-amber: var(--text-secondary);
-  --color-magenta: #ff2d95;
-  --color-red: var(--accent-danger);
-  --color-green: #00ff88;
-  --color-blue: #44ddff;
-  --color-muted: #2a3344;
-  --color-grid: #162040;
-  --font-mono: var(--font-main);
-  --font-display: var(--font-header);
+  /* Core */
+  --color-bg:          #030305;
+  --color-grid:        #162040;
+  
+  /* Text */
+  --color-text:        #33ffc4;
+  --color-text-dim:    #1a6050;
+  --color-label:       #6688aa;
+  --color-muted:       #2a3344;
+  
+  /* Accents */
+  --color-cyan:        #00ffe0;
+  --color-magenta:     #ff2d95;
+  --color-amber:       #ffaa00;
+  --color-green:       #00ff88;
+  --color-red:         #ff4466;
+  --color-blue:        #44ddff;
+  
+  /* Rings & Buttons */
+  --color-ring:        #00e8d0;
+  --color-ring2:       #ff2d95;
+  --color-btn-bg:      #0c1428;
+  --color-btn-fg:      #00ffe0;
+  --color-btn-kill:    #ff3366;
+  
+  /* Typography */
+  --font-mono:         'Courier New', Courier, monospace;
+  --font-display:      'VT323', monospace;
+  --font-title:        'Orbitron', sans-serif;
+  --font-pixel:        'Press Start 2P', monospace;
+  
+  --display-size:      1080px;
 }
 
 /* ── THEME 2: MODERN DYSTOPIAN ── */

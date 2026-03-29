@@ -9,14 +9,14 @@
 # ═══════════════════════════════════════════
 
 # ── Identify Target URL ──
-CLOUDFLARE_URL="https://dexterslab.cclottaaworld.com/observer/eye-v2"
+CLOUDFLARE_URL="https://dexterslab.cclottaaworld.com/observer"
 
 ENV_FILE="$HOME/dexterslab-edge/.env"
 PC_TAILSCALE_IP=""
 if [ -f "$ENV_FILE" ]; then
   PC_TAILSCALE_IP=$(grep "^PC_TAILSCALE_IP=" "$ENV_FILE" | cut -d '=' -f2 | tr -d '\r\n')
 fi
-FALLBACK_URL="http://${PC_TAILSCALE_IP}:7777/observer/eye-v2"
+FALLBACK_URL="http://${PC_TAILSCALE_IP}:7777/observer"
 
 echo "$LOG_TAG Checking Cloudflare reachability..."
 if curl -s --max-time 5 -o /dev/null "$CLOUDFLARE_URL" 2>/dev/null; then

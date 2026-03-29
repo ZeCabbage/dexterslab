@@ -1,0 +1,861 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cinzel+Decorative:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap');
+
+/* ═══════════════════════════════════════════
+   BG3-STYLE CHARACTER CREATION — GRIM GOLD
+   ═══════════════════════════════════════════ */
+
+:root {
+  --bg-deep: #0a0a0a;
+  --bg-panel: #111111;
+  --bg-card: #151515;
+  --bg-card-hover: #1a1a1a;
+  --bg-card-selected: rgba(180, 150, 80, 0.06);
+  --border-dim: #1e1e1e;
+  --border-gold: rgba(180, 150, 80, 0.4);
+  --border-gold-bright: rgba(212, 175, 55, 0.7);
+  --gold: #b4964f;
+  --gold-bright: #d4af37;
+  --gold-glow: rgba(212, 175, 55, 0.25);
+  --gold-text: #c9a84c;
+  --ice: #6ba3c7;
+  --ice-dim: rgba(107, 163, 199, 0.4);
+  --text-primary: #d4cfc4;
+  --text-secondary: #888;
+  --text-dim: #555;
+  --danger: #8c2020;
+}
+
+.container {
+  min-height: 100vh;
+  background: var(--bg-deep);
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Ambient BG3 lighting ── */
+.container::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse at 20% 90%, rgba(180, 150, 80, 0.04) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 10%, rgba(107, 163, 199, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 50% 50%, rgba(0,0,0,0.95) 0%, transparent 100%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── Top bar ── */
+.topBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 40px;
+  border-bottom: 1px solid var(--border-dim);
+  z-index: 10;
+  position: relative;
+  background: linear-gradient(180deg, rgba(15,15,12,0.95) 0%, rgba(10,10,8,0.95) 100%);
+  backdrop-filter: blur(10px);
+}
+
+.backLink {
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 0.9rem;
+  transition: color 0.3s;
+  letter-spacing: 0.5px;
+}
+.backLink:hover { color: var(--gold-bright); }
+
+.topTitle {
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 1.2rem;
+  color: var(--gold);
+  text-shadow: 0 0 20px var(--gold-glow);
+  letter-spacing: 4px;
+  text-transform: uppercase;
+}
+
+/* ── Step indicator ── */
+.stepsBar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 14px 40px;
+  z-index: 10;
+  position: relative;
+  background: rgba(8, 8, 6, 0.8);
+  border-bottom: 1px solid var(--border-dim);
+}
+
+.stepItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: all 0.3s;
+  border-radius: 4px;
+}
+
+.stepNumber {
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 2px solid #2a2a2a;
+  color: var(--text-dim);
+  background: transparent;
+  transition: all 0.3s;
+}
+
+.stepLabel {
+  font-family: 'Cinzel', serif;
+  font-size: 0.78rem;
+  color: var(--text-dim);
+  transition: color 0.3s;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+
+.stepConnector {
+  width: 28px;
+  height: 1px;
+  background: #2a2a2a;
+  transition: background 0.3s;
+}
+
+/* Active / completed states handled inline via style props */
+
+/* ── Main two-panel layout ── */
+.mainContent {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 400px;
+  gap: 0;
+  z-index: 10;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ── Left: Selection area ── */
+.selectionPanel {
+  padding: 30px 40px;
+  overflow-y: auto;
+  max-height: calc(100vh - 155px);
+}
+
+.sectionTitle {
+  font-family: 'Cinzel', serif;
+  font-size: 1.5rem;
+  color: var(--text-primary);
+  margin: 0 0 4px 0;
+}
+
+.sectionSubtitle {
+  color: var(--text-dim);
+  font-size: 0.88rem;
+  margin: 0 0 24px 0;
+  line-height: 1.5;
+}
+
+/* ── Selection cards ── */
+.optionsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 10px;
+}
+
+.optionCard {
+  background: var(--bg-card);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 16px 18px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.optionCard::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 2px; height: 100%;
+  background: transparent;
+  transition: background 0.2s;
+}
+
+.optionCard:hover {
+  border-color: #333;
+  background: var(--bg-card-hover);
+  transform: translateY(-1px);
+}
+
+.optionCard:hover::before { background: var(--ice); }
+
+.optionCard.selected {
+  border-color: var(--border-gold);
+  background: var(--bg-card-selected);
+  box-shadow: 0 0 25px rgba(180, 150, 80, 0.08), inset 0 0 40px rgba(180, 150, 80, 0.02);
+}
+.optionCard.selected::before {
+  background: var(--gold);
+}
+
+.optionName {
+  font-family: 'Cinzel', serif;
+  font-size: 1.05rem;
+  color: #e8e4da;
+  margin: 0 0 5px 0;
+}
+
+.optionMeta {
+  font-size: 0.75rem;
+  color: var(--gold-text);
+  margin: 0 0 7px 0;
+  font-weight: 500;
+  letter-spacing: 0.3px;
+}
+
+.optionDesc {
+  font-size: 0.8rem;
+  color: #666;
+  line-height: 1.45;
+  margin: 0;
+}
+
+/* ── Subrace ── */
+.subraceSection {
+  margin-top: 22px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-dim);
+}
+
+.subraceTitle {
+  font-family: 'Cinzel', serif;
+  font-size: 1rem;
+  color: var(--gold-text);
+  margin: 0 0 12px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.subraceGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 10px;
+}
+
+/* ── Right: Preview panel ── */
+.previewPanel {
+  background: var(--bg-panel);
+  border-left: 1px solid var(--border-dim);
+  padding: 25px;
+  overflow-y: auto;
+  max-height: calc(100vh - 155px);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.previewTitle {
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 1.35rem;
+  color: var(--gold);
+  margin: 0;
+  text-shadow: 0 0 15px var(--gold-glow);
+}
+
+.previewSection {
+  background: rgba(18, 18, 16, 0.7);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 14px;
+}
+
+.previewSectionTitle {
+  font-family: 'Cinzel', serif;
+  font-size: 0.8rem;
+  color: var(--gold-text);
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  margin: 0 0 10px 0;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #1a1a1a;
+}
+
+.traitsList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.traitsList li {
+  padding: 3px 0;
+  font-size: 0.83rem;
+  color: #aaa;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.traitsList li::before {
+  content: '◆';
+  color: var(--gold);
+  font-size: 0.55rem;
+}
+
+.bonusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(180, 150, 80, 0.08);
+  border: 1px solid rgba(180, 150, 80, 0.2);
+  border-radius: 3px;
+  padding: 3px 9px;
+  font-size: 0.82rem;
+  color: var(--gold-text);
+  margin: 3px;
+}
+
+.bonusValue {
+  font-family: 'Cinzel', serif;
+  font-weight: 700;
+  color: var(--gold-bright);
+}
+
+/* ── Ability score controls ── */
+.abilityGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 10px;
+}
+
+.abilityBox {
+  background: var(--bg-card);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+  padding: 14px;
+  text-align: center;
+  transition: all 0.2s;
+}
+
+.abilityBox:hover {
+  border-color: #333;
+}
+
+.abilityLabel {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--gold-text);
+  margin-bottom: 6px;
+}
+
+.abilityScore {
+  font-family: 'Cinzel', serif;
+  font-size: 2rem;
+  color: #fff;
+  margin: 0;
+}
+
+.abilityMod {
+  font-size: 0.95rem;
+  color: var(--ice);
+  font-family: 'Cinzel', serif;
+  margin-top: 2px;
+}
+
+.abilityControls {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  margin-top: 8px;
+}
+
+.abilityBtn {
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid #333;
+  background: rgba(25, 25, 22, 0.8);
+  color: #888;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+}
+
+.abilityBtn:hover {
+  border-color: var(--gold);
+  color: var(--gold-bright);
+  background: rgba(180, 150, 80, 0.1);
+}
+
+.abilityBtn:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+}
+
+.pointsRemaining {
+  text-align: center;
+  font-family: 'Cinzel', serif;
+  font-size: 1.1rem;
+  color: var(--ice);
+  margin-bottom: 18px;
+}
+
+.pointsRemaining span {
+  color: #fff;
+  font-size: 1.6rem;
+}
+
+.methodToggle {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 18px;
+}
+
+.methodBtn {
+  flex: 1;
+  padding: 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dim);
+  color: var(--text-dim);
+  cursor: pointer;
+  border-radius: 3px;
+  font-family: 'Cinzel', serif;
+  font-size: 0.82rem;
+  transition: all 0.2s;
+}
+
+.methodBtn.active {
+  border-color: var(--border-gold);
+  color: var(--gold-bright);
+  background: rgba(180, 150, 80, 0.06);
+}
+
+/* ── Skills picker ── */
+.skillsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 6px;
+}
+
+.skillChip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dim);
+  border-radius: 3px;
+  cursor: pointer;
+  transition: all 0.15s;
+  font-size: 0.83rem;
+  color: var(--text-secondary);
+}
+
+.skillChip:hover {
+  border-color: #333;
+  color: #ccc;
+}
+
+.skillChip.selected {
+  border-color: var(--border-gold);
+  color: var(--gold-text);
+  background: rgba(180, 150, 80, 0.06);
+}
+
+.skillChip.locked {
+  border-color: var(--ice-dim);
+  color: var(--ice);
+  background: rgba(107, 163, 199, 0.04);
+  cursor: default;
+  opacity: 0.7;
+}
+
+.skillChip.unavailable {
+  opacity: 0.2;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.skillCheck {
+  width: 15px;
+  height: 15px;
+  border: 1px solid #333;
+  border-radius: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.65rem;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.skillChip.selected .skillCheck {
+  border-color: var(--gold);
+  background: var(--gold);
+  color: #000;
+}
+
+.skillChip.locked .skillCheck {
+  border-color: var(--ice);
+  background: var(--ice);
+  color: #000;
+}
+
+.skillAbility {
+  font-size: 0.68rem;
+  color: var(--text-dim);
+  margin-left: auto;
+  text-transform: uppercase;
+}
+
+.skillsRemaining {
+  font-family: 'Cinzel', serif;
+  color: var(--ice);
+  margin-bottom: 12px;
+  font-size: 0.9rem;
+}
+
+/* ── Name + portrait step ── */
+.nameInputLarge {
+  width: 100%;
+  background: var(--bg-card);
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  padding: 18px;
+  font-family: 'Cinzel', serif;
+  font-size: 1.8rem;
+  color: #fff;
+  outline: none;
+  text-align: center;
+  transition: border-color 0.3s;
+}
+
+.nameInputLarge:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 20px var(--gold-glow);
+}
+
+.nameInputLarge::placeholder {
+  color: #2a2a2a;
+}
+
+/* ── Portrait section ── */
+.portraitSection {
+  margin-top: 25px;
+  padding: 20px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dim);
+  border-radius: 6px;
+}
+
+.portraitSectionTitle {
+  font-family: 'Cinzel', serif;
+  font-size: 1.1rem;
+  color: var(--gold-text);
+  margin: 0 0 6px 0;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.portraitDescription {
+  color: var(--text-dim);
+  font-size: 0.85rem;
+  margin: 0 0 14px 0;
+}
+
+.portraitLayout {
+  display: grid;
+  grid-template-columns: 1fr 280px;
+  gap: 20px;
+  align-items: start;
+}
+
+.portraitTextarea {
+  width: 100%;
+  min-height: 120px;
+  background: rgba(10, 10, 8, 0.8);
+  border: 1px solid #2a2a2a;
+  border-radius: 4px;
+  padding: 14px;
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  outline: none;
+  resize: vertical;
+  transition: border-color 0.3s;
+  line-height: 1.5;
+}
+
+.portraitTextarea:focus {
+  border-color: var(--gold);
+}
+
+.portraitTextarea::placeholder {
+  color: #333;
+}
+
+.generateBtn {
+  margin-top: 10px;
+  padding: 10px 24px;
+  background: linear-gradient(135deg, rgba(180, 150, 80, 0.2), rgba(140, 110, 50, 0.1));
+  border: 1px solid var(--border-gold);
+  color: var(--gold-bright);
+  cursor: pointer;
+  border-radius: 4px;
+  font-family: 'Cinzel', serif;
+  font-size: 0.9rem;
+  transition: all 0.2s;
+  width: 100%;
+}
+
+.generateBtn:hover {
+  background: linear-gradient(135deg, rgba(180, 150, 80, 0.3), rgba(140, 110, 50, 0.15));
+  box-shadow: 0 0 15px var(--gold-glow);
+}
+
+.generateBtn:disabled {
+  opacity: 0.3;
+  cursor: wait;
+}
+
+.portraitPreview {
+  width: 280px;
+  height: 280px;
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  background: rgba(8, 8, 6, 0.8);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  position: relative;
+}
+
+.portraitPreview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.portraitPlaceholder {
+  color: #2a2a2a;
+  font-family: 'Cinzel', serif;
+  font-size: 0.85rem;
+  text-align: center;
+  padding: 20px;
+}
+
+.portraitLoading {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  color: var(--gold-text);
+  font-size: 0.85rem;
+}
+
+.portraitSpinner {
+  width: 32px;
+  height: 32px;
+  border: 2px solid #2a2a2a;
+  border-top: 2px solid var(--gold);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Summary grid ── */
+.summaryGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.summaryItem {
+  background: rgba(18, 18, 16, 0.6);
+  border: 1px solid var(--border-dim);
+  border-radius: 4px;
+  padding: 12px;
+}
+
+.summaryLabel {
+  font-size: 0.65rem;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  color: var(--text-dim);
+  margin-bottom: 4px;
+}
+
+.summaryValue {
+  font-family: 'Cinzel', serif;
+  font-size: 1.05rem;
+  color: #e8e4da;
+}
+
+.summaryValueSmall {
+  font-size: 0.85rem;
+  color: #aaa;
+}
+
+/* ── Bottom action bar ── */
+.bottomBar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 40px;
+  border-top: 1px solid var(--border-dim);
+  background: linear-gradient(0deg, rgba(12,12,10,0.95) 0%, rgba(8,8,6,0.95) 100%);
+  backdrop-filter: blur(10px);
+  z-index: 10;
+  position: relative;
+}
+
+.btnBack {
+  padding: 10px 28px;
+  background: transparent;
+  border: 1px solid #2a2a2a;
+  color: var(--text-secondary);
+  cursor: pointer;
+  border-radius: 3px;
+  font-family: 'Cinzel', serif;
+  font-size: 0.95rem;
+  transition: all 0.2s;
+}
+
+.btnBack:hover {
+  border-color: #555;
+  color: #fff;
+}
+
+.btnNext {
+  padding: 10px 36px;
+  background: linear-gradient(135deg, rgba(180, 150, 80, 0.15), rgba(140, 110, 50, 0.08));
+  border: 1px solid var(--border-gold);
+  color: var(--gold-bright);
+  cursor: pointer;
+  border-radius: 3px;
+  font-family: 'Cinzel', serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.btnNext:hover {
+  background: linear-gradient(135deg, rgba(180, 150, 80, 0.25), rgba(140, 110, 50, 0.12));
+  box-shadow: 0 0 20px var(--gold-glow);
+  transform: translateY(-1px);
+}
+
+.btnNext:disabled {
+  opacity: 0.2;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+.btnCreate {
+  padding: 12px 44px;
+  background: linear-gradient(135deg, var(--gold), #a07c28);
+  border: 1px solid var(--gold-bright);
+  color: #0a0a08;
+  cursor: pointer;
+  border-radius: 3px;
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 1rem;
+  font-weight: 900;
+  transition: all 0.2s;
+  text-transform: uppercase;
+  letter-spacing: 3px;
+}
+
+.btnCreate:hover {
+  background: linear-gradient(135deg, var(--gold-bright), var(--gold));
+  box-shadow: 0 0 30px var(--gold-glow);
+  transform: translateY(-2px);
+}
+
+.stepHint {
+  color: #333;
+  font-size: 0.82rem;
+  font-style: italic;
+}
+
+/* ── Class features ── */
+.featuresList {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.featureItem {
+  padding: 7px 0;
+  border-bottom: 1px solid #141414;
+}
+
+.featureItem:last-child { border-bottom: none; }
+
+.featureLevel {
+  font-size: 0.65rem;
+  color: var(--gold-text);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.featureName {
+  font-family: 'Cinzel', serif;
+  font-size: 0.9rem;
+  color: var(--text-primary);
+  margin: 1px 0;
+}
+
+.featureDesc {
+  font-size: 0.78rem;
+  color: #555;
+  line-height: 1.4;
+}
+
+/* ── Scrollbar ── */
+.selectionPanel::-webkit-scrollbar,
+.previewPanel::-webkit-scrollbar {
+  width: 4px;
+}
+
+.selectionPanel::-webkit-scrollbar-track,
+.previewPanel::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.selectionPanel::-webkit-scrollbar-thumb,
+.previewPanel::-webkit-scrollbar-thumb {
+  background: #222;
+  border-radius: 2px;
+}
+
+.selectionPanel::-webkit-scrollbar-thumb:hover,
+.previewPanel::-webkit-scrollbar-thumb:hover {
+  background: #444;
+}

@@ -1,0 +1,297 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cinzel+Decorative:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap');
+
+.container {
+  min-height: 100vh;
+  background: #0a0a0a;
+  color: #d4cfc4;
+  font-family: 'Inter', sans-serif;
+  padding: 40px;
+  background-image:
+    radial-gradient(ellipse at 15% 85%, rgba(180, 150, 80, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 85% 15%, rgba(107, 163, 199, 0.02) 0%, transparent 50%);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(180, 150, 80, 0.25);
+  padding-bottom: 18px;
+  margin-bottom: 20px;
+}
+
+.backLink {
+  color: #888;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 1rem;
+  transition: color 0.3s ease;
+}
+.backLink:hover { color: #d4af37; }
+
+.flexHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 20px;
+}
+
+.nameInput {
+  font-family: 'Cinzel', serif;
+  font-size: 2.5rem;
+  color: #e8e4da;
+  background: transparent;
+  border: none;
+  border-bottom: 1px dashed #2a2a2a;
+  outline: none;
+  width: auto;
+}
+.nameInput:focus {
+  border-bottom: 1px solid #b4964f;
+}
+
+.classLevel {
+  font-size: 1.3rem;
+  color: #6ba3c7;
+  margin: 0;
+  font-family: 'Inter', sans-serif;
+  font-weight: 400;
+}
+
+.tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 28px;
+}
+
+.tab {
+  padding: 9px 20px;
+  background: #151515;
+  border: 1px solid #1e1e1e;
+  color: #555;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  font-family: 'Cinzel', serif;
+  font-weight: 600;
+  font-size: 0.9rem;
+}
+
+.tab.active {
+  background: linear-gradient(135deg, rgba(180, 150, 80, 0.15), rgba(140, 110, 50, 0.08));
+  color: #d4af37;
+  border-color: rgba(180, 150, 80, 0.4);
+}
+
+.tab:hover:not(.active) {
+  background: #1a1a1a;
+  border-color: #333;
+  color: #aaa;
+}
+
+.panel {
+  display: grid;
+  grid-template-columns: 1fr 2fr;
+  gap: 25px;
+}
+
+.card {
+  background: #131313;
+  border: 1px solid #1e1e1e;
+  border-radius: 4px;
+  padding: 20px;
+}
+
+.cardTitle {
+  font-family: 'Cinzel', serif;
+  font-size: 1.3rem;
+  color: #b4964f;
+  border-bottom: 1px solid #1a1a1a;
+  padding-bottom: 10px;
+  margin-top: 0;
+  margin-bottom: 18px;
+}
+
+.statsGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 12px;
+}
+
+.statBox {
+  border: 1px solid #1e1e1e;
+  padding: 10px;
+  border-radius: 4px;
+  text-align: center;
+  background: rgba(10, 10, 8, 0.5);
+  transition: all 0.2s;
+}
+.statBox:hover {
+  border-color: #333;
+}
+
+.statLabel {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  color: #b4964f;
+  letter-spacing: 2px;
+}
+
+.statInput {
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 1.8rem;
+  text-align: center;
+  outline: none;
+  font-family: 'Cinzel', serif;
+}
+
+.vitalsGrid {
+  display: flex;
+  gap: 14px;
+  margin-bottom: 18px;
+}
+
+.vitalBox {
+  flex: 1;
+  background: rgba(180, 150, 80, 0.04);
+  border: 1px solid rgba(180, 150, 80, 0.2);
+  border-radius: 4px;
+  padding: 14px;
+  text-align: center;
+}
+
+.vitalLabel {
+  color: #b4964f;
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin-bottom: 8px;
+}
+
+.vitalInput {
+  background: transparent;
+  border: none;
+  color: #fff;
+  font-size: 2.2rem;
+  text-align: center;
+  width: 100%;
+  outline: none;
+  font-family: 'Cinzel', serif;
+}
+
+.btnAction {
+  background: transparent;
+  border: 1px solid rgba(180, 150, 80, 0.3);
+  color: #b4964f;
+  padding: 7px 14px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  font-family: 'Cinzel', serif;
+  font-size: 0.85rem;
+}
+.btnAction:hover {
+  background: rgba(180, 150, 80, 0.1);
+  border-color: rgba(180, 150, 80, 0.5);
+  color: #d4af37;
+}
+
+.btnLevelUp {
+  background: transparent;
+  border: 1px solid rgba(107, 163, 199, 0.3);
+  color: #6ba3c7;
+  padding: 7px 14px;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.2s ease;
+  font-family: 'Cinzel', serif;
+  font-size: 0.85rem;
+}
+.btnLevelUp:hover {
+  background: rgba(107, 163, 199, 0.1);
+  color: #8bc4e8;
+}
+
+.logbook {
+  list-style-type: none;
+  padding: 0;
+  margin: 0;
+}
+
+.logItem {
+  border-left: 2px solid #1e1e1e;
+  padding-left: 14px;
+  margin-bottom: 14px;
+  position: relative;
+}
+.logItem::before {
+  content: '';
+  position: absolute;
+  left: -6px;
+  top: 5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #b4964f;
+}
+
+.logTime {
+  font-size: 0.75rem;
+  color: #444;
+}
+
+.logText {
+  color: #aaa;
+  font-size: 0.9rem;
+  margin-top: 4px;
+}
+
+.btnUndo {
+  background: transparent;
+  border: 1px dotted rgba(180, 150, 80, 0.3);
+  color: #b4964f;
+  font-size: 0.78rem;
+  cursor: pointer;
+  margin-top: 6px;
+  padding: 3px 8px;
+  border-radius: 3px;
+  transition: all 0.2s;
+}
+.btnUndo:hover {
+  background: rgba(180, 150, 80, 0.1);
+  color: #d4af37;
+}
+
+.inputGroup {
+  margin-bottom: 18px;
+}
+.inputGroup label {
+  display: block;
+  font-size: 0.7rem;
+  color: #666;
+  margin-bottom: 5px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+}
+.inputGroup input {
+  width: 100%;
+  background: rgba(10, 10, 8, 0.8);
+  border: 1px solid #1e1e1e;
+  color: #d4cfc4;
+  padding: 10px;
+  border-radius: 3px;
+  outline: none;
+  font-family: 'Inter', sans-serif;
+}
+.inputGroup input:focus {
+  border-color: #b4964f;
+}
+
+.saveStatus {
+  color: #444;
+  font-size: 0.85rem;
+  font-style: italic;
+  margin-right: 20px;
+}

@@ -2,43 +2,50 @@
     {
         "name":  "OBSERVER HUB",
         "route":  "/observer",
-        "description":  "Voice-controlled command center for the circular display â€” system control, version switching, diagnostics",
+        "description":  "Voice-controlled command center for the circular display — system control, version switching, diagnostics",
         "status":  "active",
-        "icon":  "â—ˆ"
+        "icon":  "❖"
     },
     {
         "name":  "OBSERVER EYE V2",
         "route":  "/observer/eye-v2",
-        "description":  "PC-powered photorealistic eye â€” thin client architecture, server-side tracking \u0026 behavior",
+        "description":  "PC-powered photorealistic eye — thin client architecture, server-side tracking & behavior",
         "status":  "wip",
-        "icon":  "ðŸ‘ ï¸ "
+        "icon":  "◉"
     },
     {
         "name":  "OFFLINE OBSERVER",
         "route":  "/offline-observer.html",
         "description":  "Standalone offline V1 observer with FaceDetector and WebSpeech APIs",
         "status":  "active",
-        "icon":  "🔋"
+        "icon":  "⏣"
     },
     {
         "name":  "RULES LAWYER",
         "route":  "/observer/rules-lawyer",
-        "description":  "LLM-powered board game rules assistant â€” 32-bit character, voice I/O, game-themed persona",
+        "description":  "LLM-powered board game rules assistant — 32-bit character, voice I/O, game-themed persona",
         "status":  "active",
-        "icon":  "ðŸŽ²"
+        "icon":  "§"
     },
     {
         "name":  "INBOX BUDDY",
         "route":  "/inbox-buddy",
-        "description":  "Gmail assistant â€” inbox cleanup, VIP alerts, security scans, weekly reports",
+        "description":  "Gmail assistant — inbox cleanup, VIP alerts, security scans, weekly reports",
         "status":  "wip",
-        "icon":  "ðŸ“¬"
+        "icon":  "✉"
     },
     {
         "name":  "The Record Clerk",
         "route":  "/record-clerk",
         "description":  "Digital assistant for Dandelion Records",
         "status":  "wip",
-        "icon":  "🌼"
+        "icon":  "⊚"
+    },
+    {
+        "name": "DUNGEON BUDDY",
+        "route": "/dungeon-buddy",
+        "description": "D&D 5E Campaign Manager - Grim Dark character creator and progress tracker.",
+        "status": "wip",
+        "icon": "🐉"
     }
 ]

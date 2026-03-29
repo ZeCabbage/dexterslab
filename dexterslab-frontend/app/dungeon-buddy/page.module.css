@@ -1,0 +1,167 @@
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cinzel+Decorative:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap');
+
+.container {
+  min-height: 100vh;
+  background: #0a0a0a;
+  color: #d4cfc4;
+  font-family: 'Inter', sans-serif;
+  padding: 40px;
+  background-image:
+    radial-gradient(ellipse at 20% 90%, rgba(180, 150, 80, 0.03) 0%, transparent 50%),
+    radial-gradient(ellipse at 80% 10%, rgba(107, 163, 199, 0.02) 0%, transparent 50%);
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border-bottom: 1px solid rgba(180, 150, 80, 0.3);
+  padding-bottom: 20px;
+  margin-bottom: 40px;
+}
+
+.title {
+  font-family: 'Cinzel Decorative', serif;
+  font-size: 2.5rem;
+  color: #b4964f;
+  text-shadow: 0 0 15px rgba(180, 150, 80, 0.25);
+  margin: 0;
+  letter-spacing: 3px;
+}
+
+.backLink {
+  color: #888;
+  text-decoration: none;
+  font-weight: 500;
+  font-size: 1rem;
+  transition: color 0.3s ease;
+}
+
+.backLink:hover {
+  color: #d4af37;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+.card {
+  background: #151515;
+  border: 1px solid #1e1e1e;
+  border-radius: 4px;
+  padding: 22px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  position: relative;
+  overflow: hidden;
+  text-decoration: none;
+  color: inherit;
+  display: block;
+}
+
+.card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0;
+  width: 2px; height: 100%;
+  background: transparent;
+  transition: all 0.2s ease;
+}
+
+.card:hover {
+  transform: translateY(-3px);
+  border-color: #333;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
+}
+
+.card:hover::before {
+  background: #b4964f;
+}
+
+.btnDelete {
+  position: absolute;
+  top: 10px;
+  right: 10px;
+  width: 28px;
+  height: 28px;
+  border-radius: 50%;
+  border: 1px solid transparent;
+  background: transparent;
+  color: #444;
+  font-size: 1.1rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0;
+  transition: all 0.2s;
+  z-index: 2;
+}
+
+.card:hover .btnDelete {
+  opacity: 1;
+}
+
+.btnDelete:hover {
+  border-color: #8c2020;
+  background: rgba(140, 32, 32, 0.2);
+  color: #ff4444;
+}
+
+.charName {
+  font-family: 'Cinzel', serif;
+  font-size: 1.6rem;
+  margin: 0 0 8px 0;
+  color: #e8e4da;
+}
+
+.charDetails {
+  font-size: 0.9rem;
+  color: #888;
+  margin: 0 0 14px 0;
+}
+
+.healthBar {
+  background: #1a1a1a;
+  height: 6px;
+  border-radius: 3px;
+  overflow: hidden;
+  margin-top: 12px;
+}
+
+.healthFill {
+  background: linear-gradient(90deg, #8c2020, #b4964f);
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s ease;
+}
+
+.btnNew {
+  background: transparent;
+  border: 1px dashed rgba(180, 150, 80, 0.3);
+  color: rgba(180, 150, 80, 0.5);
+  font-family: 'Cinzel', serif;
+  font-size: 1.1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 150px;
+  letter-spacing: 1px;
+}
+
+.btnNew:hover {
+  background: rgba(180, 150, 80, 0.04);
+  border-color: rgba(180, 150, 80, 0.5);
+  color: #d4af37;
+  box-shadow: 0 0 20px rgba(180, 150, 80, 0.08);
+}
+
+.loading {
+  font-family: 'Cinzel', serif;
+  font-size: 1.2rem;
+  color: #b4964f;
+  text-align: center;
+  padding: 50px;
+}

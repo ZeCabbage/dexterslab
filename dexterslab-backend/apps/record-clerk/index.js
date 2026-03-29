@@ -5,7 +5,8 @@ export default class RecordClerkApp {
     target: 'pi',
     hardware: ['camera', 'mic', 'tts', 'display'],
     wsPath: '/ws/recordclerk',
-    icon: '🌼',
+    frontendRoute: '/record-clerk',
+    icon: '⊚',
     priority: 8
   };
 

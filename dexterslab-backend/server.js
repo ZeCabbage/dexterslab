@@ -28,10 +28,11 @@ import { bus } from './core/context-bus.js';
 import { EventEmitter } from 'events';
 import * as fieldTestCapture from './diagnostics/field-test-capture.js';
 
-import { AppManager, HardwareBroker, AIProvider, WSRouter, RESTRouter } from './platform/index.js';
+import { AppManager, HardwareBroker, AIProvider, WSRouter, RESTRouter, VoiceNavigator } from './platform/index.js';
 import ObserverEyeApp from './apps/observer-eye/index.js';
 import RulesLawyerApp from './apps/rules-lawyer/index.js';
 import RecordClerkApp from './apps/record-clerk/index.js';
+import DungeonBuddyApp from './apps/dungeon-buddy/index.js';
 
 const execAsync = promisify(exec);
 
@@ -67,6 +68,7 @@ const hardwareBroker = new HardwareBroker({
 const wsRouter = new WSRouter(server);
 const restRouter = new RESTRouter(app);
 const appManager = new AppManager();
+const voiceNavigator = new VoiceNavigator(appManager, wsRouter);
 
 // ── Cognitive Layer ──
 const memoryEngine = new MemoryEngine();
@@ -92,7 +94,10 @@ restRouter.registerAppRoutes('rules-lawyer', rulesLawyerApp.getRoutes());
 const recordClerkApp = appManager.registerApp(RecordClerkApp, platform);
 recordClerkApp.getWsHandler();
 
-await appManager.activateDisplayApp('observer-eye');
+const dungeonBuddyApp = appManager.registerApp(DungeonBuddyApp, platform);
+restRouter.registerAppRoutes('dungeon-buddy', dungeonBuddyApp.getRoutes());
+
+// No app is forced active on boot. Start in Hub mode.
 
 // ═══════════════════════════════════════════
 //  REST API

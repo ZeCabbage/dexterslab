@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import "./globals.css";
+import SystemListener from "./components/SystemListener";
 
 export const metadata: Metadata = {
   title: "Dexter's Lab",
@@ -14,6 +15,7 @@ export default function RootLayout({
   return (
     <html lang="en">
       <body>
+        <SystemListener />
         {children}
       </body>
     </html>

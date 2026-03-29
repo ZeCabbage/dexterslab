@@ -3,3 +3,4 @@ export { HardwareBroker } from './hardware-broker.js';
 export { AIProvider } from './ai-provider.js';
 export { WSRouter } from './ws-router.js';
 export { RESTRouter } from './rest-router.js';
+export { VoiceNavigator } from './voice-navigator.js';
