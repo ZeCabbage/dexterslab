@@ -1,297 +1,554 @@
-@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cinzel+Decorative:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap');
+/* ═══════════════════════════════════════════
+   DUNGEON BUDDY — CHARACTER SHEET
+   BG3 Gold/Dark Aesthetic
+   ═══════════════════════════════════════════ */
 
-.container {
-  min-height: 100vh;
-  background: #0a0a0a;
-  color: #d4cfc4;
+@import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700&family=Cinzel+Decorative:wght@400;700&family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  --bg-deep: #0a0a0a;
+  --bg-card: #111113;
+  --bg-elevated: #1a1a1e;
+  --bg-input: #0e0e10;
+  --gold: #b4964f;
+  --gold-bright: #d4af37;
+  --gold-dim: #6b5a2f;
+  --gold-glow: rgba(180, 150, 79, 0.25);
+  --ice: #6ba3c7;
+  --ice-dim: rgba(107, 163, 199, 0.3);
+  --border-dim: #222225;
+  --border-gold: rgba(180, 150, 79, 0.3);
+  --text-primary: #d4d0c8;
+  --text-dim: #666;
+  --hp-green: #2d7a2d;
+  --hp-red: #7a2d2d;
+  --danger: #c44;
+  --success: #3a7;
+}
+
+/* ── Loading ── */
+.loadingScreen {
+  display: flex; align-items: center; justify-content: center;
+  min-height: 100vh; background: var(--bg-deep); color: var(--gold);
+  font-family: 'Cinzel', serif; font-size: 1.2rem;
+}
+
+/* ── Layout ── */
+.sheetContainer {
+  display: flex; min-height: 100vh; background: var(--bg-deep);
+  font-family: 'Inter', sans-serif; color: var(--text-primary);
+}
+
+/* ── Sidebar ── */
+.sidebar {
+  width: 72px; background: #0d0d0f; border-right: 1px solid var(--border-dim);
+  display: flex; flex-direction: column; align-items: center;
+  padding: 12px 0; gap: 4px; position: sticky; top: 0; height: 100vh;
+}
+.sidebarBack {
+  width: 48px; height: 48px; display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); text-decoration: none; font-size: 1.2rem;
+  border-radius: 8px; margin-bottom: 8px; transition: all 0.2s;
+}
+.sidebarBack:hover { background: var(--bg-elevated); color: var(--gold); }
+.sidebarTab {
+  width: 56px; padding: 8px 0; display: flex; flex-direction: column; align-items: center;
+  gap: 2px; background: none; border: none; border-radius: 8px;
+  cursor: pointer; transition: all 0.2s; color: var(--text-dim);
+  border-left: 3px solid transparent;
+}
+.sidebarTab:hover { background: var(--bg-elevated); color: var(--text-primary); }
+.sidebarActive {
+  background: var(--bg-elevated) !important; color: var(--gold-bright) !important;
+  border-left-color: var(--gold) !important;
+}
+.sidebarIcon { font-size: 1.2rem; line-height: 1; }
+.sidebarLabel { font-size: 0.55rem; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 500; }
+.sidebarSave {
+  margin-top: auto; font-size: 0.65rem; color: var(--success); padding: 4px;
   font-family: 'Inter', sans-serif;
-  padding: 40px;
-  background-image:
-    radial-gradient(ellipse at 15% 85%, rgba(180, 150, 80, 0.03) 0%, transparent 50%),
-    radial-gradient(ellipse at 85% 15%, rgba(107, 163, 199, 0.02) 0%, transparent 50%);
 }
 
-.header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  border-bottom: 1px solid rgba(180, 150, 80, 0.25);
-  padding-bottom: 18px;
-  margin-bottom: 20px;
+/* ── Main Panel ── */
+.mainPanel {
+  flex: 1; padding: 28px 36px; overflow-y: auto; max-width: 1100px;
 }
 
-.backLink {
-  color: #888;
-  text-decoration: none;
-  font-weight: 500;
-  font-size: 1rem;
-  transition: color 0.3s ease;
+/* ── Common ── */
+.tabTitle {
+  font-family: 'Cinzel', serif; font-size: 1.5rem; color: var(--gold-bright);
+  margin: 0 0 4px 0; letter-spacing: 1px;
 }
-.backLink:hover { color: #d4af37; }
+.tabSubtitle { color: var(--text-dim); font-size: 0.85rem; margin: 0 0 20px 0; }
+.sectionHeading {
+  font-family: 'Cinzel', serif; font-size: 1rem; color: var(--gold);
+  margin: 24px 0 12px 0; display: flex; align-items: center; gap: 12px;
+  border-bottom: 1px solid var(--border-dim); padding-bottom: 6px;
+}
+.emptyText { color: var(--text-dim); font-size: 0.85rem; font-style: italic; }
 
-.flexHeader {
-  display: flex;
-  align-items: baseline;
-  gap: 20px;
+/* ── Buttons ── */
+.btnAction {
+  padding: 10px 20px; border: 1px solid var(--border-gold);
+  background: rgba(180, 150, 79, 0.08); color: var(--gold);
+  font-family: 'Cinzel', serif; font-size: 0.85rem; cursor: pointer;
+  border-radius: 4px; transition: all 0.2s;
 }
+.btnAction:hover { background: rgba(180, 150, 79, 0.18); }
+.btnLevelUp {
+  padding: 10px 20px; border: 1px solid var(--gold);
+  background: linear-gradient(135deg, rgba(180,150,79,0.15), rgba(180,150,79,0.05));
+  color: var(--gold-bright); font-family: 'Cinzel', serif; font-size: 0.85rem;
+  cursor: pointer; border-radius: 4px; transition: all 0.2s; margin-top: 8px;
+}
+.btnLevelUp:hover { background: linear-gradient(135deg, rgba(180,150,79,0.3), rgba(180,150,79,0.1)); box-shadow: 0 0 12px var(--gold-glow); }
+.btnAdd {
+  background: none; border: 1px solid var(--border-gold); color: var(--gold);
+  padding: 2px 10px; border-radius: 3px; cursor: pointer; font-size: 0.8rem;
+  transition: all 0.15s;
+}
+.btnAdd:hover { background: rgba(180, 150, 79, 0.15); }
+.btnRemove {
+  background: none; border: 1px solid transparent; color: #555; cursor: pointer;
+  font-size: 1.1rem; padding: 2px 6px; border-radius: 3px; transition: all 0.15s;
+}
+.btnRemove:hover { border-color: var(--danger); color: var(--danger); }
+.btnSmall {
+  background: none; border: 1px solid var(--border-dim); color: var(--text-dim);
+  padding: 4px 10px; border-radius: 3px; cursor: pointer; font-size: 0.75rem;
+}
+.btnSmall:hover { border-color: var(--gold-dim); color: var(--gold); }
+.btnUndo {
+  background: none; border: 1px solid var(--danger); color: var(--danger);
+  padding: 3px 10px; border-radius: 3px; cursor: pointer; font-size: 0.75rem;
+  margin-top: 4px; transition: all 0.15s;
+}
+.btnUndo:hover { background: rgba(200, 60, 60, 0.1); }
 
-.nameInput {
-  font-family: 'Cinzel', serif;
-  font-size: 2.5rem;
-  color: #e8e4da;
-  background: transparent;
-  border: none;
-  border-bottom: 1px dashed #2a2a2a;
-  outline: none;
-  width: auto;
+/* Proficiency dot */
+.profDot {
+  cursor: pointer; font-size: 0.7rem; color: #333; transition: color 0.15s;
+  user-select: none;
 }
-.nameInput:focus {
-  border-bottom: 1px solid #b4964f;
-}
+.profActive { color: var(--gold-bright) !important; text-shadow: 0 0 6px var(--gold-glow); }
 
-.classLevel {
-  font-size: 1.3rem;
-  color: #6ba3c7;
-  margin: 0;
-  font-family: 'Inter', sans-serif;
-  font-weight: 400;
+/* ═══════════════════════════════
+   PROFILE TAB
+   ═══════════════════════════════ */
+.profileTab { position: relative; }
+.profileHeader {
+  display: flex; gap: 28px; margin-bottom: 28px; align-items: flex-start;
 }
-
-.tabs {
-  display: flex;
-  gap: 8px;
-  margin-bottom: 28px;
+.portraitFrame {
+  width: 180px; height: 220px; border: 2px solid var(--border-gold);
+  border-radius: 4px; overflow: hidden; flex-shrink: 0;
+  background: var(--bg-card);
 }
-
-.tab {
-  padding: 9px 20px;
-  background: #151515;
-  border: 1px solid #1e1e1e;
-  color: #555;
-  cursor: pointer;
-  border-radius: 3px;
-  transition: all 0.2s ease;
-  font-family: 'Cinzel', serif;
-  font-weight: 600;
-  font-size: 0.9rem;
+.portraitImg { width: 100%; height: 100%; object-fit: cover; }
+.portraitPlaceholder {
+  width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+  color: var(--text-dim); font-size: 0.85rem; font-family: 'Cinzel', serif;
 }
-
-.tab.active {
-  background: linear-gradient(135deg, rgba(180, 150, 80, 0.15), rgba(140, 110, 50, 0.08));
-  color: #d4af37;
-  border-color: rgba(180, 150, 80, 0.4);
-}
-
-.tab:hover:not(.active) {
-  background: #1a1a1a;
-  border-color: #333;
-  color: #aaa;
-}
-
-.panel {
-  display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: 25px;
-}
-
-.card {
-  background: #131313;
-  border: 1px solid #1e1e1e;
-  border-radius: 4px;
-  padding: 20px;
-}
-
-.cardTitle {
-  font-family: 'Cinzel', serif;
-  font-size: 1.3rem;
-  color: #b4964f;
-  border-bottom: 1px solid #1a1a1a;
-  padding-bottom: 10px;
-  margin-top: 0;
-  margin-bottom: 18px;
-}
-
-.statsGrid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 12px;
-}
-
-.statBox {
-  border: 1px solid #1e1e1e;
-  padding: 10px;
-  border-radius: 4px;
-  text-align: center;
-  background: rgba(10, 10, 8, 0.5);
-  transition: all 0.2s;
-}
-.statBox:hover {
-  border-color: #333;
-}
-
-.statLabel {
-  font-size: 0.7rem;
-  text-transform: uppercase;
-  color: #b4964f;
-  letter-spacing: 2px;
-}
-
-.statInput {
-  width: 100%;
-  background: transparent;
-  border: none;
-  color: #fff;
-  font-size: 1.8rem;
-  text-align: center;
-  outline: none;
-  font-family: 'Cinzel', serif;
-}
-
-.vitalsGrid {
-  display: flex;
-  gap: 14px;
-  margin-bottom: 18px;
-}
-
-.vitalBox {
-  flex: 1;
-  background: rgba(180, 150, 80, 0.04);
-  border: 1px solid rgba(180, 150, 80, 0.2);
-  border-radius: 4px;
-  padding: 14px;
-  text-align: center;
-}
-
-.vitalLabel {
-  color: #b4964f;
-  font-size: 0.75rem;
-  text-transform: uppercase;
-  letter-spacing: 1px;
+.profileInfo { flex: 1; }
+.nameInputLarge {
+  font-family: 'Cinzel Decorative', 'Cinzel', serif; font-size: 1.8rem;
+  background: none; border: none; border-bottom: 1px solid var(--border-dim);
+  color: var(--gold-bright); width: 100%; padding: 4px 0; outline: none;
   margin-bottom: 8px;
 }
-
-.vitalInput {
-  background: transparent;
-  border: none;
-  color: #fff;
-  font-size: 2.2rem;
-  text-align: center;
-  width: 100%;
-  outline: none;
+.nameInputLarge:focus { border-bottom-color: var(--gold); }
+.profileMeta { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; }
+.metaBadge {
+  padding: 3px 10px; background: var(--bg-elevated); border: 1px solid var(--border-dim);
+  border-radius: 3px; font-size: 0.78rem; color: var(--text-primary);
   font-family: 'Cinzel', serif;
 }
+.xpBar {
+  height: 18px; background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 3px; position: relative; overflow: hidden; margin-bottom: 12px;
+}
+.xpFill { height: 100%; background: linear-gradient(90deg, var(--gold-dim), var(--gold)); transition: width 0.3s; }
+.xpText {
+  position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  font-size: 0.65rem; color: var(--text-primary); text-shadow: 0 1px 2px #000;
+}
+.profileRow { display: flex; gap: 12px; margin-bottom: 8px; }
+.inlineField { display: flex; flex-direction: column; flex: 1; }
+.inlineField label { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; margin-bottom: 3px; }
+.inlineField input {
+  background: var(--bg-input); border: 1px solid var(--border-dim);
+  color: var(--text-primary); padding: 6px 8px; border-radius: 3px;
+  font-size: 0.85rem; outline: none;
+}
+.inlineField input:focus { border-color: var(--gold-dim); }
 
-.btnAction {
-  background: transparent;
-  border: 1px solid rgba(180, 150, 80, 0.3);
-  color: #b4964f;
-  padding: 7px 14px;
-  cursor: pointer;
-  border-radius: 3px;
-  transition: all 0.2s ease;
-  font-family: 'Cinzel', serif;
-  font-size: 0.85rem;
+.personalityGrid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.personalityBox { display: flex; flex-direction: column; }
+.personalityBox label {
+  font-family: 'Cinzel', serif; font-size: 0.8rem; color: var(--gold);
+  margin-bottom: 4px;
 }
-.btnAction:hover {
-  background: rgba(180, 150, 80, 0.1);
-  border-color: rgba(180, 150, 80, 0.5);
-  color: #d4af37;
+.personalityBox textarea {
+  background: var(--bg-card); border: 1px solid var(--border-dim);
+  color: var(--text-primary); padding: 8px; border-radius: 3px;
+  font-size: 0.82rem; resize: vertical; min-height: 70px; outline: none;
+  font-family: 'Inter', sans-serif;
 }
+.personalityBox textarea:focus { border-color: var(--gold-dim); }
 
-.btnLevelUp {
-  background: transparent;
-  border: 1px solid rgba(107, 163, 199, 0.3);
-  color: #6ba3c7;
-  padding: 7px 14px;
-  cursor: pointer;
-  border-radius: 3px;
-  transition: all 0.2s ease;
-  font-family: 'Cinzel', serif;
-  font-size: 0.85rem;
+/* ═══════════════════════════════
+   ABILITIES TAB
+   ═══════════════════════════════ */
+.abilitiesTab { position: relative; }
+.abilityScoresGrid {
+  display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px;
+  margin: 20px 0;
 }
-.btnLevelUp:hover {
-  background: rgba(107, 163, 199, 0.1);
-  color: #8bc4e8;
+.abilityCard {
+  background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 6px; padding: 16px 8px; text-align: center;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
 }
+.abilityName {
+  font-family: 'Cinzel', serif; font-size: 0.7rem; color: var(--gold);
+  text-transform: uppercase; letter-spacing: 1px;
+}
+.abilityScoreCircle {
+  width: 54px; height: 54px; border: 2px solid var(--border-gold);
+  border-radius: 50%; display: flex; align-items: center; justify-content: center;
+  margin: 4px 0;
+}
+.abilityScoreInput {
+  width: 36px; background: none; border: none; color: var(--text-primary);
+  font-size: 1.3rem; text-align: center; font-family: 'Cinzel', serif; outline: none;
+}
+.abilityModifier {
+  font-family: 'Cinzel', serif; font-size: 1.1rem; color: var(--ice);
+  font-weight: 600;
+}
+.savingThrow { display: flex; align-items: center; gap: 4px; margin-top: 4px; }
+.saveLabel { font-size: 0.72rem; color: var(--text-dim); }
 
-.logbook {
-  list-style-type: none;
-  padding: 0;
-  margin: 0;
+.passivesRow {
+  display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;
+  margin-top: 20px;
 }
-
-.logItem {
-  border-left: 2px solid #1e1e1e;
-  padding-left: 14px;
-  margin-bottom: 14px;
-  position: relative;
+.passiveBox {
+  background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 4px; padding: 10px; text-align: center;
 }
-.logItem::before {
-  content: '';
-  position: absolute;
-  left: -6px;
-  top: 5px;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #b4964f;
-}
-
-.logTime {
-  font-size: 0.75rem;
-  color: #444;
-}
-
-.logText {
-  color: #aaa;
-  font-size: 0.9rem;
+.passiveLabel { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; }
+.passiveValue {
+  font-family: 'Cinzel', serif; font-size: 1.2rem; color: var(--gold-bright);
   margin-top: 4px;
 }
 
-.btnUndo {
-  background: transparent;
-  border: 1px dotted rgba(180, 150, 80, 0.3);
-  color: #b4964f;
-  font-size: 0.78rem;
-  cursor: pointer;
-  margin-top: 6px;
-  padding: 3px 8px;
-  border-radius: 3px;
-  transition: all 0.2s;
+/* ═══════════════════════════════
+   SKILLS TAB
+   ═══════════════════════════════ */
+.skillsTab { position: relative; }
+.skillsList {
+  display: flex; flex-direction: column; gap: 2px; margin-top: 12px;
 }
-.btnUndo:hover {
-  background: rgba(180, 150, 80, 0.1);
-  color: #d4af37;
+.skillRow {
+  display: flex; align-items: center; gap: 10px; padding: 7px 12px;
+  background: var(--bg-card); border-radius: 3px; border: 1px solid transparent;
+  transition: all 0.15s;
+}
+.skillRow:hover { border-color: var(--border-dim); background: var(--bg-elevated); }
+.skillProficient { border-left: 2px solid var(--gold) !important; }
+.skillMod {
+  font-family: 'Cinzel', serif; font-size: 0.9rem; color: var(--text-primary);
+  width: 30px; text-align: right;
+}
+.skillName { flex: 1; font-size: 0.85rem; }
+.skillAbility { font-size: 0.7rem; color: var(--text-dim); text-transform: uppercase; width: 30px; }
+
+/* ═══════════════════════════════
+   COMBAT TAB
+   ═══════════════════════════════ */
+.combatTab { position: relative; }
+.combatTopRow { display: flex; gap: 24px; margin: 20px 0; align-items: flex-start; }
+.hpSection { flex: 1; }
+.hpLabel { font-family: 'Cinzel', serif; font-size: 0.9rem; color: var(--gold); margin-bottom: 6px; }
+.hpDisplay { display: flex; align-items: center; gap: 4px; margin-bottom: 6px; }
+.hpInput {
+  width: 70px; font-size: 1.8rem; font-family: 'Cinzel', serif;
+  background: var(--bg-input); border: 1px solid var(--hp-green); color: var(--success);
+  text-align: center; border-radius: 4px; padding: 4px; outline: none;
+}
+.hpInput:focus { border-color: var(--gold); }
+.hpSep { font-size: 1.4rem; color: var(--text-dim); }
+.hpInputMax {
+  width: 60px; font-size: 1.2rem; font-family: 'Cinzel', serif;
+  background: var(--bg-input); border: 1px solid var(--border-dim); color: var(--text-dim);
+  text-align: center; border-radius: 4px; padding: 4px; outline: none;
+}
+.hpBar {
+  height: 10px; background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 3px; overflow: hidden; margin-bottom: 8px;
+}
+.hpFill { height: 100%; background: linear-gradient(90deg, var(--hp-green), var(--success)); transition: width 0.3s; }
+.tempHpRow { display: flex; align-items: center; gap: 8px; }
+.tempHpRow label { font-size: 0.75rem; color: var(--text-dim); }
+.tempHpRow input {
+  width: 50px; background: var(--bg-input); border: 1px solid var(--border-dim);
+  color: var(--ice); text-align: center; padding: 4px; border-radius: 3px;
+  font-size: 0.85rem; outline: none;
 }
 
-.inputGroup {
-  margin-bottom: 18px;
+.combatStatsRow { display: flex; gap: 10px; }
+.combatStatBox {
+  background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 6px; padding: 12px 16px; text-align: center; min-width: 80px;
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
 }
-.inputGroup label {
-  display: block;
-  font-size: 0.7rem;
-  color: #666;
-  margin-bottom: 5px;
-  text-transform: uppercase;
-  letter-spacing: 1.5px;
+.combatStatValue { font-family: 'Cinzel', serif; font-size: 1.4rem; color: var(--gold-bright); }
+.combatStatLabel { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; }
+.combatStatInput {
+  width: 50px; background: var(--bg-input); border: 1px solid var(--border-dim);
+  color: var(--text-primary); text-align: center; padding: 3px; border-radius: 3px;
+  font-size: 0.8rem; margin-top: 4px; outline: none;
 }
-.inputGroup input {
-  width: 100%;
-  background: rgba(10, 10, 8, 0.8);
-  border: 1px solid #1e1e1e;
-  color: #d4cfc4;
-  padding: 10px;
-  border-radius: 3px;
-  outline: none;
+.combatStatInput:focus { border-color: var(--gold-dim); }
+
+/* Death Saves */
+.deathSavesRow {
+  display: flex; align-items: center; gap: 20px; padding: 12px 16px;
+  background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 4px; margin: 16px 0;
+}
+.deathSaveGroup { display: flex; align-items: center; gap: 8px; }
+.deathLabel { font-size: 0.75rem; color: var(--text-dim); }
+.deathDots { display: flex; gap: 6px; }
+.deathDot {
+  width: 16px; height: 16px; border-radius: 50%;
+  border: 2px solid var(--border-dim); cursor: pointer;
+  transition: all 0.15s;
+}
+.deathSuccess { background: var(--success); border-color: var(--success); }
+.deathFail { background: var(--danger); border-color: var(--danger); }
+
+.restRow { display: flex; gap: 10px; margin: 12px 0; }
+
+/* Conditions */
+.conditionsSection { margin: 12px 0; }
+.conditionChips { display: flex; flex-wrap: wrap; gap: 6px; }
+.conditionChip {
+  padding: 4px 10px; border: 1px solid var(--border-dim);
+  border-radius: 3px; font-size: 0.75rem; color: var(--text-dim);
+  cursor: pointer; transition: all 0.15s; user-select: none;
+}
+.conditionChip:hover { border-color: var(--gold-dim); color: var(--text-primary); }
+.conditionActive {
+  background: rgba(200, 60, 60, 0.15) !important;
+  border-color: var(--danger) !important;
+  color: var(--danger) !important;
+}
+
+/* Attacks */
+.attacksSection { margin-top: 12px; }
+.attackRow {
+  display: flex; gap: 6px; align-items: center; margin-bottom: 6px;
+}
+.attackInput {
+  flex: 2; background: var(--bg-input); border: 1px solid var(--border-dim);
+  color: var(--text-primary); padding: 6px 8px; border-radius: 3px;
+  font-size: 0.82rem; outline: none;
+}
+.attackInput:focus { border-color: var(--gold-dim); }
+.attackInputSm {
+  flex: 1; background: var(--bg-input); border: 1px solid var(--border-dim);
+  color: var(--text-primary); padding: 6px 8px; border-radius: 3px;
+  font-size: 0.82rem; outline: none; max-width: 90px;
+}
+.attackInputSm:focus { border-color: var(--gold-dim); }
+
+/* ═══════════════════════════════
+   SPELLS TAB
+   ═══════════════════════════════ */
+.spellsTab { position: relative; }
+.spellHeader {
+  display: flex; gap: 16px; margin: 16px 0;
+}
+.spellStat {
+  background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 4px; padding: 10px 20px; text-align: center;
+}
+.spellStatLabel { font-size: 0.65rem; color: var(--text-dim); text-transform: uppercase; }
+.spellStatValue { font-family: 'Cinzel', serif; font-size: 1.2rem; color: var(--gold-bright); margin-top: 2px; }
+
+.spellSlotsGrid {
+  display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0;
+}
+.slotBox {
+  background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 4px; padding: 8px 12px; min-width: 100px;
+}
+.slotLevel { font-size: 0.7rem; color: var(--gold); font-family: 'Cinzel', serif; margin-bottom: 4px; }
+.slotDots { display: flex; gap: 4px; margin-bottom: 6px; }
+.slotDot {
+  width: 12px; height: 12px; border-radius: 50%;
+  border: 1px solid var(--gold-dim); background: transparent;
+}
+.slotUsed { background: var(--gold); border-color: var(--gold); }
+.slotActions {
+  display: flex; gap: 4px; align-items: center;
+}
+.slotActions button {
+  background: none; border: 1px solid var(--border-dim); color: var(--text-dim);
+  padding: 2px 6px; border-radius: 2px; cursor: pointer; font-size: 0.7rem;
+}
+.slotActions button:hover { border-color: var(--gold-dim); color: var(--gold); }
+.slotActions button:disabled { opacity: 0.3; cursor: default; }
+.slotActions input {
+  background: var(--bg-input); border: 1px solid var(--border-dim);
+  color: var(--text-primary); text-align: center; border-radius: 2px;
+  font-size: 0.75rem; outline: none;
+}
+
+.spellListSection { margin-top: 16px; }
+.spellCard {
+  background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 4px; padding: 10px 12px; margin-bottom: 6px;
+  transition: border-color 0.15s;
+}
+.spellPrepared { border-left: 3px solid var(--gold) !important; }
+.spellCardTop { display: flex; gap: 8px; align-items: center; }
+.spellNameInput {
+  flex: 1; background: none; border: none; border-bottom: 1px solid var(--border-dim);
+  color: var(--text-primary); font-size: 0.88rem; padding: 2px 0; outline: none;
+  font-family: 'Cinzel', serif;
+}
+.spellNameInput:focus { border-bottom-color: var(--gold-dim); }
+.spellCardTop select {
+  background: var(--bg-input); border: 1px solid var(--border-dim);
+  color: var(--text-primary); padding: 3px 6px; border-radius: 3px;
+  font-size: 0.75rem; outline: none;
+}
+.spellDesc {
+  width: 100%; background: none; border: none; border-top: 1px solid var(--border-dim);
+  color: var(--text-dim); font-size: 0.78rem; padding: 6px 0 0 0;
+  margin-top: 6px; resize: vertical; min-height: 30px; outline: none;
   font-family: 'Inter', sans-serif;
 }
-.inputGroup input:focus {
-  border-color: #b4964f;
-}
 
-.saveStatus {
-  color: #444;
-  font-size: 0.85rem;
-  font-style: italic;
-  margin-right: 20px;
+/* ═══════════════════════════════
+   INVENTORY TAB
+   ═══════════════════════════════ */
+.inventoryTab { position: relative; }
+.inventoryHeader { margin: 16px 0; }
+.currencyRow { display: flex; gap: 12px; margin-bottom: 10px; }
+.currencyBox { display: flex; flex-direction: column; }
+.currencyBox label {
+  font-family: 'Cinzel', serif; font-size: 0.75rem; color: var(--gold);
+  margin-bottom: 2px;
+}
+.currencyBox input {
+  width: 70px; background: var(--bg-input); border: 1px solid var(--border-dim);
+  color: var(--gold-bright); text-align: center; padding: 6px;
+  border-radius: 3px; font-size: 1rem; font-family: 'Cinzel', serif; outline: none;
+}
+.currencyBox input:focus { border-color: var(--gold-dim); }
+.weightRow {
+  display: flex; justify-content: space-between; font-size: 0.78rem;
+  color: var(--text-dim); margin-bottom: 4px;
+}
+.attunement { color: var(--ice); }
+.weightBar {
+  height: 6px; background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 3px; overflow: hidden;
+}
+.weightFill { height: 100%; background: var(--gold); transition: width 0.3s; }
+
+.itemRow {
+  display: flex; gap: 6px; align-items: center; padding: 6px 8px;
+  background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 3px; margin-bottom: 4px; transition: all 0.15s;
+}
+.itemEquipped { border-left: 3px solid var(--gold); }
+.itemName {
+  flex: 3; background: none; border: none; border-bottom: 1px solid transparent;
+  color: var(--text-primary); font-size: 0.85rem; padding: 2px 0; outline: none;
+}
+.itemName:focus { border-bottom-color: var(--gold-dim); }
+.itemQty, .itemWeight {
+  width: 45px; background: var(--bg-input); border: 1px solid var(--border-dim);
+  color: var(--text-primary); text-align: center; padding: 3px;
+  border-radius: 2px; font-size: 0.8rem; outline: none;
+}
+.itemToggle {
+  background: none; border: 1px solid var(--border-dim); color: #444;
+  padding: 3px 6px; border-radius: 3px; cursor: pointer; font-size: 0.85rem;
+  transition: all 0.15s;
+}
+.toggleActive { color: var(--gold) !important; border-color: var(--gold-dim) !important; }
+.toggleAttuned { color: var(--ice) !important; border-color: var(--ice-dim) !important; }
+
+/* ═══════════════════════════════
+   FEATURES TAB
+   ═══════════════════════════════ */
+.featuresTab { position: relative; }
+.featureSection { margin-bottom: 20px; }
+.featureList {
+  list-style: none; padding: 0; margin: 0;
+}
+.featureList li {
+  padding: 6px 12px; border-left: 2px solid var(--gold-dim);
+  margin-bottom: 4px; color: var(--text-primary); font-size: 0.85rem;
+  background: var(--bg-card);
+}
+.featureCard {
+  background: var(--bg-card); border: 1px solid var(--border-dim);
+  border-radius: 4px; padding: 10px 14px; margin-bottom: 6px;
+}
+.featureCardHeader { display: flex; align-items: center; gap: 10px; }
+.featureLevel {
+  font-size: 0.65rem; color: var(--ice); background: rgba(107, 163, 199, 0.1);
+  padding: 2px 6px; border-radius: 2px; font-family: 'Cinzel', serif;
+}
+.featureName { font-family: 'Cinzel', serif; font-size: 0.9rem; color: var(--gold-bright); }
+.featureDesc { font-size: 0.8rem; color: var(--text-dim); margin-top: 4px; line-height: 1.4; }
+.profList { font-size: 0.85rem; line-height: 1.8; }
+.profList strong { color: var(--gold); font-family: 'Cinzel', serif; font-size: 0.8rem; }
+
+/* ═══════════════════════════════
+   LOGBOOK TAB
+   ═══════════════════════════════ */
+.logbookTab { position: relative; }
+.notesSection { margin-bottom: 20px; }
+.notesTextarea {
+  width: 100%; min-height: 120px; background: var(--bg-card);
+  border: 1px solid var(--border-dim); color: var(--text-primary);
+  padding: 12px; border-radius: 4px; font-size: 0.85rem;
+  font-family: 'Inter', sans-serif; resize: vertical; outline: none;
+}
+.notesTextarea:focus { border-color: var(--gold-dim); }
+
+.logTimeline { position: relative; padding-left: 20px; }
+.logEntry {
+  display: flex; gap: 12px; margin-bottom: 16px; position: relative;
+}
+.logDot {
+  width: 10px; height: 10px; border-radius: 50%; background: var(--gold-dim);
+  border: 2px solid var(--bg-deep); position: absolute; left: -25px; top: 4px;
+}
+.logContent { flex: 1; }
+.logTime { font-size: 0.7rem; color: var(--text-dim); margin-bottom: 2px; }
+.logDesc { font-size: 0.85rem; color: var(--text-primary); }
+
+/* ═══════════════════════════════
+   RESPONSIVE
+   ═══════════════════════════════ */
+@media (max-width: 768px) {
+  .sidebar { width: 56px; }
+  .sidebarLabel { display: none; }
+  .mainPanel { padding: 16px; }
+  .profileHeader { flex-direction: column; align-items: center; }
+  .portraitFrame { width: 140px; height: 170px; }
+  .abilityScoresGrid { grid-template-columns: repeat(3, 1fr); }
+  .passivesRow { grid-template-columns: repeat(2, 1fr); }
+  .combatTopRow { flex-direction: column; }
+  .personalityGrid { grid-template-columns: 1fr; }
+  .combatStatsRow { flex-wrap: wrap; }
 }

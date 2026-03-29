@@ -33,5 +33,129 @@
     },
     "logbook": [],
     "ac": 10
+  },
+  {
+    "id": "char_1774822020807_468",
+    "name": "Billson The Gruff",
+    "race": "Dwarf (Hill Dwarf)",
+    "class": "Druid",
+    "background": "Outlander",
+    "level": 4,
+    "maxHp": 26,
+    "currentHp": 26,
+    "ac": 9,
+    "stats": {
+      "str": 8,
+      "dex": 8,
+      "con": 10,
+      "int": 8,
+      "wis": 9,
+      "cha": 8
+    },
+    "skills": [
+      "athletics",
+      "survival",
+      "animal_handling",
+      "nature"
+    ],
+    "hitDie": 8,
+    "speed": 25,
+    "proficiencyBonus": 2,
+    "savingThrows": [
+      "int",
+      "wis"
+    ],
+    "armorProficiencies": [
+      "Light",
+      "Medium",
+      "Shields (non-metal)"
+    ],
+    "weaponProficiencies": [
+      "Clubs",
+      "Daggers",
+      "Darts",
+      "Javelins",
+      "Maces",
+      "Quarterstaffs",
+      "Scimitars",
+      "Sickles",
+      "Slings",
+      "Spears"
+    ],
+    "spellcaster": true,
+    "spellcastingAbility": "wis",
+    "traits": [
+      "Darkvision",
+      "Dwarven Resilience",
+      "Dwarven Combat Training",
+      "Stonecunning",
+      "Dwarven Toughness"
+    ],
+    "languages": [
+      "Common",
+      "Dwarvish"
+    ],
+    "equipment": [
+      "Staff",
+      "Hunting trap",
+      "Trophy",
+      "Traveler's clothes",
+      "10 gp"
+    ],
+    "features": [
+      {
+        "level": 1,
+        "name": "Druidic",
+        "description": "You know Druidic, the secret language of druids."
+      },
+      {
+        "level": 1,
+        "name": "Spellcasting",
+        "description": "Cast druid spells using Wisdom."
+      }
+    ],
+    "portrait": null,
+    "logbook": [
+      {
+        "id": "log_1774822030429",
+        "timestamp": 1774822030429,
+        "type": "level_up",
+        "description": "Leveled up to 4. Max HP increased by 6.",
+        "previousState": {
+          "level": 3,
+          "maxHp": 20,
+          "currentHp": 20
+        }
+      },
+      {
+        "id": "log_1774822030317",
+        "timestamp": 1774822030317,
+        "type": "level_up",
+        "description": "Leveled up to 3. Max HP increased by 6.",
+        "previousState": {
+          "level": 2,
+          "maxHp": 14,
+          "currentHp": 14
+        }
+      },
+      {
+        "id": "log_1774822029678",
+        "timestamp": 1774822029678,
+        "type": "level_up",
+        "description": "Leveled up to 2. Max HP increased by 6.",
+        "previousState": {
+          "level": 1,
+          "maxHp": 8,
+          "currentHp": 8
+        }
+      },
+      {
+        "id": "log_1774822020791",
+        "timestamp": 1774822020791,
+        "type": "creation",
+        "description": "Billson The Gruff was born. A Level 1 Dwarf Druid, Outlander background.",
+        "previousState": null
+      }
+    ]
   }
 ]

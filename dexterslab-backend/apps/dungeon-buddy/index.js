@@ -114,7 +114,7 @@ export default class DungeonBuddyApp {
       }
     });
 
-    // Generate character portrait via Imagen
+    // Generate character portrait via Gemini Nano Banana (image generation)
     router.post('/generate-portrait', express.json(), async (req, res) => {
       const { description, race, charClass } = req.body;
       if (!description) return res.status(400).json({ error: 'No description provided' });
@@ -123,19 +123,31 @@ export default class DungeonBuddyApp {
       if (!genai) return res.status(500).json({ error: 'AI Provider not available' });
 
       try {
-        const fullPrompt = `Fantasy character portrait, D&D style, painted illustration. ${race || ''} ${charClass || ''} adventurer. ${description}. Dramatic lighting, dark moody background, detailed face, high quality fantasy art, no text, no UI elements.`;
+        const fullPrompt = `Fantasy character portrait, D&D style, painted illustration. ${race || ''} ${charClass || ''} adventurer. ${description}. Dramatic lighting, dark moody background, detailed face, high quality fantasy art, no text, no UI elements, no watermarks.`;
 
-        const response = await genai.models.generateImages({
-          model: 'imagen-3.0-generate-002',
-          prompt: fullPrompt,
-          config: { numberOfImages: 1 },
+        const response = await genai.models.generateContent({
+          model: 'gemini-2.5-flash-image',
+          contents: fullPrompt,
+          config: {
+            responseModalities: ['TEXT', 'IMAGE'],
+          },
         });
 
-        if (response.generatedImages && response.generatedImages.length > 0) {
-          const imageBytes = response.generatedImages[0].image.imageBytes;
-          res.json({ success: true, imageData: imageBytes });
+        // Parse response parts for image data
+        const parts = response?.candidates?.[0]?.content?.parts || [];
+        let imageData = null;
+
+        for (const part of parts) {
+          if (part.inlineData) {
+            imageData = part.inlineData.data;
+            break;
+          }
+        }
+
+        if (imageData) {
+          res.json({ success: true, imageData });
         } else {
-          res.json({ success: false, error: 'No image generated' });
+          res.json({ success: false, error: 'No image generated — model returned text only' });
         }
       } catch (err) {
         console.error('[Dungeon Buddy] Portrait generation error:', err.message);
