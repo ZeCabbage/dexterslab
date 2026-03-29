@@ -151,10 +151,7 @@ export default function CharacterCreationWizard() {
     if (!portraitDescription.trim()) return;
     setPortraitLoading(true);
     try {
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const baseUrl = isLocal ? 'http://localhost:8888' : '';
-
-      const res = await fetch(`${baseUrl}/api/dungeon-buddy/generate-portrait`, {
+      const res = await fetch(`/api/dungeon-buddy/generate-portrait`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -217,9 +214,7 @@ export default function CharacterCreationWizard() {
     };
 
     try {
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const baseUrl = isLocal ? 'http://localhost:8888' : '';
-      const res = await fetch(`${baseUrl}/api/dungeon-buddy/characters`, {
+      const res = await fetch(`/api/dungeon-buddy/characters`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(newChar),

@@ -26,9 +26,7 @@ export default function DungeonBuddyLobby() {
 
   const fetchCharacters = async () => {
     try {
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const baseUrl = isLocal ? 'http://localhost:8888' : '';
-      const res = await fetch(`${baseUrl}/api/dungeon-buddy/characters`);
+      const res = await fetch(`/api/dungeon-buddy/characters`);
       
       if (res.ok) {
         const data = await res.json();
@@ -50,9 +48,7 @@ export default function DungeonBuddyLobby() {
     e.stopPropagation();
     if (!confirm(`Slay ${name || 'this hero'}? This cannot be undone.`)) return;
     try {
-      const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
-      const baseUrl = isLocal ? 'http://localhost:8888' : '';
-      const res = await fetch(`${baseUrl}/api/dungeon-buddy/characters/${id}`, { method: 'DELETE' });
+      const res = await fetch(`/api/dungeon-buddy/characters/${id}`, { method: 'DELETE' });
       if (res.ok) {
         setCharacters(prev => prev.filter(c => c.id !== id));
       }
