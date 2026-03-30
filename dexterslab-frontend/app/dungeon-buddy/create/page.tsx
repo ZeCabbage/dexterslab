@@ -11,6 +11,7 @@ import {
   type RaceData, type SubraceData, type ClassData, type BackgroundData,
   type AbilityName, type SkillName,
 } from '../data/srd';
+import { STARTING_EQUIPMENT } from '../data/starting-equipment';
 
 const STEPS = [
   { label: 'Race', key: 'race' },
@@ -18,6 +19,7 @@ const STEPS = [
   { label: 'Abilities', key: 'abilities' },
   { label: 'Background', key: 'background' },
   { label: 'Skills', key: 'skills' },
+  { label: 'Equipment', key: 'equipment' },
   { label: 'Portrait', key: 'portrait' },
   { label: 'Finalize', key: 'finalize' },
 ];
@@ -41,6 +43,7 @@ export default function CharacterCreationWizard() {
     str: null, dex: null, con: null, int: null, wis: null, cha: null,
   });
   const [selectedSkills, setSelectedSkills] = useState<SkillName[]>([]);
+  const [selectedEquipmentPack, setSelectedEquipmentPack] = useState<number>(0);
   const [characterName, setCharacterName] = useState('');
 
   // Portrait state
@@ -103,8 +106,9 @@ export default function CharacterCreationWizard() {
       }
       case 3: return !!selectedBackground;
       case 4: return selectedSkills.length === maxSkillChoices;
-      case 5: return true; // portrait is optional
-      case 6: return characterName.trim().length > 0;
+      case 5: return true; // Equipment just defaults to first option
+      case 6: return true; // portrait is optional
+      case 7: return characterName.trim().length > 0;
       default: return true;
     }
   };
@@ -180,6 +184,22 @@ export default function CharacterCreationWizard() {
     const startingHp = calculateStartingHp(selectedClass, conMod);
     const allSkills = [...new Set([...lockedSkills, ...selectedSkills])];
 
+    const packs = STARTING_EQUIPMENT[selectedClass.id.toLowerCase()] || [];
+    const packItems = packs.length > 0 && packs[selectedEquipmentPack] ? packs[selectedEquipmentPack].items : [];
+    const inventory = packItems.map((pi: any, i: number) => ({
+      id: `item_${Date.now()}_${i}`, name: pi.name, qty: pi.qty, weight: pi.weight,
+      equipped: !!pi.slot, attuned: false, slot: pi.slot, type: pi.type, description: ''
+    }));
+    const equipped: Record<string, any> = { head: null, chest: null, cloak: null, mainHand: null, offHand: null, gloves: null, boots: null, ring1: null, ring2: null, amulet: null };
+    // We filter the inventory so anything that starts equipped is removed from the backpack entirely
+    const startingInventory = inventory.filter((i: any) => {
+      if (i.slot) {
+        equipped[i.slot] = i;
+        return false;
+      }
+      return true;
+    });
+
     const newChar = {
       name: characterName,
       race: selectedRace.name + (selectedSubrace ? ` (${selectedSubrace.name})` : ''),
@@ -192,6 +212,8 @@ export default function CharacterCreationWizard() {
       stats: finalScores,
       skills: allSkills,
       hitDie: selectedClass.hitDie,
+      hitDiceTotal: 1,
+      hitDiceUsed: 0,
       speed: selectedRace.speed,
       proficiencyBonus: 2,
       savingThrows: selectedClass.savingThrows,
@@ -201,7 +223,9 @@ export default function CharacterCreationWizard() {
       spellcastingAbility: selectedClass.spellcastingAbility || null,
       traits: [...(selectedRace.traits || []), ...(selectedSubrace?.traits || [])],
       languages: selectedRace.languages,
-      equipment: selectedBackground.equipment,
+      inventory: startingInventory,
+      equipped,
+      equipment: selectedBackground.equipment, // Legacy
       features: selectedClass.features.filter(f => f.level <= 1),
       portrait: portraitData || null,
       logbook: [{
@@ -674,9 +698,29 @@ export default function CharacterCreationWizard() {
     );
   };
 
+  const renderEquipmentStep = () => {
+    const packs = selectedClass ? STARTING_EQUIPMENT[selectedClass.id.toLowerCase()] || [] : [];
+    return (
+      <>
+        <h2 className={styles.sectionTitle}>Select Starting Gear</h2>
+        <p className={styles.sectionSubtitle}>Choose your preferred equipment pack for adventuring.</p>
+        <div className={styles.optionsGrid}>
+          {packs.length === 0 ? <p style={{ color: '#aaa', padding: '10px' }}>No specific class packs available. You will rely on background gear.</p> : packs.map((pack: any, i: number) => (
+             <div key={i} className={`${styles.optionCard} ${selectedEquipmentPack === i ? styles.selected : ''}`} onClick={() => setSelectedEquipmentPack(i)}>
+               <h3 className={styles.optionName}>{pack.label}</h3>
+               <ul style={{ paddingLeft: '20px', fontSize: '0.85rem', color: '#ccc' }}>
+                 {pack.items.map((pi: any, j: number) => <li key={j}>{pi.qty}x {pi.name}</li>)}
+               </ul>
+             </div>
+          ))}
+        </div>
+      </>
+    );
+  };
+
   const stepRenderers = [
     renderRaceStep, renderClassStep, renderAbilitiesStep,
-    renderBackgroundStep, renderSkillsStep, renderPortraitStep, renderFinalizeStep,
+    renderBackgroundStep, renderSkillsStep, renderEquipmentStep, renderPortraitStep, renderFinalizeStep,
   ];
 
   // ── Step indicator styles ──
@@ -730,7 +774,7 @@ export default function CharacterCreationWizard() {
           {step === 0 && selectedRace && selectedRace.subraces?.length && !selectedSubrace && 'Choose a subrace to continue'}
           {step === 2 && abilityMethod === 'point_buy' && `${pointsLeft} points remaining`}
           {step === 4 && `${maxSkillChoices - selectedSkills.length} skill${maxSkillChoices - selectedSkills.length !== 1 ? 's' : ''} remaining`}
-          {step === 5 && 'Portrait is optional — skip or generate'}
+          {step === 6 && 'Portrait is optional — skip or generate'}
         </div>
         {step < STEPS.length - 1 ? (
           <button className={styles.btnNext} onClick={() => setStep(step + 1)} disabled={!canProceed()}>Next →</button>
