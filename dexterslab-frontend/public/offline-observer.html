@@ -48,7 +48,6 @@
   <script>
     const canvas = document.getElementById('eye');
     const ctx = canvas.getContext('2d');
-    const video = document.getElementById('video');
 
     // UI HUD Elements
     const hudStatus = document.getElementById('hud-status');
@@ -59,14 +58,9 @@
     // State
     const state = {
       cx: 0, cy: 0, size: 0, // canvas dimensions
-      targetX: 0, targetY: 0,
-      currentX: 0, currentY: 0,
-      dilation: 1.0, currentDilation: 1.0,
+      targetX: 0, targetY: 0, targetDilation: 1.0,
+      currentX: 0, currentY: 0, currentDilation: 1.0,
       blinkPhase: 0, blinkTarget: 0, lastBlinkTime: 0,
-      sentinelActive: true, lastFaceTime: 0,
-      voiceSupported: false,
-      faceSupported: false,
-      speechSynth: window.speechSynthesis,
       fps: 0, frames: 0, lastFpsTime: performance.now()
     };
 
@@ -169,113 +163,57 @@
       }
     }
 
-    // Speech Output
-    function speak(text) {
-      if (!state.speechSynth) return;
-      const utter = new SpeechSynthesisUtterance(text);
-      utter.pitch = 0.8;
-      utter.rate = 1.1;
-      state.speechSynth.speak(utter);
-      hudStatus.innerText = `Speaking: "${text}"`;
-      setTimeout(() => { if(hudStatus.innerText.includes('Speaking')) hudStatus.innerText = 'System Active'; }, 3000);
-    }
+    // Connect to Local edge-daemon via WebSocket
+    function connectOfflineDaemon() {
+      const ws = new WebSocket('ws://127.0.0.1:8892');
+      
+      ws.onopen = () => {
+        hudStatus.innerText = 'Connected to Edge Daemon';
+        hudStatus.className = 'hud-line';
+      };
 
-    // Vision Setup
-    async function initVision() {
-      try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'user', width: 320, height: 240 } });
-        video.srcObject = stream;
-        video.play();
-        state.faceSupported = 'FaceDetector' in window;
-        hudFace.innerText = state.faceSupported ? 'Vision: Face Tracking Active' : 'Vision: Camera Active (No FaceTracker)';
-        
-        let faceDetector;
-        if (state.faceSupported) {
-          faceDetector = new window.FaceDetector({ maxDetectedFaces: 1 });
-        }
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          
+          if (data.sentinel) {
+            // Apply a slight simulated drift for sentinel wander
+            const t = performance.now() * 0.001;
+            state.targetX = Math.sin(t * 1.5) * state.size * 0.15 + Math.sin(t * 0.7) * state.size * 0.05;
+            state.targetY = Math.cos(t * 1.2) * state.size * 0.1 + Math.sin(t * 0.5) * state.size * 0.05;
+            hudFace.innerText = 'Vision: Scanning...';
+          } else {
+            // Raw values from python cv2 target tracking
+            state.targetX = data.ix;
+            state.targetY = data.iy;
+            hudFace.innerText = `Vision: Targeted (${data.entityCount} detected)`;
+          }
 
-        const detect = async () => {
-          if (video.readyState === video.HAVE_ENOUGH_DATA) {
-            if (faceDetector) {
-              const faces = await faceDetector.detect(video);
-              if (faces.length > 0) {
-                const face = faces[0].boundingBox;
-                // Map face center to screen coords (-1 to 1)
-                const fx = (face.x + face.width / 2) / video.videoWidth;
-                const fy = (face.y + face.height / 2) / video.videoHeight;
-                state.targetX = (0.5 - fx) * state.size * 0.4;
-                state.targetY = (fy - 0.5) * state.size * 0.4;
-                state.dilation = 1.6;
-                state.sentinelActive = false;
-                state.lastFaceTime = performance.now();
-                hudFace.innerText = 'Vision: Target Acquired';
-              } else {
-                hudFace.innerText = 'Vision: Scanning...';
-              }
-            } else {
-              // Simulated tracker based on motion/random if no facedetector
+          state.blinkTarget = data.blink;
+          state.targetDilation = data.dilation;
+          
+          if (data.overlayText) {
+            hudVoice.innerText = data.overlayText;
+            if (data.overlayType === 'ambient') {
+                hudVoice.style.color = '#88f';
+            } else if (data.overlayType === 'oracle') {
+                hudVoice.style.color = '#0fc';
             }
           }
-          requestAnimationFrame(detect);
-        };
-        detect();
-      } catch (err) {
-        hudFace.className = 'hud-line hud-warn';
-        hudFace.innerText = `Vision: OFF (${err.message})`;
-      }
-    }
 
-    // Voice Input Setup
-    function initVoice() {
-      window.SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-      if (window.SpeechRecognition) {
-        state.voiceSupported = true;
-        const recognition = new window.SpeechRecognition();
-        recognition.continuous = true;
-        recognition.interimResults = false;
-        
-        recognition.onresult = (evt) => {
-          const text = evt.results[evt.results.length - 1][0].transcript.trim().toLowerCase();
-          hudVoice.innerText = `Mic: "${text}"`;
-          
-          if (text.includes('sleep') || text.includes('shutdown')) {
-            speak('Hibernation protocol enacted.');
-            state.blinkTarget = 1.0;
-          } else if (text.includes('wake') || text.includes('online')) {
-            speak('Systems online. Greetings.');
-            state.blinkTarget = 0.0;
-          } else if (text.includes('status')) {
-            speak('I am operating in offline mode. Local surveillance active.');
-          } else if (text.includes('thank you') || text.includes('good boy')) {
-            speak('You are welcome, human.');
-            state.blinkTarget = 0.0;
-            state.dilation = 2.0;
-            setTimeout(() => state.dilation = 1.0, 2000);
-          }
-        };
+        } catch(e) {}
+      };
 
-        recognition.onend = () => recognition.start(); // auto restart
-        recognition.onerror = (e) => console.warn('Speech err', e);
-        
-        try {
-          recognition.start();
-          hudVoice.innerText = 'Mic: Listening...';
-        } catch (e) {
-          hudVoice.innerText = 'Mic: Auto-start blocked';
-        }
+      ws.onclose = () => {
+        hudStatus.innerText = 'Daemon Disconnected (Retrying...)';
+        hudStatus.className = 'hud-line hud-warn';
+        setTimeout(connectOfflineDaemon, 3000);
+      };
 
-        // Must click to interact on some browsers
-        window.addEventListener('click', () => {
-          if (state.speechSynth && state.speechSynth.getVoices().length === 0) {
-            // Warmup
-            const u = new SpeechSynthesisUtterance('');
-            state.speechSynth.speak(u);
-          }
-        }, { once: true });
-      } else {
-        hudVoice.className = 'hud-line hud-warn';
-        hudVoice.innerText = 'Mic: Web Speech API unsupported';
-      }
+      ws.onerror = () => {
+        hudStatus.innerText = 'Daemon Error (Is offline_daemon.py running?)';
+        hudStatus.className = 'hud-line hud-warn';
+      };
     }
 
     // Main Loop
@@ -289,29 +227,19 @@
         hudFps.innerText = `FPS: ${state.fps}`;
       }
 
-      // Blink Logic
-      if (state.blinkTarget === 0 && Math.random() < 0.01 && time - state.lastBlinkTime > 3000) {
+      // Procedural Random Blinks
+      if (state.blinkTarget === 0 && Math.random() < 0.01 && time - state.lastBlinkTime > 3500) {
         state.blinkTarget = 1;
         state.lastBlinkTime = time;
         setTimeout(() => { if (state.blinkTarget === 1) state.blinkTarget = 0; }, 150);
       }
+      
       state.blinkPhase = lerp(state.blinkPhase, state.blinkTarget, 0.3);
 
-      // Sentinel Mode (Random wandering)
-      if (time - state.lastFaceTime > 4000) {
-        state.sentinelActive = true;
-      }
-      if (state.sentinelActive) {
-        const t = time * 0.001;
-        state.targetX = Math.sin(t * 1.5) * state.size * 0.15 + Math.sin(t * 0.7) * state.size * 0.05;
-        state.targetY = Math.cos(t * 1.2) * state.size * 0.1 + Math.sin(t * 0.5) * state.size * 0.05;
-        state.dilation = 1.0 + Math.sin(t * 3) * 0.2;
-      }
-
-      // Smooth tracking
-      state.currentX = lerp(state.currentX, state.targetX, 0.1);
-      state.currentY = lerp(state.currentY, state.targetY, 0.1);
-      state.currentDilation = lerp(state.currentDilation, state.dilation, 0.05);
+      // Smooth tracking towards target
+      state.currentX = lerp(state.currentX, state.targetX, 0.15);
+      state.currentY = lerp(state.currentY, state.targetY, 0.15);
+      state.currentDilation = lerp(state.currentDilation, state.targetDilation, 0.05);
 
       // Render
       ctx.fillStyle = '#000';
@@ -322,9 +250,8 @@
     }
 
     // Init
-    initVision();
-    initVoice();
-    hudStatus.innerText = 'System Active — LOCAL OFFLINE MODE';
+    hudStatus.innerText = 'Connecting to Edge Daemon...';
+    connectOfflineDaemon();
     requestAnimationFrame(loop);
 
   </script>

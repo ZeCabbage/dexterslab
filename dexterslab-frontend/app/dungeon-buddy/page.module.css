@@ -2,31 +2,33 @@
 
 .container {
   min-height: 100vh;
-  background: #0a0a0a;
+  /* Video Game Cinematic Background */
+  background: 
+    linear-gradient(to right, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0.3) 100%),
+    url('/bg-tavern-campfire.png') center/cover no-repeat fixed;
   color: #d4cfc4;
   font-family: 'Inter', sans-serif;
   padding: 40px;
-  background-image:
-    radial-gradient(ellipse at 20% 90%, rgba(180, 150, 80, 0.03) 0%, transparent 50%),
-    radial-gradient(ellipse at 80% 10%, rgba(107, 163, 199, 0.02) 0%, transparent 50%);
+  display: flex;
+  flex-direction: column;
 }
 
 .header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  border-bottom: 1px solid rgba(180, 150, 80, 0.3);
+  border-bottom: 1px solid rgba(180, 150, 80, 0.2);
   padding-bottom: 20px;
   margin-bottom: 40px;
 }
 
 .title {
   font-family: 'Cinzel Decorative', serif;
-  font-size: 2.5rem;
-  color: #b4964f;
-  text-shadow: 0 0 15px rgba(180, 150, 80, 0.25);
+  font-size: 3rem;
+  color: #cfaa5e;
+  text-shadow: 0 4px 30px rgba(0,0,0,1);
   margin: 0;
-  letter-spacing: 3px;
+  letter-spacing: 4px;
 }
 
 .backLink {
@@ -38,130 +40,159 @@
 }
 
 .backLink:hover {
-  color: #d4af37;
+  color: #cfaa5e;
 }
 
-.grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
-  gap: 20px;
+.layout {
+  display: flex;
+  flex: 1;
+}
+
+/* Right-aligned Hero Roster */
+.rosterArea {
+  width: 450px;
+  margin-left: auto; /* Push to right side of screen */
+  background: rgba(10, 10, 10, 0.7); /* Frosted glass panel */
+  backdrop-filter: blur(10px);
+  border: 1px solid rgba(207, 170, 94, 0.15);
+  border-radius: 8px;
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: -10px 0 50px rgba(0,0,0,0.8);
+  max-height: calc(100vh - 180px);
+  overflow-y: auto;
+}
+
+.rosterTitle {
+  font-family: 'Cinzel', serif;
+  color: #888;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+  padding-bottom: 12px;
+  margin-top: 0;
+  font-size: 1.1rem;
 }
 
 .card {
-  background: #151515;
-  border: 1px solid #1e1e1e;
-  border-radius: 4px;
-  padding: 22px;
-  cursor: pointer;
+  background: rgba(20, 20, 20, 0.6);
+  border: 1px solid rgba(255,255,255,0.05);
+  border-left: 3px solid transparent;
+  padding: 16px;
   transition: all 0.2s ease;
   position: relative;
-  overflow: hidden;
-  text-decoration: none;
-  color: inherit;
-  display: block;
-}
-
-.card::before {
-  content: '';
-  position: absolute;
-  top: 0; left: 0;
-  width: 2px; height: 100%;
-  background: transparent;
-  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
 }
 
 .card:hover {
-  transform: translateY(-3px);
-  border-color: #333;
-  box-shadow: 0 4px 20px rgba(0,0,0,0.4);
-}
-
-.card:hover::before {
-  background: #b4964f;
-}
-
-.btnDelete {
-  position: absolute;
-  top: 10px;
-  right: 10px;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  border: 1px solid transparent;
-  background: transparent;
-  color: #444;
-  font-size: 1.1rem;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  opacity: 0;
-  transition: all 0.2s;
-  z-index: 2;
-}
-
-.card:hover .btnDelete {
-  opacity: 1;
-}
-
-.btnDelete:hover {
-  border-color: #8c2020;
-  background: rgba(140, 32, 32, 0.2);
-  color: #ff4444;
+  background: rgba(40, 30, 20, 0.85);
+  border-left-color: #cfaa5e;
+  border-color: rgba(207, 170, 94, 0.3);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.5);
 }
 
 .charName {
   font-family: 'Cinzel', serif;
-  font-size: 1.6rem;
-  margin: 0 0 8px 0;
-  color: #e8e4da;
+  font-size: 1.8rem;
+  margin: 0 0 4px 0;
+  color: #fff;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.8);
 }
 
 .charDetails {
+  font-size: 0.95rem;
+  color: #aaa;
+  margin: 0 0 12px 0;
+}
+
+.cardActions {
+  display: flex;
+  gap: 8px;
+  margin-top: 16px;
+  opacity: 0.4;
+  transition: opacity 0.2s ease;
+}
+
+.card:hover .cardActions {
+  opacity: 1;
+}
+
+.btnEnter {
+  flex: 1;
+  padding: 10px 16px;
+  background: #cfaa5e;
+  color: #000;
+  border: none;
+  font-family: 'Cinzel', serif;
+  font-weight: bold;
+  font-size: 1rem;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 0 10px rgba(207,170,94, 0);
+}
+
+.btnEnter:hover {
+  background: #e6c57a;
+  box-shadow: 0 0 15px rgba(207,170,94, 0.6);
+}
+
+.btnDelete {
+  padding: 10px 16px;
+  background: rgba(20,0,0,0.5);
+  color: #aa4444;
+  border: 1px solid #552222;
+  font-family: 'Cinzel', serif;
   font-size: 0.9rem;
-  color: #888;
-  margin: 0 0 14px 0;
+  cursor: pointer;
+  transition: all 0.2s;
 }
 
-.healthBar {
-  background: #1a1a1a;
-  height: 6px;
-  border-radius: 3px;
-  overflow: hidden;
-  margin-top: 12px;
-}
-
-.healthFill {
-  background: linear-gradient(90deg, #8c2020, #b4964f);
-  height: 100%;
-  border-radius: 3px;
-  transition: width 0.3s ease;
+.btnDelete:hover {
+  background: #aa4444;
+  color: #fff;
+  border-color: #ff6666;
+  box-shadow: 0 0 15px rgba(170,68,68, 0.4);
 }
 
 .btnNew {
-  background: transparent;
-  border: 1px dashed rgba(180, 150, 80, 0.3);
-  color: rgba(180, 150, 80, 0.5);
+  background: rgba(0,0,0,0.5);
+  border: 1px dashed rgba(180, 150, 80, 0.4);
+  color: rgba(180, 150, 80, 0.7);
   font-family: 'Cinzel', serif;
-  font-size: 1.1rem;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 150px;
-  letter-spacing: 1px;
+  font-size: 1.2rem;
+  padding: 24px;
+  cursor: pointer;
+  transition: all 0.2s;
+  text-align: center;
+  margin-top: 8px;
 }
 
 .btnNew:hover {
-  background: rgba(180, 150, 80, 0.04);
-  border-color: rgba(180, 150, 80, 0.5);
-  color: #d4af37;
-  box-shadow: 0 0 20px rgba(180, 150, 80, 0.08);
+  background: rgba(180, 150, 80, 0.1);
+  border-color: #cfaa5e;
+  color: #cfaa5e;
+  box-shadow: 0 0 20px rgba(180, 150, 80, 0.15);
+}
+
+.healthBar {
+  background: #111;
+  height: 6px;
+  margin-top: 6px;
+  border: 1px solid #000;
+}
+.healthFill {
+  background: linear-gradient(90deg, #660000, #cfaa5e);
+  height: 100%;
 }
 
 .loading {
   font-family: 'Cinzel', serif;
-  font-size: 1.2rem;
-  color: #b4964f;
+  font-size: 1.5rem;
+  color: #cfaa5e;
   text-align: center;
-  padding: 50px;
+  padding: 100px;
+  text-shadow: 0 0 10px rgba(207,170,94, 0.5);
 }

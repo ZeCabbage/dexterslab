@@ -2,6 +2,8 @@ import sys
 import time
 import signal
 import logging
+import argparse
+import asyncio
 from config import load_config
 from video_streamer import VideoStreamer
 from audio_streamer import AudioStreamer
@@ -23,6 +25,19 @@ def signal_handler(sig, frame):
     running = False
 
 def main():
+    parser = argparse.ArgumentParser(description="Edge Daemon for Dexterslab")
+    parser.add_argument("--offline", action="store_true", help="Start the offline standalone daemon")
+    args = parser.parse_args()
+
+    if args.offline:
+        logger.info("Initializing OFFLINE EDGE MODE...")
+        import offline_daemon
+        try:
+            asyncio.run(offline_daemon.main())
+        except KeyboardInterrupt:
+            logger.info("Offline mode shutdown.")
+        sys.exit(0)
+
     signal.signal(signal.SIGINT, signal_handler)
     signal.signal(signal.SIGTERM, signal_handler)
 

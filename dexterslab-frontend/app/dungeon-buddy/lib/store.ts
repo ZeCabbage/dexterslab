@@ -4,12 +4,15 @@ import { LiveCharacter, EquipSlot, InventoryItem } from './types';
 interface CharacterState {
   char: LiveCharacter | null;
   saveStatus: 'idle' | 'saving' | 'saved' | 'error';
-  
   // Basic lifecycle
   setChar: (char: LiveCharacter) => void;
   setSaveStatus: (status: CharacterState['saveStatus']) => void;
   updateField: (field: keyof LiveCharacter, value: any) => void;
   updateNestedField: (parentKey: 'stats' | 'deathSaves', childKey: string, value: any) => void;
+
+  // Assembly Line State
+  draftGearSelections: Record<string, string[]>;
+  setDraftGearChoice: (choiceId: string, itemIds: string[]) => void;
   
   // Live Vitals
   updateHP: (amount: number) => void;
@@ -36,6 +39,11 @@ interface CharacterState {
 export const useCharacterStore = create<CharacterState>((set, get) => ({
   char: null,
   saveStatus: 'idle',
+  draftGearSelections: {},
+
+  setDraftGearChoice: (choiceId, itemIds) => set((state) => ({ 
+    draftGearSelections: { ...state.draftGearSelections, [choiceId]: itemIds } 
+  })),
 
   setChar: (char) => set({ char }),
   setSaveStatus: (status) => set({ saveStatus: status }),

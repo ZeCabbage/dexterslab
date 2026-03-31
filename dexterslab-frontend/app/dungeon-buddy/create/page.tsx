@@ -11,7 +11,9 @@ import {
   type RaceData, type SubraceData, type ClassData, type BackgroundData,
   type AbilityName, type SkillName,
 } from '../data/srd';
-import { STARTING_EQUIPMENT } from '../data/starting-equipment';
+import { STARTING_EQUIPMENT_DB } from '../data/starting-equipment';
+import { ITEM_DATABASE } from '../lib/data/items';
+import { useCharacterStore } from '../lib/store';
 
 const STEPS = [
   { label: 'Race', key: 'race' },
@@ -29,6 +31,7 @@ type AbilityMethod = 'point_buy' | 'standard_array' | 'manual';
 export default function CharacterCreationWizard() {
   const router = useRouter();
   const [step, setStep] = useState(0);
+  const { draftGearSelections, setDraftGearChoice } = useCharacterStore();
 
   // Selections
   const [selectedRace, setSelectedRace] = useState<RaceData | null>(null);
@@ -184,12 +187,25 @@ export default function CharacterCreationWizard() {
     const startingHp = calculateStartingHp(selectedClass, conMod);
     const allSkills = [...new Set([...lockedSkills, ...selectedSkills])];
 
-    const packs = STARTING_EQUIPMENT[selectedClass.id.toLowerCase()] || [];
-    const packItems = packs.length > 0 && packs[selectedEquipmentPack] ? packs[selectedEquipmentPack].items : [];
-    const inventory = packItems.map((pi: any, i: number) => ({
-      id: `item_${Date.now()}_${i}`, name: pi.name, qty: pi.qty, weight: pi.weight,
-      equipped: !!pi.slot, attuned: false, slot: pi.slot, type: pi.type, description: ''
-    }));
+    const gearIds = Object.values(draftGearSelections).flat();
+    const inventory = gearIds.map((itemId: string, i: number) => {
+      const dbItem = ITEM_DATABASE[itemId];
+      if (!dbItem) return null;
+      return {
+        id: `inst_${Date.now()}_${i}`,
+        name: dbItem.name || 'Unknown Item',
+        qty: dbItem.qty || 1,
+        weight: dbItem.weight || 0,
+        equipped: !!dbItem.slot,
+        attuned: false,
+        slot: dbItem.slot || null,
+        type: dbItem.type || 'gear',
+        description: '',
+        armorClass: dbItem.armorClass,
+        armorCategory: dbItem.armorCategory,
+        actionCost: dbItem.actionCost,
+      };
+    }).filter(Boolean);
     const equipped: Record<string, any> = { head: null, chest: null, cloak: null, mainHand: null, offHand: null, gloves: null, boots: null, ring1: null, ring2: null, amulet: null };
     // We filter the inventory so anything that starts equipped is removed from the backpack entirely
     const startingInventory = inventory.filter((i: any) => {
@@ -699,18 +715,35 @@ export default function CharacterCreationWizard() {
   };
 
   const renderEquipmentStep = () => {
-    const packs = selectedClass ? STARTING_EQUIPMENT[selectedClass.id.toLowerCase()] || [] : [];
+    const choices = selectedClass ? STARTING_EQUIPMENT_DB[selectedClass.id.toLowerCase()] || [] : [];
     return (
       <>
         <h2 className={styles.sectionTitle}>Select Starting Gear</h2>
         <p className={styles.sectionSubtitle}>Choose your preferred equipment pack for adventuring.</p>
-        <div className={styles.optionsGrid}>
-          {packs.length === 0 ? <p style={{ color: '#aaa', padding: '10px' }}>No specific class packs available. You will rely on background gear.</p> : packs.map((pack: any, i: number) => (
-             <div key={i} className={`${styles.optionCard} ${selectedEquipmentPack === i ? styles.selected : ''}`} onClick={() => setSelectedEquipmentPack(i)}>
-               <h3 className={styles.optionName}>{pack.label}</h3>
-               <ul style={{ paddingLeft: '20px', fontSize: '0.85rem', color: '#ccc' }}>
-                 {pack.items.map((pi: any, j: number) => <li key={j}>{pi.qty}x {pi.name}</li>)}
-               </ul>
+        <div className={styles.optionsGrid} style={{ display: 'flex', flexDirection: 'column', gap: '24px' }}>
+          {choices.length === 0 ? <p style={{ color: '#aaa', padding: '10px' }}>No specific class packs available. You will rely on background gear.</p> : choices.map((choice: any) => (
+             <div key={choice.id} style={{ background: 'rgba(20,20,20,0.8)', padding: '16px', borderRadius: '8px', border: '1px solid #333' }}>
+               <h3 className={styles.optionName} style={{ marginBottom: '12px', fontSize: '1.2rem', color: '#cfaa5e' }}>{choice.name}</h3>
+               <div style={{ display: 'flex', gap: '12px' }}>
+                 {choice.options.map((optGroup, j) => {
+                    const isSelected = JSON.stringify(draftGearSelections[choice.id]) === JSON.stringify(optGroup);
+                    return (
+                      <div 
+                        key={j} 
+                        className={`${styles.optionCard} ${isSelected ? styles.selected : ''}`} 
+                        onClick={() => setDraftGearChoice(choice.id, optGroup)}
+                        style={{ flex: 1, padding: '12px' }}
+                      >
+                         <ul style={{ paddingLeft: '20px', fontSize: '0.9rem', color: isSelected ? '#fff' : '#aaa', margin: 0 }}>
+                           {optGroup.map(itemId => {
+                             const item = ITEM_DATABASE[itemId];
+                             return <li key={itemId}>{item ? item.name : itemId}</li>
+                           })}
+                         </ul>
+                      </div>
+                    );
+                 })}
+               </div>
              </div>
           ))}
         </div>

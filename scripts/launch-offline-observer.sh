@@ -27,9 +27,19 @@ if command -v unclutter &>/dev/null; then
   echo "$LOG_TAG   Cursor hidden (unclutter)"
 fi
 
-# ── Kill any existing Chromium instances to avoid session restore ──
+# ── Kill any existing instances to avoid conflicts ──
 pkill -f chromium 2>/dev/null
+pkill -f ffmpeg 2>/dev/null
+pkill -f "main.py --offline" 2>/dev/null
 sleep 1
+
+# ── Start Local Python Edge Daemon ──
+echo "$LOG_TAG Starting local offline Python edge daemon..."
+cd "$HOME/Desktop/dexterslab/edge-daemon"
+source venv/bin/activate 2>/dev/null || true
+python3 main.py --offline &
+DAEMON_PID=$!
+sleep 2 # wait for ws to spin up
 
 # ── Clear stale Chromium flags to prevent "restore pages" dialog ──
 CHROMIUM_DIR="$HOME/.config/chromium/Default"
@@ -53,10 +63,13 @@ FLAGS=(
   "--disable-features=TranslateUI,PipeWireCameraPortal"
   "--disable-pinch"
   "--overscroll-history-navigation=0"
-  "--enable-features=UseOzonePlatform,FaceDetection" # Enable experimental FaceDetection API
+  "--enable-features=UseOzonePlatform" 
   "--ozone-platform=wayland"
-  "--allow-file-access-from-files"  # Crucial for local file access and local media
-  "--use-fake-ui-for-media-stream"  # Auto-allow camera/mic permissions
+  "--allow-file-access-from-files"
 )
 
 chromium-browser "${FLAGS[@]}"
+
+# Cleanup daemon on exit
+kill $DAEMON_PID 2>/dev/null
+

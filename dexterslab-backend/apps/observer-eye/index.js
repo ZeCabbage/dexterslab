@@ -39,9 +39,25 @@ export default class ObserverEyeApp {
       })
     );
     
-    // Subscribe to STT transcripts
+    // Subscribe to STT transcripts — but skip navigation commands
+    // VoiceNavigator publishes 'voice.navigation' when it consumes a command.
+    // We track that flag and skip oracle processing for those transcripts.
+    let lastNavTimestamp = 0;
+    this.subscriptions.push(
+      this.platform.bus.subscribe('voice.navigation', (data) => {
+        lastNavTimestamp = data.timestamp || Date.now();
+      })
+    );
+
     this.subscriptions.push(
       this.platform.hardwareBroker.subscribeSTT((text) => {
+        // If VoiceNavigator just consumed this command, skip oracle
+        const elapsed = Date.now() - lastNavTimestamp;
+        if (elapsed < 500) {
+          console.log(`[ObserverEye] Skipping oracle — voice command was navigation (${elapsed}ms ago)`);
+          return;
+        }
+
         this.engine.handleOracleQuestion(text).then((result) => {
           if (result && result.response) {
             this.platform.hardwareBroker.speak(ObserverEyeApp.manifest.id, result.response);

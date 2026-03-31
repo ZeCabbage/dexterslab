@@ -69,6 +69,7 @@ const wsRouter = new WSRouter(server);
 const restRouter = new RESTRouter(app);
 const appManager = new AppManager();
 const voiceNavigator = new VoiceNavigator(appManager, wsRouter);
+// hardwareBroker is passed after init() below
 
 // ── Cognitive Layer ──
 const memoryEngine = new MemoryEngine();
@@ -83,6 +84,7 @@ const platform = { appManager, hardwareBroker, aiProvider, wsRouter, restRouter,
 // Initialize hardware
 await hardwareBroker.init();
 app.locals.ttsCommander = hardwareBroker.ttsCommander;
+voiceNavigator.hardwareBroker = hardwareBroker;
 
 // Register Apps
 const observerApp = appManager.registerApp(ObserverEyeApp, platform);
@@ -136,6 +138,24 @@ app.get('/api/test/tts', (req, res) => {
   } else {
     res.status(500).json({ error: 'TTS Commander not available' });
   }
+});
+
+// ── Voice Command Test ──
+app.post('/api/voice/test', (req, res) => {
+  const { text } = req.body;
+  if (!text) return res.status(400).json({ error: 'Missing text' });
+  voiceNavigator.injectCommand(text);
+  res.json({ success: true, injected: text });
+});
+
+app.get('/api/voice/apps', (_req, res) => {
+  const apps = appManager.getAllApps().map(a => ({
+    id: a.manifest.id,
+    name: a.manifest.name,
+    frontendRoute: a.manifest.frontendRoute,
+    icon: a.manifest.icon
+  }));
+  res.json({ apps, activeApp: appManager.activeDisplayApp });
 });
 
 // ── System Status ──

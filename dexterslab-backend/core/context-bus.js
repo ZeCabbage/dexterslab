@@ -7,6 +7,7 @@ const ALLOWED_TAXONOMY = new Set([
   'presence.sustained',
   'presence.zone_changed',
   'voice.command',
+  'voice.navigation',
   'voice.partial',
   'voice.silence',
   'oracle.query',
