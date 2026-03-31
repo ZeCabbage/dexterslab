@@ -5,6 +5,21 @@ export type EquipSlot =
 
 export type ActionCost = 'action' | 'bonus_action' | 'reaction' | 'special' | 'none';
 
+export interface SpellData {
+  id: string;
+  name: string;
+  level: number;
+  school: string;
+  castingTime: string;
+  range: string;
+  components: string;
+  duration: string;
+  description: string;
+  damage?: string;
+  actionCost: ActionCost;
+  classes: string[];
+}
+
 export interface InventoryItem {
   id: string;
   name: string;
@@ -86,6 +101,7 @@ export interface LiveCharacter {
   cantrips: string[];
   knownSpells: string[];
   preparedSpells: string[];
+  customSpells: SpellData[];
   
   inventory: InventoryItem[];
   gold: number;

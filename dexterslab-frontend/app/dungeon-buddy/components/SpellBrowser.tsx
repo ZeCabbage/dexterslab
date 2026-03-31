@@ -2,7 +2,8 @@
 
 import React, { useState } from 'react';
 import { useCharacterStore } from '../lib/store';
-import { useAllSpells } from '../hooks/useSpells';
+import { useSpells, useAllSpells } from '../hooks/useSpells';
+import { evaluateSpellLock } from '../lib/magic-system';
 import SpellCard from './SpellCard';
 import styles from '../[id]/page.module.css';
 
@@ -12,15 +13,32 @@ interface SpellBrowserProps {
 
 export default function SpellBrowser({ onClose }: SpellBrowserProps) {
   const { char, learnSpell, unlearnSpell } = useCharacterStore();
-  const allSpells = useAllSpells();
+  const allSpells = useAllSpells(char?.customSpells || []);
+  const currentlyKnown = useSpells(char?.knownSpells, char?.customSpells);
+  
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState<string>('all');
+  const [strictMode, setStrictMode] = useState<boolean>(true); // BG3 logic
 
   if (!char) return null;
 
   const filteredSpells = allSpells.filter(spell => {
     if (levelFilter !== 'all' && spell.level.toString() !== levelFilter) return false;
     if (search && !spell.name.toLowerCase().includes(search.toLowerCase())) return false;
+    
+    // Strict Mode filter (hide spells we fundamentally cannot learn)
+    if (strictMode) {
+      const isKnown = char?.knownSpells?.includes(spell.id) || false;
+      if (!isKnown) {
+        const lockData = evaluateSpellLock(char, spell, currentlyKnown);
+        // Only completely hide spells if they are fundamentally illegal for the class/level
+        // Do NOT hide spells just because they hit the quantity cap.
+        if (lockData.locked && (lockData.reason?.includes('Requires') || lockData.reason?.includes('Class'))) {
+          return false;
+        }
+      }
+    }
+
     return true;
   });
 
@@ -36,13 +54,19 @@ export default function SpellBrowser({ onClose }: SpellBrowserProps) {
         display: 'flex', flexDirection: 'column', overflow: 'hidden'
       }}>
         {/* Header */}
-        <div style={{ padding: '24px', background: 'rgba(10,30,50,0.8)', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div style={{ padding: '16px', background: 'rgba(10,30,50,0.8)', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
           <h2 className={styles.tabTitle} style={{ margin: 0, border: 'none', padding: 0 }}>The Grimoire Archive</h2>
-          <button onClick={onClose} style={{ background: '#333', border: 'none', color: '#fff', padding: '8px 16px', borderRadius: '4px', cursor: 'pointer' }}>Close</button>
+          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc', fontSize: '13px', cursor: 'pointer' }}>
+               <input type="checkbox" checked={strictMode} onChange={e => setStrictMode(e.target.checked)} />
+               Show Valid Leveling Magic Only
+             </label>
+             <button onClick={onClose} style={{ background: '#333', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>Close</button>
+          </div>
         </div>
 
         {/* Filters */}
-        <div style={{ padding: '16px 24px', display: 'flex', gap: '16px', background: '#111' }}>
+        <div style={{ padding: '16px 16px', display: 'flex', gap: '16px', background: '#111', flexWrap: 'wrap' }}>
           <input 
             type="text" 
             placeholder="Search spells..." 
@@ -60,15 +84,23 @@ export default function SpellBrowser({ onClose }: SpellBrowserProps) {
             <option value="1">Level 1</option>
             <option value="2">Level 2</option>
             <option value="3">Level 3</option>
+            <option value="4">Level 4</option>
+            <option value="5">Level 5</option>
           </select>
         </div>
 
         {/* Grid */}
         <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '24px' }}>
-            {filteredSpells.length === 0 && <p style={{ color: '#666' }}>No spells found in the archives.</p>}
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 350px), 1fr))', gap: '24px' }}>
+            {filteredSpells.length === 0 && <p style={{ color: '#666' }}>No spells match your current parameters.</p>}
             {filteredSpells.map(spell => {
               const isKnown = char.knownSpells?.includes(spell.id) || false;
+              // Even in strict mode, we calculate lockData visually to display generic locks (like quantity caps)
+              let lockData: { locked: boolean; reason?: string } = { locked: false };
+              if (!isKnown) {
+                lockData = evaluateSpellLock(char, spell, currentlyKnown);
+              }
+
               return (
                 <SpellCard 
                   key={spell.id}
@@ -76,6 +108,7 @@ export default function SpellBrowser({ onClose }: SpellBrowserProps) {
                   isKnown={isKnown}
                   isPrepared={false} // Preparing is done on the combat dashboard
                   onLearnToggle={() => isKnown ? unlearnSpell(spell.id) : learnSpell(spell.id)}
+                  lockReason={lockData.locked ? lockData.reason : undefined}
                 />
               );
             })}

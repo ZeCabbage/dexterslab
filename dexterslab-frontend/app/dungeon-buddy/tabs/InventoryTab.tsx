@@ -115,7 +115,7 @@ export default function InventoryTab() {
           </div>
         )}
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(200px, 1fr))', gap: '12px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 200px), 1fr))', gap: '12px' }}>
           {char.inventory.length === 0 && <p style={{ color: '#555' }}>Your backpack is completely empty.</p>}
           {char.inventory.map(item => (
             <div 

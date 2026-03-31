@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { SpellData } from '../lib/data/spells';
+import { SpellData } from '../lib/types';
 
 interface SpellCardProps {
   spell: SpellData;
@@ -9,9 +9,10 @@ interface SpellCardProps {
   isPrepared?: boolean;
   onPrepareToggle?: () => void;
   onLearnToggle?: () => void;
+  lockReason?: string;
 }
 
-export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle, onLearnToggle }: SpellCardProps) {
+export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle, onLearnToggle, lockReason }: SpellCardProps) {
   return (
     <div style={{
       background: 'rgba(20,20,20,0.8)',
@@ -48,15 +49,17 @@ export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle,
 
           {onLearnToggle && (
             <button 
-              onClick={onLearnToggle}
+              onClick={lockReason && !isKnown ? undefined : onLearnToggle}
               style={{
-                background: isKnown ? '#55aacc' : 'transparent',
-                color: isKnown ? '#000' : '#55aacc',
-                border: '1px solid #55aacc',
-                padding: '4px 8px', borderRadius: '4px', fontSize: '11px', cursor: 'pointer'
+                background: (lockReason && !isKnown) ? '#222' : isKnown ? '#55aacc' : 'transparent',
+                color: (lockReason && !isKnown) ? '#666' : isKnown ? '#000' : '#55aacc',
+                border: `1px solid ${(lockReason && !isKnown) ? '#444' : '#55aacc'}`,
+                padding: '4px 8px', borderRadius: '4px', fontSize: '11px', 
+                cursor: (lockReason && !isKnown) ? 'not-allowed' : 'pointer'
               }}
+              disabled={!!lockReason && !isKnown}
             >
-              {isKnown ? 'FORGET' : 'LEARN'}
+              {isKnown ? 'FORGET' : (lockReason ? `🔒 ${lockReason}` : 'LEARN')}
             </button>
           )}
         </div>

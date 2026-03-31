@@ -216,6 +216,15 @@ export default function CharacterCreationWizard() {
       return true;
     });
 
+    const initialResources: Record<string, any> = {};
+    if (selectedClass.spellcaster) {
+      if (selectedClass.id === 'warlock') {
+        initialResources['spell_slot_1'] = { name: '1st Level Pact Slots', max: 1, used: 0, recharge: 'short' };
+      } else if (!['paladin', 'ranger'].includes(selectedClass.id)) {
+        initialResources['spell_slot_1'] = { name: '1st Level Slots', max: 2, used: 0, recharge: 'long' };
+      }
+    }
+
     const newChar = {
       name: characterName,
       race: selectedRace.name + (selectedSubrace ? ` (${selectedSubrace.name})` : ''),
@@ -237,6 +246,11 @@ export default function CharacterCreationWizard() {
       weaponProficiencies: selectedClass.weaponProficiencies,
       spellcaster: selectedClass.spellcaster,
       spellcastingAbility: selectedClass.spellcastingAbility || null,
+      resources: initialResources,
+      cantrips: [],
+      knownSpells: [],
+      preparedSpells: [],
+      customSpells: [],
       traits: [...(selectedRace.traits || []), ...(selectedSubrace?.traits || [])],
       languages: selectedRace.languages,
       inventory: startingInventory,
@@ -725,7 +739,7 @@ export default function CharacterCreationWizard() {
              <div key={choice.id} style={{ background: 'rgba(20,20,20,0.8)', padding: '16px', borderRadius: '8px', border: '1px solid #333' }}>
                <h3 className={styles.optionName} style={{ marginBottom: '12px', fontSize: '1.2rem', color: '#cfaa5e' }}>{choice.name}</h3>
                <div style={{ display: 'flex', gap: '12px' }}>
-                 {choice.options.map((optGroup, j) => {
+                 {choice.options.map((optGroup: any, j: number) => {
                     const isSelected = JSON.stringify(draftGearSelections[choice.id]) === JSON.stringify(optGroup);
                     return (
                       <div 
@@ -735,7 +749,7 @@ export default function CharacterCreationWizard() {
                         style={{ flex: 1, padding: '12px' }}
                       >
                          <ul style={{ paddingLeft: '20px', fontSize: '0.9rem', color: isSelected ? '#fff' : '#aaa', margin: 0 }}>
-                           {optGroup.map(itemId => {
+                           {optGroup.map((itemId: any) => {
                              const item = ITEM_DATABASE[itemId];
                              return <li key={itemId}>{item ? item.name : itemId}</li>
                            })}

@@ -2,6 +2,9 @@ import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
   /* Dexter's Lab — Next.js config */
+  experimental: {
+    webpackBuildWorker: false,
+  },
   async rewrites() {
     return [
       {

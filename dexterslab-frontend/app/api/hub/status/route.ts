@@ -3,6 +3,9 @@ import { exec } from 'child_process';
 import { promisify } from 'util';
 import os from 'os';
 
+export const dynamic = 'force-dynamic';
+export const fetchCache = 'force-no-store';
+
 const execAsync = promisify(exec);
 
 // Platform detection: check env var first (set in .env), then auto-detect from OS

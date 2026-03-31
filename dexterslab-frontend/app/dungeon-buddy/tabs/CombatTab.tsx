@@ -22,7 +22,7 @@ export default function CombatTab() {
   const [actionFilter, setActionFilter] = useState<'all' | 'action' | 'bonus_action' | 'reaction'>('all');
 
   // Map pure IDs to rich static metadata
-  const knownSpellsData = useSpells(char?.knownSpells);
+  const knownSpellsData = useSpells(char?.knownSpells, char?.customSpells);
 
   if (!char) return null;
 
@@ -128,7 +128,7 @@ export default function CombatTab() {
         Active Resources 
         <button onClick={addResource} style={{ background: 'transparent', color: '#cfaa5e', border: '1px dotted #cfaa5e', padding: '2px 8px', borderRadius: '4px', cursor: 'pointer' }}>+ Add Dummy Resource</button>
       </h3>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '16px', marginBottom: '32px' }}>
+      <div className={styles.activeResources} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: '16px', marginBottom: '32px' }}>
         {displayedResources.length === 0 && (
           <p style={{ color: '#666', fontSize: '14px' }}>No active resources tracked for this action type.</p>
         )}
@@ -155,7 +155,7 @@ export default function CombatTab() {
             + Browse Grimoire
           </button>
         </h3>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 350px), 1fr))', gap: '20px' }}>
           {displayedSpells.length === 0 && <p style={{ color: '#666', fontSize: '14px' }}>No spells matching this filter.</p>}
           {displayedSpells.map(spell => {
             const isPrepared = char.preparedSpells?.includes(spell.id);

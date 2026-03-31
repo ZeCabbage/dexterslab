@@ -19,7 +19,7 @@ export default function StickyVitalsHeader() {
     <div className={styles.stickyVitalsHeader} style={{
       position: 'sticky', top: 0, zIndex: 100, backgroundColor: 'rgba(15, 15, 15, 0.95)',
       backdropFilter: 'blur(10px)', borderBottom: '1px solid #cfaa5e', padding: '16px',
-      display: 'flex', alignItems: 'center', gap: '24px', marginBottom: '24px'
+      display: 'flex', alignItems: 'center', gap: '24px', marginBottom: '24px', flexWrap: 'wrap'
     }}>
       {/* Portrait */}
       <div style={{ width: 64, height: 64, borderRadius: '50%', overflow: 'hidden', border: '2px solid #cfaa5e', flexShrink: 0 }}>
@@ -44,7 +44,7 @@ export default function StickyVitalsHeader() {
       </div>
 
       {/* Vitals Blocks */}
-      <div style={{ display: 'flex', gap: '16px' }}>
+      <div style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', flex: '1 1 auto', justifyContent: 'flex-start' }}>
         
         {/* HP Block */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#1a1a1a', padding: '8px 12px', borderRadius: '8px', border: '1px solid #333' }}>

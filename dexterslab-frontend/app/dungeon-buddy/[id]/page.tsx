@@ -137,7 +137,7 @@ export default function CharacterSheet() {
         <StickyVitalsHeader />
         
         {/* Tab Content */}
-        <div style={{ padding: '0 32px 32px 32px' }}>
+        <div className={styles.tabContentArea}>
           {tabRenderers[activeTab]()}
         </div>
       </div>
