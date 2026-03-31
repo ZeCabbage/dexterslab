@@ -16,7 +16,7 @@
     {
         "name":  "OFFLINE OBSERVER",
         "route":  "/offline-observer.html",
-        "description":  "Standalone offline V1 observer with FaceDetector and WebSpeech APIs",
+        "description":  "Standalone edge daemon V1 observer (Local Face Tracking & Vosk STT via ws://127.0.0.1:8892)",
         "status":  "active",
         "icon":  "⏣"
     },

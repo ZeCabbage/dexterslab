@@ -99,15 +99,39 @@ def vision_tracking():
         return
 
     face_cascade = cv2.CascadeClassifier(HAAR_PATH)
-    cap = cv2.VideoCapture(0)
+    cap = None
+    force_index = os.environ.get('CAMERA_INDEX')
     
-    # Try libcamera if OpenCV default fails on Pi
-    if not cap.isOpened():
-        print(f"{LOG_TAG} Default cv2 capture failed. Trying V4L2 backend...")
-        cap = cv2.VideoCapture(0, cv2.CAP_V4L2)
+    if force_index is not None:
+        idx = int(force_index)
+        print(f"{LOG_TAG} Using FORCED camera index {idx}...")
+        cap = cv2.VideoCapture(idx)
+        if not cap.isOpened():
+             cap = cv2.VideoCapture(idx, cv2.CAP_V4L2)
+    else:
+        for i in range(5):
+            print(f"{LOG_TAG} Trying to open camera index {i}...")
+            temp_cap = cv2.VideoCapture(i)
+            if temp_cap.isOpened():
+                ret, frame = temp_cap.read()
+                if ret and frame is not None:
+                    print(f"{LOG_TAG} Successfully opened camera at index {i}!")
+                    cap = temp_cap
+                    break
+            if temp_cap: temp_cap.release()
+                
+            print(f"{LOG_TAG} Index {i} failed. Trying V4L2 backend...")
+            temp_cap = cv2.VideoCapture(i, cv2.CAP_V4L2)
+            if temp_cap.isOpened():
+                ret, frame = temp_cap.read()
+                if ret and frame is not None:
+                    print(f"{LOG_TAG} Successfully opened camera at index {i} (V4L2)!")
+                    cap = temp_cap
+                    break
+            if temp_cap: temp_cap.release()
 
-    if not cap.isOpened():
-        print(f"{LOG_TAG} Cannot open camera. Disabling vision.")
+    if cap is None or not cap.isOpened():
+        print(f"{LOG_TAG} Cannot open any camera. Disabling vision.")
         return
 
     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 320)

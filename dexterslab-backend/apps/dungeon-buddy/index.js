@@ -76,7 +76,7 @@ export default class DungeonBuddyApp {
     });
 
     // Create new character
-    router.post('/characters', express.json(), (req, res) => {
+    router.post('/characters', express.json({ limit: '10mb' }), (req, res) => {
       const characters = this.readData();
       const newChar = {
         id: 'char_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
@@ -89,7 +89,7 @@ export default class DungeonBuddyApp {
     });
 
     // Update existing character
-    router.put('/characters/:id', express.json(), (req, res) => {
+    router.put('/characters/:id', express.json({ limit: '10mb' }), (req, res) => {
       let characters = this.readData();
       const index = characters.findIndex(c => c.id === req.params.id);
       if (index !== -1) {
@@ -115,7 +115,7 @@ export default class DungeonBuddyApp {
     });
 
     // Generate character portrait via Gemini Nano Banana (image generation)
-    router.post('/generate-portrait', express.json(), async (req, res) => {
+    router.post('/generate-portrait', express.json({ limit: '10mb' }), async (req, res) => {
       const { description, race, charClass } = req.body;
       if (!description) return res.status(400).json({ error: 'No description provided' });
 
@@ -125,23 +125,19 @@ export default class DungeonBuddyApp {
       try {
         const fullPrompt = `Fantasy character portrait, D&D style, painted illustration. ${race || ''} ${charClass || ''} adventurer. ${description}. Dramatic lighting, dark moody background, detailed face, high quality fantasy art, no text, no UI elements, no watermarks.`;
 
-        const response = await genai.models.generateContent({
-          model: 'gemini-2.5-flash-image',
-          contents: fullPrompt,
+        const response = await genai.models.generateImages({
+          model: 'imagen-4.0-generate-001',
+          prompt: fullPrompt,
           config: {
-            responseModalities: ['TEXT', 'IMAGE'],
+            numberOfImages: 1,
+            outputMimeType: 'image/jpeg',
+            aspectRatio: '1:1'
           },
         });
 
-        // Parse response parts for image data
-        const parts = response?.candidates?.[0]?.content?.parts || [];
         let imageData = null;
-
-        for (const part of parts) {
-          if (part.inlineData) {
-            imageData = part.inlineData.data;
-            break;
-          }
+        if (response.generatedImages && response.generatedImages.length > 0) {
+          imageData = response.generatedImages[0].image.imageBytes;
         }
 
         if (imageData) {

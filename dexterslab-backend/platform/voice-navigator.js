@@ -89,7 +89,7 @@ export class VoiceNavigator {
       this.appManager.deactivateDisplayApp().catch(e =>
         console.error('[VoiceNav] Failed to deactivate:', e)
       );
-      this._speakConfirmation('Returning to hub.');
+      this._speakConfirmation('COPY');
       return true;
     }
 
@@ -106,7 +106,7 @@ export class VoiceNavigator {
         this.appManager.activateDisplayApp(matched.manifest.id).catch(e =>
           console.error('[VoiceNav] Failed to activate:', e)
         );
-        this._speakConfirmation(`Opening ${matched.manifest.name}.`);
+        this._speakConfirmation('COPY');
         return true;
       }
     }

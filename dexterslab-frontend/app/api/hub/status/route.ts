@@ -144,5 +144,21 @@ export async function GET() {
     } catch {}
   }
 
-  return NextResponse.json({ version, wifi, platform: PLATFORM });
+  let diagnostics = { health: null, entities: [], conversation: [] };
+  try {
+    const backendUrl = process.env.NEXT_PUBLIC_API_URL || 'http://127.0.0.1:8888';
+    const [healthRes, entitiesRes, convoRes] = await Promise.all([
+      fetch(`${backendUrl}/health`).catch(() => null),
+      fetch(`${backendUrl}/api/admin/entities`).catch(() => null),
+      fetch(`${backendUrl}/api/admin/conversation-log?limit=5`).catch(() => null),
+    ]);
+
+    diagnostics.health = healthRes ? await healthRes.json() : null;
+    diagnostics.entities = entitiesRes ? await entitiesRes.json() : [];
+    diagnostics.conversation = convoRes ? await convoRes.json() : [];
+  } catch (err) {
+    console.error('Failed to fetch diagnostics for hub:', err);
+  }
+
+  return NextResponse.json({ version, wifi, platform: PLATFORM, diagnostics });
 }

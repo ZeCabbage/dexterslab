@@ -175,5 +175,12 @@
         "description": "cure wounds\n"
       }
     ]
+  },
+  {
+    "id": "char_1774927178062_370",
+    "name": "Dexter",
+    "class": "Wizard",
+    "level": 1,
+    "logbook": []
   }
 ]

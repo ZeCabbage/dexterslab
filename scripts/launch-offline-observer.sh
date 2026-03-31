@@ -35,7 +35,7 @@ sleep 1
 
 # ── Start Local Python Edge Daemon ──
 echo "$LOG_TAG Starting local offline Python edge daemon..."
-cd "$HOME/Desktop/dexterslab/edge-daemon"
+cd "$HOME/dexterslab-edge"
 source venv/bin/activate 2>/dev/null || true
 python3 main.py --offline &
 DAEMON_PID=$!

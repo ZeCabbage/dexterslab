@@ -23,6 +23,16 @@ import styles from './page.module.css';
 interface HubStatus {
   version: number;
   wifi: { ssid: string; signal: number; ip: string; connected: boolean };
+  diagnostics?: {
+    health?: {
+      pi_audio_connected: boolean;
+      pi_tts_connected: boolean;
+      video_stream_active: boolean;
+      video_fps: number;
+    };
+    entities?: Array<{ id: string, tags: string[], confidence?: number }>;
+    conversation?: Array<{ role: string, text: string, timestamp: number }>;
+  };
 }
 
 interface LogEntry {
@@ -53,7 +63,7 @@ export default function ObserverHub() {
     version: 0,
     wifi: { ssid: '---', signal: 0, ip: '---', connected: false },
   });
-  const [log, setLog] = useState<LogEntry[]>([]);
+  const [speakerEnabled, setSpeakerEnabled] = useState(true);
   const [actionPending, setActionPending] = useState('');
   const [showShutdown, setShowShutdown] = useState(false);
   const [shutdownCount, setShutdownCount] = useState(0);
@@ -66,8 +76,7 @@ export default function ObserverHub() {
 
   // ── Helpers ──
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
-    const t = new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
-    setLog(prev => [...prev.slice(-11), { time: t, msg, type }]);
+    console.log(`[${type}] ${msg}`);
   }, []);
 
   const signalBars = (sig: number) => {
@@ -111,7 +120,7 @@ export default function ObserverHub() {
       } catch { /* offline */ }
     };
     poll();
-    const id = setInterval(poll, 5000);
+    const id = setInterval(poll, 2000);
     return () => clearInterval(id);
   }, []);
 
@@ -213,51 +222,89 @@ export default function ObserverHub() {
           </div>
         </div>
 
-        {/* ── Diagnostics Row ── */}
-        <div className={styles.diagnosticsRow}>
+        {/* ── Diagnostics Grid (2x2) ── */}
+        <div className={styles.diagnosticsGrid}>
+          {/* Vision Panel */}
+          <div className={`${styles.panel} ${status.diagnostics?.health?.video_stream_active ? styles.panelActive : styles.panelInactive}`}>
+            <div className={styles.panelHeader}>╔══ VISION ══╗</div>
+            <div className={styles.panelValue} style={{ color: status.diagnostics?.health?.video_stream_active ? 'var(--color-green)' : 'var(--color-red)' }}>
+              CAMERA {status.diagnostics?.health?.video_stream_active ? 'ACTIVE' : 'OFFLINE'}
+              {status.diagnostics?.health?.video_fps ? <span style={{fontSize: '0.8em', color: '#888'}}>{status.diagnostics.health.video_fps} FPS</span> : null}
+            </div>
+            <div className={styles.panelDetail}>
+              {status.diagnostics?.entities && status.diagnostics.entities.length > 0 ? (
+                status.diagnostics.entities.slice(0, 4).map((ent, i) => (
+                  <div key={i} className={styles.logLine} style={{ color: 'var(--color-cyan)' }}>
+                    TARGET: {ent.tags?.join(', ') || 'Unknown'} {(ent.confidence ? `(${(ent.confidence * 100).toFixed(0)}%)` : '')}
+                  </div>
+                ))
+              ) : (
+                <div style={{ color: '#555' }}>No objects detected...</div>
+              )}
+            </div>
+          </div>
+
+          {/* Audio Panel */}
+          <div className={`${styles.panel} ${status.diagnostics?.health?.pi_audio_connected ? styles.panelActive : styles.panelInactive}`}>
+            <div className={styles.panelHeader}>╔══ AUDIO IN ══╗</div>
+            <div className={styles.panelValue} style={{ color: status.diagnostics?.health?.pi_audio_connected ? 'var(--color-green)' : 'var(--color-red)' }}>
+              MIC {status.diagnostics?.health?.pi_audio_connected ? 'LISTENING' : 'OFFLINE'}
+            </div>
+            <div className={styles.panelDetail}>
+              {status.diagnostics?.conversation && status.diagnostics.conversation.filter(c => c.role === 'user').length > 0 ? (
+                status.diagnostics.conversation.filter(c => c.role === 'user').slice(-4).reverse().map((conv, i) => (
+                  <div key={i} className={styles.logLine} style={{ color: 'var(--color-amber)' }}>
+                    &gt; &quot;{conv.text}&quot;
+                  </div>
+                ))
+              ) : (
+                <div style={{ color: '#555' }}>Awaiting speech...</div>
+              )}
+            </div>
+          </div>
+
+          {/* Speaker Panel */}
+          <div className={`${styles.panel} ${status.diagnostics?.health?.pi_tts_connected && speakerEnabled ? styles.panelActive : styles.panelInactive}`}>
+            <div className={styles.panelHeader}>╔══ SPEAKER ══╗</div>
+            <div className={styles.panelValue} style={{ color: status.diagnostics?.health?.pi_tts_connected && speakerEnabled ? 'var(--color-green)' : 'var(--color-red)' }}>
+              <span>OUT {status.diagnostics?.health?.pi_tts_connected && speakerEnabled ? 'READY' : 'MUTED'}</span>
+              <button
+                className={styles.miniBtn}
+                onClick={() => setSpeakerEnabled(!speakerEnabled)}
+              >
+                TOGGLE
+              </button>
+            </div>
+            <div className={styles.panelDetail}>
+              <div style={{ marginTop: 'auto', textAlign: 'center' }}>
+                <button
+                  className={styles.miniBtn}
+                  style={{ width: '80%', padding: '4px' }}
+                  onClick={() => {
+                     if (speakerEnabled) fetch('/api/test/tts?text=Speaker+test+successful');
+                  }}
+                  disabled={!speakerEnabled || !status.diagnostics?.health?.pi_tts_connected}
+                >
+                  ▶ TEST SOUND
+                </button>
+              </div>
+            </div>
+          </div>
+
           {/* WiFi Panel */}
           <div className={`${styles.panel} ${status.wifi.connected ? styles.panelActive : styles.panelInactive}`}>
-            <div className={styles.panelHeader}>╔══ NETWORK ══╗</div>
-            <div className={styles.panelValue} style={{ color: sigColor }}>
-              SIG {signalBars(status.wifi.signal)} {status.wifi.signal}%
-            </div>
-            <div className={styles.panelDetail}>
-              <div style={{ color: 'var(--color-text)' }}>SSID: {status.wifi.ssid}</div>
-              <div style={{ color: 'var(--color-text)' }}>IP: {status.wifi.ip}</div>
-              <div style={{ color: status.wifi.connected ? 'var(--color-green)' : 'var(--color-red)' }}>
-                {status.wifi.connected ? 'CONNECTED' : 'DISCONNECTED'}
-              </div>
-            </div>
-          </div>
-
-          {/* Voice Panel */}
-          <div className={`${styles.panel} ${styles.panelActive}`}>
-            <div className={styles.panelHeader}>╔══ VOICE ════╗</div>
-            <div className={styles.panelValue} style={{ color: 'var(--color-green)' }}>
-              EDGE DAEMON
-            </div>
-            <div className={styles.panelDetail}>
-              <div style={{ color: '#555' }}>
-                Capture routed remotely
-              </div>
-            </div>
-          </div>
-        </div>
-
-        {/* ── System Log ── */}
-        <div className={styles.logContainer}>
-          <div className={styles.logHeader}>─────── SYSTEM LOG ───────</div>
-          <div className={styles.logEntries}>
-            {log.length === 0 ? (
-              <div className={styles.logEmpty}>Awaiting events...</div>
-            ) : (
-              log.slice(-8).map((entry, i) => (
-                <div key={i} style={{ color: logColors[entry.type] || '#5a7a6a' }}>
-                  [{entry.time}] {entry.msg}
-                </div>
-              ))
-            )}
-          </div>
+             <div className={styles.panelHeader}>╔══ NETWORK ══╗</div>
+             <div className={styles.panelValue} style={{ color: sigColor }}>
+               SIG {signalBars(status.wifi.signal)} {status.wifi.signal}%
+             </div>
+             <div className={styles.panelDetail}>
+               <div className={styles.logLine} style={{ color: 'var(--color-text)' }}>SSID: {status.wifi.ssid}</div>
+               <div className={styles.logLine} style={{ color: 'var(--color-text)' }}>IP: {status.wifi.ip}</div>
+               <div style={{ color: status.wifi.connected ? 'var(--color-green)' : 'var(--color-red)' }}>
+                 {status.wifi.connected ? 'CONNECTED' : 'DISCONNECTED'}
+               </div>
+             </div>
+           </div>
         </div>
 
         {/* ── Sub-Project Tiles ── */}

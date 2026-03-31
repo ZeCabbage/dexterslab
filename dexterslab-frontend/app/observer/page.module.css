@@ -153,19 +153,25 @@
   animation: blink80s 2s infinite;
 }
 
-/* ── Diagnostics Row ── */
-.diagnosticsRow {
-  display: flex;
-  gap: 3%;
-  width: 85%;
+/* ── Diagnostics Grid (2x2) ── */
+.diagnosticsGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  grid-template-rows: 1fr 1fr;
+  gap: 2%;
+  width: 88%;
   margin: 0 auto 2%;
   z-index: 10;
+  flex: 1;
+  min-height: 0;
 }
 
 .panel {
-  flex: 1;
   padding: 3% 4%;
   background: rgba(10, 10, 20, 0.8);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .panelActive {
@@ -177,48 +183,52 @@
 }
 
 .panelHeader {
-  font-size: clamp(9px, 1.4vmin, 11px);
+  font-size: clamp(9px, 1.3vmin, 11px);
   color: var(--color-label);
   letter-spacing: 2px;
-  margin-bottom: 6px;
+  margin-bottom: 2px;
+  flex-shrink: 0;
 }
 
 .panelValue {
-  font-size: clamp(11px, 2vmin, 15px);
+  font-size: clamp(9px, 1.6vmin, 13px);
   font-weight: bold;
-  margin-bottom: 4px;
+  margin-bottom: 2px;
+  flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .panelDetail {
-  font-size: clamp(8px, 1.3vmin, 10px);
-  line-height: 1.8;
+  font-size: clamp(7px, 1.1vmin, 9px);
+  line-height: 1.5;
+  flex-grow: 1;
+  overflow-y: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
 }
 
-/* ── System Log ── */
-.logContainer {
-  width: 85%;
-  margin: 0 auto 2%;
-  padding: 2% 3%;
-  background: rgba(8, 8, 16, 0.85);
-  border: 1px solid var(--color-grid);
-  z-index: 10;
-  min-height: clamp(80px, 18vmin, 160px);
+.logLine {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
-.logHeader {
-  font-size: clamp(9px, 1.3vmin, 10px);
-  color: var(--color-label);
-  letter-spacing: 2px;
-  margin-bottom: 4px;
+.miniBtn {
+  background: #1a1a2e;
+  color: var(--color-cyan);
+  border: 1px solid var(--color-cyan);
+  font-family: var(--font-mono);
+  font-size: clamp(7px, 1vmin, 9px);
+  padding: 2px 6px;
+  cursor: pointer;
+  transition: all 0.1s ease;
 }
-
-.logEntries {
-  font-size: clamp(8px, 1.2vmin, 10px);
-  line-height: 1.6;
-}
-
-.logEmpty {
-  color: #333;
+.miniBtn:hover {
+  background: var(--color-cyan);
+  color: #000;
 }
 
 /* ── Buttons Row ── */
