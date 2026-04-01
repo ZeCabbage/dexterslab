@@ -5,6 +5,14 @@ export type EquipSlot =
 
 export type ActionCost = 'action' | 'bonus_action' | 'reaction' | 'special' | 'none';
 
+export interface FeatData {
+  id: string;
+  name: string;
+  description: string;
+  prerequisite?: string;
+  abilityIncrease?: Partial<Record<string, number>>; // e.g. { str: 1 } for half-feats
+}
+
 export interface SpellData {
   id: string;
   name: string;
@@ -112,6 +120,7 @@ export interface LiveCharacter {
   
   traits: string[];
   features: { name: string; description: string; level: number }[]; // Raw features lists that aren't tracked
+  feats: FeatData[]; // Optional feats chosen over ASIs
   languages: string[];
   armorProficiencies: string[];
   weaponProficiencies: string[];

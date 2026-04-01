@@ -60,7 +60,7 @@ export default function CharacterSheet() {
           traits: [], features: [], languages: [],
           armorProficiencies: [], weaponProficiencies: [],
           portrait: null, personalityTraits: '', ideals: '', bonds: '', flaws: '', notes: '',
-          quests: '', people: '', places: '',
+          quests: '', people: '', places: '', feats: [],
           deathSaves: { successes: 0, failures: 0 },
           conditions: [], logbook: [],
           alignment: '', background: '', 

@@ -1,11 +1,14 @@
 'use client';
 
+import { useState } from 'react';
 import { useCharacterStore } from '../lib/store';
 import { calculateAC } from '../lib/ac';
+import LevelUpWizard from './LevelUpWizard';
 import styles from '../[id]/page.module.css';
 
 export default function StickyVitalsHeader() {
   const { char, updateHP, updateTempHP } = useCharacterStore();
+  const [showLevelUp, setShowLevelUp] = useState(false);
 
   if (!char) return null;
 
@@ -33,8 +36,16 @@ export default function StickyVitalsHeader() {
       {/* Hero Name & Info */}
       <div style={{ flexGrow: 1 }}>
         <h2 style={{ margin: '0 0 4px 0', fontSize: '24px', color: '#cfaa5e', fontFamily: 'Cinzel, serif' }}>{char.name || 'Unknown Hero'}</h2>
-        <div style={{ fontSize: '14px', color: '#888' }}>
-          Lv.{char.level} {char.race} {char.class}
+        <div style={{ fontSize: '14px', color: '#888', display: 'flex', alignItems: 'center', gap: '12px' }}>
+          <span>Lv.{char.level} {char.race} {char.class}</span>
+          {char.level < 20 && (
+            <button 
+              onClick={() => setShowLevelUp(true)}
+              style={{ background: '#332211', color: '#cfaa5e', border: '1px solid #cfaa5e', borderRadius: '4px', fontSize: '12px', padding: '2px 8px', cursor: 'pointer', fontFamily: 'Cinzel, serif' }}
+            >
+              ✦ Ascend to Level {char.level + 1}
+            </button>
+          )}
         </div>
         <div style={{ display: 'flex', gap: '8px', marginTop: '8px', flexWrap: 'wrap' }}>
           {(char.conditions || []).map(c => (
@@ -82,6 +93,8 @@ export default function StickyVitalsHeader() {
         </div>
 
       </div>
+      
+      {showLevelUp && <LevelUpWizard onClose={() => setShowLevelUp(false)} />}
     </div>
   );
 }

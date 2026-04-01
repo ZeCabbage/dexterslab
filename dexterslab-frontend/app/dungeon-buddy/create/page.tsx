@@ -259,7 +259,7 @@ export default function CharacterCreationWizard() {
       equipment: selectedBackground.equipment, // Legacy
       features: selectedClass.features.filter(f => f.level <= 1),
       portrait: portraitData || null,
-      notes: '', quests: '', people: '', places: '',
+      notes: '', quests: '', people: '', places: '', feats: [],
       logbook: [{
         id: 'log_' + Date.now(),
         timestamp: Date.now(),
