@@ -8,10 +8,11 @@ import SpellCard from './SpellCard';
 import styles from '../[id]/page.module.css';
 
 interface SpellBrowserProps {
-  onClose: () => void;
+  onClose?: () => void;
+  inline?: boolean;
 }
 
-export default function SpellBrowser({ onClose }: SpellBrowserProps) {
+export default function SpellBrowser({ onClose, inline = false }: SpellBrowserProps) {
   const { char, learnSpell, unlearnSpell } = useCharacterStore();
   const allSpells = useAllSpells(char?.customSpells || []);
   const currentlyKnown = useSpells(char?.knownSpells, char?.customSpells);
@@ -42,31 +43,47 @@ export default function SpellBrowser({ onClose }: SpellBrowserProps) {
     return true;
   });
 
-  return (
-    <div style={{
-      position: 'fixed', top: 0, left: 0, width: '100vw', height: '100vh',
+  const overlayStyle = inline ? {
+      display: 'flex', flexDirection: 'column' as const, height: '100%', width: '100%'
+    } : {
+      position: 'fixed' as const, top: 0, left: 0, width: '100vw', height: '100vh',
       background: 'rgba(0,0,0,0.85)', zIndex: 9999,
       display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '24px'
-    }}>
-      <div style={{
-        background: '#1a1a1a', border: '1px solid #55aacc', borderRadius: '8px', 
-        width: '100%', maxWidth: '900px', height: '90%', 
-        display: 'flex', flexDirection: 'column', overflow: 'hidden'
-      }}>
-        {/* Header */}
-        <div style={{ padding: '16px', background: 'rgba(10,30,50,0.8)', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
-          <h2 className={styles.tabTitle} style={{ margin: 0, border: 'none', padding: 0 }}>The Grimoire Archive</h2>
-          <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
-             <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc', fontSize: '13px', cursor: 'pointer' }}>
-               <input type="checkbox" checked={strictMode} onChange={e => setStrictMode(e.target.checked)} />
-               Show Valid Leveling Magic Only
-             </label>
-             <button onClick={onClose} style={{ background: '#333', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>Close</button>
+    };
+
+  const containerStyle = inline ? {
+      display: 'flex', flexDirection: 'column' as const, flex: 1
+    } : {
+      background: '#1a1a1a', border: '1px solid #55aacc', borderRadius: '8px', 
+      width: '100%', maxWidth: '900px', height: '90%', 
+      display: 'flex', flexDirection: 'column' as const, overflow: 'hidden'
+    };
+
+  return (
+    <div style={overlayStyle}>
+      <div style={containerStyle}>
+        {/* Header (Only show for modal or keep simple for inline) */}
+        {!inline && (
+          <div style={{ padding: '16px', background: 'rgba(10,30,50,0.8)', borderBottom: '1px solid #333', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px' }}>
+            <h2 className={styles.tabTitle} style={{ margin: 0, border: 'none', padding: 0 }}>The Grimoire Archive</h2>
+            <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
+               <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc', fontSize: '13px', cursor: 'pointer' }}>
+                 <input type="checkbox" checked={strictMode} onChange={e => setStrictMode(e.target.checked)} />
+                 Show Valid Leveling Magic Only
+               </label>
+               {onClose && <button onClick={onClose} style={{ background: '#333', border: 'none', color: '#fff', padding: '6px 12px', borderRadius: '4px', cursor: 'pointer', fontSize: '14px' }}>Close</button>}
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Filters */}
-        <div style={{ padding: '16px 16px', display: 'flex', gap: '16px', background: '#111', flexWrap: 'wrap' }}>
+        <div style={{ padding: inline ? '0 0 16px 0' : '16px', display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'center' }}>
+          {inline && (
+            <label style={{ display: 'flex', alignItems: 'center', gap: '8px', color: '#ccc', fontSize: '13px', cursor: 'pointer', flex: 1, minWidth: '200px' }}>
+              <input type="checkbox" checked={strictMode} onChange={e => setStrictMode(e.target.checked)} />
+              Show Valid Leveling Magic Only
+            </label>
+          )}
           <input 
             type="text" 
             placeholder="Search spells..." 
@@ -90,7 +107,7 @@ export default function SpellBrowser({ onClose }: SpellBrowserProps) {
         </div>
 
         {/* Grid */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '24px' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: inline ? '0' : '24px' }}>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 350px), 1fr))', gap: '24px' }}>
             {filteredSpells.length === 0 && <p style={{ color: '#666' }}>No spells match your current parameters.</p>}
             {filteredSpells.map(spell => {

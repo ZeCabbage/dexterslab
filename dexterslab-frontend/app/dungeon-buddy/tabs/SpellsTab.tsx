@@ -13,7 +13,7 @@ const calcMod = (score: number) => Math.floor((score - 10) / 2);
 
 export default function SpellsTab() {
   const { char, updateField, prepareSpell, unprepareSpell } = useCharacterStore();
-  const [showSpellBrowser, setShowSpellBrowser] = useState(false);
+  const [activeSubTab, setActiveSubTab] = useState<'mine' | 'grimoire'>('mine');
   
   // Custom spell form state
   const [isAddingCustom, setIsAddingCustom] = useState(false);
@@ -88,59 +88,70 @@ export default function SpellsTab() {
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '16px', marginBottom: '32px' }}>
+      <div style={{ display: 'flex', gap: '8px', marginBottom: '24px', borderBottom: '1px solid #333', paddingBottom: '12px' }}>
         <button 
-          onClick={() => setShowSpellBrowser(true)}
-          style={{ padding: '12px 24px', background: '#112233', border: '1px solid #55aacc', color: '#55aacc', borderRadius: '4px', cursor: 'pointer', fontFamily: 'Cinzel, serif', fontSize: '16px' }}
+          onClick={() => setActiveSubTab('mine')}
+          style={{ padding: '8px 16px', background: activeSubTab === 'mine' ? '#332211' : 'transparent', color: activeSubTab === 'mine' ? '#cfaa5e' : '#888', border: `1px solid ${activeSubTab === 'mine' ? '#cfaa5e' : 'transparent'}`, borderRadius: '4px', cursor: 'pointer', fontFamily: 'Cinzel, serif' }}
         >
-          + Browse 5e Grimoire
+          My Spellbook
         </button>
         <button 
-          onClick={() => setIsAddingCustom(true)}
-          style={{ padding: '12px 24px', background: '#332211', border: '1px solid #cfaa5e', color: '#cfaa5e', borderRadius: '4px', cursor: 'pointer', fontFamily: 'Cinzel, serif', fontSize: '16px' }}
+          onClick={() => setActiveSubTab('grimoire')}
+          style={{ padding: '8px 16px', background: activeSubTab === 'grimoire' ? '#112233' : 'transparent', color: activeSubTab === 'grimoire' ? '#55aacc' : '#888', border: `1px solid ${activeSubTab === 'grimoire' ? '#55aacc' : 'transparent'}`, borderRadius: '4px', cursor: 'pointer', fontFamily: 'Cinzel, serif' }}
         >
-          + Write Custom Spell (Homebrew)
+          The Grimoire Archive
         </button>
       </div>
 
-      {isAddingCustom && (
-        <div style={{ background: 'rgba(20,20,20,0.8)', border: '1px solid #cfaa5e', borderRadius: '8px', padding: '24px', marginBottom: '32px' }}>
-          <h3 style={{ margin: '0 0 16px 0', color: '#cfaa5e' }}>Draft Homebrew Spell</h3>
-          
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: '16px', marginBottom: '16px' }}>
-            <input placeholder="Spell Name" value={customDraft.name} onChange={e => setCustomDraft({...customDraft, name: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
-            <select value={customDraft.level} onChange={e => setCustomDraft({...customDraft, level: parseInt(e.target.value)})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }}>
-              <option value={0}>Cantrip</option>
-              {[1,2,3,4,5,6,7,8,9].map(l => <option key={l} value={l}>Level {l}</option>)}
-            </select>
-
-            <select value={customDraft.school} onChange={e => setCustomDraft({...customDraft, school: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }}>
-              {SPELL_SCHOOLS.map(s => <option key={s} value={s}>{s}</option>)}
-            </select>
-            <input placeholder="Casting Time (e.g. 1 action)" value={customDraft.castingTime} onChange={e => setCustomDraft({...customDraft, castingTime: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
-
-            <input placeholder="Range (e.g. 60 feet, Touch)" value={customDraft.range} onChange={e => setCustomDraft({...customDraft, range: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
-            <input placeholder="Duration (e.g. 1 minute, Instantaneous)" value={customDraft.duration} onChange={e => setCustomDraft({...customDraft, duration: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
-
-            <input placeholder="Components (V, S, M)" value={customDraft.components} onChange={e => setCustomDraft({...customDraft, components: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
-            <input placeholder="Damage/Effect (e.g. 1d8 Fire) - Optional" value={customDraft.damage} onChange={e => setCustomDraft({...customDraft, damage: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
+      {activeSubTab === 'mine' ? (
+        <>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '32px' }}>
+            <button 
+              onClick={() => setIsAddingCustom(true)}
+              style={{ padding: '12px 24px', background: '#332211', border: '1px solid #cfaa5e', color: '#cfaa5e', borderRadius: '4px', cursor: 'pointer', fontFamily: 'Cinzel, serif', fontSize: '16px' }}
+            >
+              + Write Custom Spell (Homebrew)
+            </button>
           </div>
 
-          <textarea placeholder="Full Spell Description..." value={customDraft.description} onChange={e => setCustomDraft({...customDraft, description: e.target.value})} style={{ width: '100%', height: '100px', padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', marginBottom: '16px' }} />
+          {isAddingCustom && (
+            <div style={{ background: 'rgba(20,20,20,0.8)', border: '1px solid #cfaa5e', borderRadius: '8px', padding: '24px', marginBottom: '32px' }}>
+              <h3 style={{ margin: '0 0 16px 0', color: '#cfaa5e' }}>Draft Homebrew Spell</h3>
+              
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 300px), 1fr))', gap: '16px', marginBottom: '16px' }}>
+                <input placeholder="Spell Name" value={customDraft.name} onChange={e => setCustomDraft({...customDraft, name: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
+                <select value={customDraft.level} onChange={e => setCustomDraft({...customDraft, level: parseInt(e.target.value)})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }}>
+                  <option value={0}>Cantrip</option>
+                  {[1,2,3,4,5,6,7,8,9].map(l => <option key={l} value={l}>Level {l}</option>)}
+                </select>
 
-          <div style={{ display: 'flex', gap: '8px' }}>
-            <button onClick={saveCustomSpell} style={{ padding: '10px 20px', background: '#cfaa5e', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Save to Grimoire</button>
-            <button onClick={() => setIsAddingCustom(false)} style={{ padding: '10px 20px', background: 'transparent', color: '#888', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
-          </div>
-        </div>
-      )}
+                <select value={customDraft.school} onChange={e => setCustomDraft({...customDraft, school: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }}>
+                  {SPELL_SCHOOLS.map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+                <input placeholder="Casting Time (e.g. 1 action)" value={customDraft.castingTime} onChange={e => setCustomDraft({...customDraft, castingTime: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
 
-      {/* Spells Grid */}
-      <div>
-        <h3 className={styles.sectionHeading}>Known Mágicka</h3>
-        {knownSpellsData.length === 0 && <p style={{ color: '#666' }}>Your grimoire is empty. Browse the archives or write a spell to begin.</p>}
-        
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 350px), 1fr))', gap: '20px' }}>
+                <input placeholder="Range (e.g. 60 feet, Touch)" value={customDraft.range} onChange={e => setCustomDraft({...customDraft, range: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
+                <input placeholder="Duration (e.g. 1 minute, Instantaneous)" value={customDraft.duration} onChange={e => setCustomDraft({...customDraft, duration: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
+
+                <input placeholder="Components (V, S, M)" value={customDraft.components} onChange={e => setCustomDraft({...customDraft, components: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
+                <input placeholder="Damage/Effect (e.g. 1d8 Fire) - Optional" value={customDraft.damage} onChange={e => setCustomDraft({...customDraft, damage: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
+              </div>
+
+              <textarea placeholder="Full Spell Description..." value={customDraft.description} onChange={e => setCustomDraft({...customDraft, description: e.target.value})} style={{ width: '100%', height: '100px', padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', marginBottom: '16px' }} />
+
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button onClick={saveCustomSpell} style={{ padding: '10px 20px', background: '#cfaa5e', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Save to Grimoire</button>
+                <button onClick={() => setIsAddingCustom(false)} style={{ padding: '10px 20px', background: 'transparent', color: '#888', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
+              </div>
+            </div>
+          )}
+
+          {/* Spells Grid */}
+          <div>
+            <h3 className={styles.sectionHeading}>Known Mágicka</h3>
+            {knownSpellsData.length === 0 && <p style={{ color: '#666' }}>Your spellbook is empty. Browse the Grimoire Archive to learn spells.</p>}
+            
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 350px), 1fr))', gap: '20px' }}>
           {knownSpellsData.map(spell => {
             const isPrepared = char.preparedSpells?.includes(spell.id);
             const isCustom = spell.id.startsWith('custom_spell_');
@@ -167,8 +178,12 @@ export default function SpellsTab() {
           })}
         </div>
       </div>
-
-      {showSpellBrowser && <SpellBrowser onClose={() => setShowSpellBrowser(false)} />}
+      </>
+      ) : (
+        <div style={{ height: 'calc(100vh - 250px)' }}>
+          <SpellBrowser inline={true} />
+        </div>
+      )}
     </div>
   );
 }

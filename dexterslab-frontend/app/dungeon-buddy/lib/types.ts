@@ -33,6 +33,7 @@ export interface InventoryItem {
   armorCategory?: 'light' | 'medium' | 'heavy' | 'shield';
   type: 'weapon' | 'armor' | 'gear' | 'tool';
   actionCost?: ActionCost;
+  damage?: string;
 }
 
 export interface TrackedResource {
@@ -121,5 +122,8 @@ export interface LiveCharacter {
   bonds: string;
   flaws: string;
   notes: string;
+  quests: string;
+  people: string;
+  places: string;
   logbook: LogEntry[];
 }

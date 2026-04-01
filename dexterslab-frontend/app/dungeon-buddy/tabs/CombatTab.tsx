@@ -15,19 +15,21 @@ export default function CombatTab() {
   const { char, updateField, updateNestedField, shortRest, longRest, expendResource, restoreResource, prepareSpell, unprepareSpell } = useCharacterStore();
   const [showShortRest, setShowShortRest] = useState(false);
   const [showLongRest, setShowLongRest] = useState(false);
-  const [showSpellBrowser, setShowSpellBrowser] = useState(false);
   
   const [spentHitDice, setSpentHitDice] = useState(0);
 
   const [actionFilter, setActionFilter] = useState<'all' | 'action' | 'bonus_action' | 'reaction'>('all');
 
+  const isPreparedCaster = ['cleric', 'druid', 'paladin', 'wizard'].includes(char?.class?.toLowerCase() || '');
+  const combatSpells = isPreparedCaster ? (char?.preparedSpells || []) : (char?.knownSpells || []);
+  
   // Map pure IDs to rich static metadata
-  const knownSpellsData = useSpells(char?.knownSpells, char?.customSpells);
+  const combatSpellsData = useSpells(combatSpells, char?.customSpells);
 
   if (!char) return null;
 
   // Filter Spells
-  const displayedSpells = knownSpellsData.filter(spell => {
+  const displayedSpells = combatSpellsData.filter(spell => {
     if (actionFilter === 'all') return true;
     return spell.actionCost === actionFilter;
   });
@@ -147,24 +149,17 @@ export default function CombatTab() {
       {/* The Grimoire (Prepared Spells) */}
       <div style={{ marginBottom: '32px' }}>
         <h3 className={styles.sectionHeading} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          Prepared Magic
-          <button 
-            onClick={() => setShowSpellBrowser(true)} 
-            style={{ background: 'transparent', color: '#55aacc', border: '1px dotted #55aacc', padding: '4px 8px', borderRadius: '4px', cursor: 'pointer' }}
-          >
-            + Browse Grimoire
-          </button>
+          {isPreparedCaster ? 'Prepared Magic' : 'Active Magic'}
         </h3>
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 350px), 1fr))', gap: '20px' }}>
-          {displayedSpells.length === 0 && <p style={{ color: '#666', fontSize: '14px' }}>No spells matching this filter.</p>}
+          {displayedSpells.length === 0 && <p style={{ color: '#666', fontSize: '14px' }}>No spells active. Head to your Spells Tab to permanently learn or prepare magic.</p>}
           {displayedSpells.map(spell => {
-            const isPrepared = char.preparedSpells?.includes(spell.id);
             return (
               <SpellCard 
                 key={spell.id}
                 spell={spell}
-                isPrepared={isPrepared}
-                onPrepareToggle={() => isPrepared ? unprepareSpell(spell.id) : prepareSpell(spell.id)}
+                isPrepared={true}
+                onPrepareToggle={undefined}
               />
             );
           })}
@@ -247,7 +242,6 @@ export default function CombatTab() {
         })}
       </div>
 
-      {showSpellBrowser && <SpellBrowser onClose={() => setShowSpellBrowser(false)} />}
     </div>
   );
 }

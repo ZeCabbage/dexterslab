@@ -14,6 +14,7 @@ import {
 import { STARTING_EQUIPMENT_DB } from '../data/starting-equipment';
 import { ITEM_DATABASE } from '../lib/data/items';
 import { useCharacterStore } from '../lib/store';
+import Tooltip from '../components/Tooltip';
 
 const STEPS = [
   { label: 'Race', key: 'race' },
@@ -258,6 +259,7 @@ export default function CharacterCreationWizard() {
       equipment: selectedBackground.equipment, // Legacy
       features: selectedClass.features.filter(f => f.level <= 1),
       portrait: portraitData || null,
+      notes: '', quests: '', people: '', places: '',
       logbook: [{
         id: 'log_' + Date.now(),
         timestamp: Date.now(),
@@ -751,7 +753,22 @@ export default function CharacterCreationWizard() {
                          <ul style={{ paddingLeft: '20px', fontSize: '0.9rem', color: isSelected ? '#fff' : '#aaa', margin: 0 }}>
                            {optGroup.map((itemId: any) => {
                              const item = ITEM_DATABASE[itemId];
-                             return <li key={itemId}>{item ? item.name : itemId}</li>
+                             if (!item) return <li key={itemId}>{itemId}</li>;
+                             return (
+                               <li key={itemId} style={{ display: 'flex', alignItems: 'center' }}>
+                                 <Tooltip content={
+                                   <div>
+                                     <strong style={{ color: '#cfaa5e', display: 'block', marginBottom: '4px' }}>{item.name}</strong>
+                                     <p style={{ margin: 0, paddingBottom: '4px', borderBottom: '1px solid #333', marginBottom: '4px' }}>{item.weight} lbs | {item.type}</p>
+                                     <p style={{ margin: 0 }}>{item.description || 'A standard piece of adventuring equipment.'}</p>
+                                     {item.armorClass && <p style={{ margin: '4px 0 0', color: '#6ba3c7' }}>AC: {item.armorClass}</p>}
+                                     {item.damage && <p style={{ margin: '4px 0 0', color: '#c44' }}>Damage: {item.damage}</p>}
+                                   </div>
+                                 }>
+                                   <span>{item.name}</span>
+                                 </Tooltip>
+                               </li>
+                             );
                            })}
                          </ul>
                       </div>
