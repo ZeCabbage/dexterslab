@@ -30,29 +30,30 @@ export default function InventoryTab() {
     setSelectedBackpackItem(null); // deselect after equipping
   };
 
-  // Renders a single paper doll slot
-  const renderSlot = (slotId: EquipSlot, label: string) => {
+  const renderSlot = (slotId: EquipSlot, label: string, position: { top?: string, bottom?: string, left?: string, right?: string }) => {
     const item = char.equipped?.[slotId];
     return (
       <div 
         key={slotId}
         onClick={() => item && unequipSlot(slotId)}
         style={{
-          width: '80px', height: '80px', 
+          width: '64px', height: '64px', 
           background: item ? 'rgba(50, 40, 30, 0.9)' : 'rgba(20,20,20,0.6)', 
           border: `1px solid ${item ? '#cfaa5e' : '#444'}`,
           borderRadius: '4px',
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
           cursor: item ? 'pointer' : 'default',
-          position: 'relative',
+          position: 'absolute',
+          ...position,
           boxShadow: item ? '0 0 10px rgba(207, 170, 94, 0.2)' : 'none',
-          transition: 'all 0.2s'
+          transition: 'all 0.2s',
+          zIndex: 10
         }}
         title={item ? `Click to unequip ${item.name}` : `Empty ${label}`}
       >
-        <span style={{ fontSize: '10px', color: '#888', position: 'absolute', top: '4px', textTransform: 'uppercase' }}>{label}</span>
-        <span style={{ fontSize: '12px', color: item ? '#fff' : '#555', textAlign: 'center', padding: '0 4px', marginTop: '14px' }}>
+        <span style={{ fontSize: '9px', color: '#888', position: 'absolute', top: '2px', textTransform: 'uppercase' }}>{label}</span>
+        <span style={{ fontSize: '11px', color: item ? '#fff' : '#555', textAlign: 'center', padding: '0 2px', marginTop: '12px', wordBreak: 'break-word', lineHeight: 1.1 }}>
           {item ? item.name : 'Empty'}
         </span>
       </div>
@@ -66,12 +67,32 @@ export default function InventoryTab() {
       <div style={{ flex: '0 0 350px', background: 'rgba(10,10,10,0.8)', padding: '24px', borderRadius: '8px', border: '1px solid #333', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <h3 className={styles.sectionHeading} style={{ width: '100%', textAlign: 'center', marginBottom: '24px' }}>Equipped Gear</h3>
         
-        {/* Visual Humanoid Grid */}
-        <div style={{ display: 'grid', gridTemplateColumns: '80px 80px 80px', gap: '16px', justifyContent: 'center' }}>
-           <div />{renderSlot('head', 'Head')}<div />
-           {renderSlot('amulet', 'Amulet')}{renderSlot('chest', 'Chest')}{renderSlot('cloak', 'Cloak')}
-           {renderSlot('mainHand', 'Main Hand')}{renderSlot('gloves', 'Gloves')}{renderSlot('offHand', 'Off Hand')}
-           {renderSlot('ring1', 'Ring')}{renderSlot('boots', 'Boots')}{renderSlot('ring2', 'Ring')}
+        {/* Visual Humanoid Silhouette */}
+        <div style={{ position: 'relative', width: '320px', height: '480px', border: '1px solid #222', borderRadius: '8px', overflow: 'hidden', background: '#0a0a0a' }}>
+           
+           {/* Background Silhouette Image */}
+           <img 
+              src="/silhouette.png" 
+              alt="Adventurer Silhouette" 
+              style={{ position: 'absolute', top: '-10px', left: '50%', transform: 'translateX(-50%)', height: '105%', objectFit: 'contain', opacity: 0.4, pointerEvents: 'none' }} 
+           />
+
+           {/* Center Column */}
+           {renderSlot('head', 'Head', { top: '16px', left: '128px' })}
+           {renderSlot('chest', 'Chest', { top: '140px', left: '128px' })}
+           {renderSlot('boots', 'Boots', { bottom: '24px', left: '128px' })}
+
+           {/* Left Column (Main Hand Side) */}
+           {renderSlot('mainHand', 'Main', { top: '100px', left: '16px' })}
+           {renderSlot('gloves', 'Gloves', { top: '190px', left: '16px' })}
+           {renderSlot('amulet', 'Amulet', { top: '280px', left: '16px' })}
+           {renderSlot('ring1', 'Ring', { top: '370px', left: '16px' })}
+
+           {/* Right Column (Off Hand Side) */}
+           {renderSlot('offHand', 'Offhand', { top: '100px', right: '16px' })}
+           {renderSlot('cloak', 'Cloak', { top: '190px', right: '16px' })}
+           {renderSlot('ring2', 'Ring', { top: '280px', right: '16px' })}
+           
         </div>
 
         <p style={{ marginTop: '24px', fontSize: '12px', color: '#666', textAlign: 'center' }}>
