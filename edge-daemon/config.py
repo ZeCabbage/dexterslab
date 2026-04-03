@@ -4,10 +4,8 @@ from dotenv import load_dotenv
 
 @dataclass
 class Config:
-    pc_tailscale_ip: str
-    video_udp_port: int
-    audio_ws_port: int
-    tts_command_port: int
+    pc_backend_url: str        # e.g. "dexterslab-api.cclottaaworld.com"
+    pc_frontend_url: str       # e.g. "dexterslab.cclottaaworld.com"
     health_port: int
     camera_device: str
     camera_width: int
@@ -23,15 +21,13 @@ def load_config() -> Config:
     # Load .env from the current directory
     load_dotenv()
 
-    pc_tailscale_ip = os.environ.get('PC_TAILSCALE_IP')
-    if not pc_tailscale_ip:
-        raise ValueError("Missing required configuration field: PC_TAILSCALE_IP")
+    pc_backend_url = os.environ.get('PC_BACKEND_URL')
+    if not pc_backend_url:
+        raise ValueError("Missing required configuration field: PC_BACKEND_URL")
 
     return Config(
-        pc_tailscale_ip=pc_tailscale_ip,
-        video_udp_port=int(os.environ.get('VIDEO_UDP_PORT', 5600)),
-        audio_ws_port=int(os.environ.get('AUDIO_WS_PORT', 8889)),
-        tts_command_port=int(os.environ.get('TTS_COMMAND_PORT', 8890)),
+        pc_backend_url=pc_backend_url,
+        pc_frontend_url=os.environ.get('PC_FRONTEND_URL', 'dexterslab.cclottaaworld.com'),
         health_port=int(os.environ.get('HEALTH_PORT', 8891)),
         camera_device=os.environ.get('CAMERA_DEVICE', '/dev/video0'),
         camera_width=int(os.environ.get('CAMERA_WIDTH', 320)),

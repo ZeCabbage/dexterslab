@@ -61,11 +61,10 @@ const server = createServer(app);
 const aiProvider = new AIProvider();
 const genai = aiProvider.getGenAI();
 
-const hardwareBroker = new HardwareBroker({
-  audioPort: parseInt(process.env.AUDIO_WS_PORT || '8889', 10),
-  videoPort: parseInt(process.env.VIDEO_UDP_PORT || '5600', 10)
-});
 const wsRouter = new WSRouter(server);
+const hardwareBroker = new HardwareBroker({
+  wsRouter // All hardware WS endpoints register on the main server
+});
 const restRouter = new RESTRouter(app);
 const appManager = new AppManager();
 const voiceNavigator = new VoiceNavigator(appManager, wsRouter);
@@ -690,12 +689,15 @@ server.listen(PORT, () => {
   console.log(`  ║  DEXTER'S LAB — Backend Server            ║`);
   console.log(`  ║  Port: ${PORT}                              ║`);
   console.log(`  ║  Platform: ${PLATFORM.padEnd(31)}║`);
-  console.log('  ║  WebSocket: /ws  /ws/observer2            ║');
+  console.log('  ║  Network: Cloudflare Tunnel               ║');
   console.log('  ║  Observer 2: 60fps Eye Engine ACTIVE      ║');
   console.log('  ╚═══════════════════════════════════════════╝');
   console.log('');
   console.log(`  REST API:  http://localhost:${PORT}/api/health`);
-  console.log(`  WebSocket: ws://localhost:${PORT}/ws`);
-  console.log(`  Observer2: ws://localhost:${PORT}/ws/observer2`);
+  console.log(`  WebSocket Endpoints:`);
+  console.log(`    /ws/observer2 — Eye display (Pi Chromium)`);
+  console.log(`    /ws/video     — Pi camera stream`);
+  console.log(`    /ws/audio     — Pi microphone stream`);
+  console.log(`    /ws/tts       — Pi TTS receiver`);
   console.log('');
 });

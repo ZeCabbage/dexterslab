@@ -1,85 +1,62 @@
-// Quick diagnostic: connect to Pi's Chromium via CDP and check console + WS state
-const ws = require('ws');
+/**
+ * Pi Diagnostics — SSH-based
+ *
+ * Previous: Connected directly to Pi's Chrome DevTools Protocol via Tailscale IP
+ * New: Runs diagnostic commands on the Pi via SSH through Cloudflare Tunnel
+ *
+ * Checks: service status, health endpoint, camera, audio, systemd logs
+ */
 
-const WS_URL = 'ws://192.168.1.113:9222/devtools/page/A7CCC22799810BFF87C0F131E727D6D2';
+import { exec } from 'child_process';
+import { promisify } from 'util';
 
-const client = new ws(WS_URL);
-let msgId = 1;
+const execAsync = promisify(exec);
 
-function send(method, params = {}) {
-    const id = msgId++;
-    client.send(JSON.stringify({ id, method, params }));
-    return id;
+const SSH_HOST = 'pi-deploy'; // Must be configured in ~/.ssh/config with cloudflared proxy
+
+async function runDiag(label, cmd) {
+  try {
+    const { stdout, stderr } = await execAsync(
+      `ssh -o ConnectTimeout=10 ${SSH_HOST} "${cmd}"`,
+      { timeout: 15000 }
+    );
+    console.log(`\n─── ${label} ───`);
+    if (stdout.trim()) console.log(stdout.trim());
+    if (stderr.trim()) console.log('[stderr]', stderr.trim());
+  } catch (err) {
+    console.log(`\n─── ${label} ───`);
+    console.log('[ERROR]', err.message);
+  }
 }
 
-client.on('open', () => {
-    console.log('Connected to Pi Chromium CDP');
+async function main() {
+  console.log('═══════════════════════════════════════');
+  console.log(' DextersLab Pi Diagnostics (via SSH)');
+  console.log('═══════════════════════════════════════');
 
-    // Enable console message capture
-    send('Runtime.enable');
-    send('Log.enable');
-
-    // Check what the page sees for WS connection and camera
-    const evalId = send('Runtime.evaluate', {
-        expression: `JSON.stringify({
-            // Check if our WS client exists
-            wsExists: typeof window.__wsDebug !== 'undefined',
-            // Try to read connection status from the page
-            pageTitle: document.title,
-            url: window.location.href,
-            // Check if there are any error elements visible
-            backendOffline: document.body.innerText.includes('BACKEND OFFLINE'),
-            // Check navigator.mediaDevices
-            hasMediaDevices: !!navigator.mediaDevices,
-            hasGetUserMedia: !!(navigator.mediaDevices && navigator.mediaDevices.getUserMedia),
-            // Check secure context
-            isSecureContext: window.isSecureContext,
-        })`,
-        returnByValue: true,
-    });
-
-    console.log('Sent eval, id:', evalId);
-});
-
-const results = [];
-client.on('message', (data) => {
-    const msg = JSON.parse(data.toString());
-
-    // Console messages from the page
-    if (msg.method === 'Runtime.consoleAPICalled') {
-        const text = msg.params.args.map(a => a.value || a.description || '').join(' ');
-        console.log('[CONSOLE]', text);
-    }
-
-    if (msg.method === 'Log.entryAdded') {
-        console.log('[LOG]', msg.params.entry.level, msg.params.entry.text);
-    }
-
-    // Our eval result
-    if (msg.id && msg.result && msg.result.result) {
-        const val = msg.result.result.value;
-        if (typeof val === 'string') {
-            try {
-                console.log('[EVAL RESULT]', JSON.parse(val));
-            } catch {
-                console.log('[EVAL RESULT]', val);
-            }
-        } else {
-            console.log('[EVAL RESULT]', val);
-        }
-    }
-
-    results.push(msg);
-});
-
-// Close after 3 seconds
-setTimeout(() => {
-    console.log(`\nCollected ${results.length} messages`);
-    client.close();
-    process.exit(0);
-}, 3000);
-
-client.on('error', (err) => {
-    console.error('CDP connection error:', err.message);
+  // Check SSH connectivity
+  try {
+    await execAsync(`ssh -o ConnectTimeout=10 ${SSH_HOST} "echo ok"`, { timeout: 15000 });
+    console.log('\n✓ SSH connected via Cloudflare Tunnel');
+  } catch (err) {
+    console.error('✗ Cannot reach Pi via SSH. Check ~/.ssh/config and cloudflared.');
     process.exit(1);
-});
+  }
+
+  await runDiag('System Info', 'hostname; uname -a; uptime');
+  await runDiag('Service Status', 'systemctl is-active observer-capture.service; systemctl status observer-capture.service --no-pager -l | tail -20');
+  await runDiag('Health Endpoint', 'curl -s http://localhost:8891/health');
+  await runDiag('Camera Devices', 'ls -la /dev/video*');
+  await runDiag('Audio Devices', 'arecord -l 2>/dev/null || echo "No audio devices found"');
+  await runDiag('Network Interfaces', 'ip addr show | grep -E "inet |state "');
+  await runDiag('Recent Logs (last 30 lines)', 'journalctl -u observer-capture.service --no-pager -n 30');
+  await runDiag('Disk Space', 'df -h /');
+  await runDiag('Memory', 'free -m');
+  await runDiag('Cloudflared Status', 'systemctl is-active cloudflared 2>/dev/null || echo "cloudflared not running as service"');
+
+  console.log('\n═══════════════════════════════════════');
+  console.log(' Diagnostics complete');
+  console.log('═══════════════════════════════════════');
+}
+
+main();

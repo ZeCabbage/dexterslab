@@ -64,7 +64,7 @@ export async function POST(request: NextRequest) {
     response.cookies.set('admin_token', secretToken, {
       httpOnly: true,
       sameSite: 'strict',
-      secure: false, // Local tailscale HTTP network
+      secure: true, // HTTPS via Cloudflare Tunnel
       maxAge: 86400, // 24 hours
       path: '/admin'
     });

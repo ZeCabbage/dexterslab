@@ -13,9 +13,7 @@ module.exports = {
       interpreter: 'node',
       watch: false,
       env: {
-        NODE_ENV: 'production',
-        FFMPEG_PATH: 'C:\\Users\\holme\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin\\ffmpeg.exe',
-        PATH: process.env.PATH + ';C:\\Users\\holme\\AppData\\Local\\Microsoft\\WinGet\\Packages\\Gyan.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-8.1-full_build\\bin'
+        NODE_ENV: 'production'
       },
       error_file: '../logs/backend-error.log',
       out_file: '../logs/backend-out.log',

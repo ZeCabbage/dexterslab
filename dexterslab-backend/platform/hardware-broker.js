@@ -7,21 +7,21 @@ import { STTEngine } from '../observer2/stt-engine.js';
 
 export class HardwareBroker {
   constructor(options = {}) {
-    this.videoPort = options.videoPort || 5600;
-    this.audioPort = options.audioPort || 8889;
-    
+    // All WS endpoints now share the main HTTP server via WSRouter
+    this.wsRouter = options.wsRouter;
+
     this.videoSubscribers = new Set();
     this.audioSubscribers = new Set();
     this.sttSubscribers = new Set();
-    
+
     this.ttsClaims = null; // appId that currently owns TTS
 
     this.videoEvents = new EventEmitter();
     this.audioEvents = new EventEmitter();
 
-    // Core Hardware services
-    this.videoIngress = new VideoIngressServer(this.videoPort, this.videoEvents);
-    this.audioIngress = new AudioIngressServer(this.audioPort, this.audioEvents);
+    // Core Hardware services — all use WSRouter instead of separate ports
+    this.videoIngress = new VideoIngressServer(this.wsRouter, this.videoEvents);
+    this.audioIngress = new AudioIngressServer(this.wsRouter, this.audioEvents);
     this.ttsCommander = new TTSCommander();
     this.sttEngine = new STTEngine();
   }
@@ -29,7 +29,7 @@ export class HardwareBroker {
   async init() {
     console.log('[Platform] Initializing Hardware Broker...');
 
-    // 1. Start Video
+    // 1. Start Video (registers /ws/video)
     this.videoIngress.start();
     this.videoEvents.on('frame', (jpegBuffer) => {
       for (const sub of this.videoSubscribers) {
@@ -41,18 +41,18 @@ export class HardwareBroker {
       }
     });
 
-    // 2. Start Audio
+    // 2. Start Audio (registers /ws/audio)
     try {
       await this.audioIngress.start();
-      console.log(`[Platform] Audio Ingress listening on port ${this.audioPort}`);
+      console.log('[Platform] Audio Ingress registered on /ws/audio');
     } catch (err) {
       console.error('[Platform] Failed to start Audio Ingress:', err);
     }
-    
+
     this.audioEvents.on('client_connected', () => {
       bus.publish('system.pi_connected', { timestamp: Date.now() });
     });
-    
+
     this.audioEvents.on('client_disconnected', () => {
       bus.publish('system.pi_disconnected', { timestamp: Date.now() });
     });
@@ -60,7 +60,7 @@ export class HardwareBroker {
     this.audioEvents.on('audio_frame', (pcmBuffer) => {
       // Feed STT
       this.sttEngine.feed(pcmBuffer);
-      
+
       // Feed raw audio subscribers
       for (const sub of this.audioSubscribers) {
         try {
@@ -76,7 +76,7 @@ export class HardwareBroker {
     this.sttEngine.on('transcript', (text) => {
       console.log('[STT] Transcript:', text);
       bus.publish('voice.command', { text, timestamp: Date.now() });
-      
+
       for (const sub of this.sttSubscribers) {
         try {
           sub(text);
@@ -86,10 +86,13 @@ export class HardwareBroker {
       }
     });
 
-    // 4. Start TTS (Connect client)
-    this.ttsCommander.connect();
-    
+    // 4. Start TTS (registers /ws/tts — Pi connects to us)
+    this.ttsCommander.connect(this.wsRouter);
+
     console.log('[Platform] Hardware Broker initialized.');
+    console.log('[Platform]   /ws/video — Pi camera stream');
+    console.log('[Platform]   /ws/audio — Pi microphone stream');
+    console.log('[Platform]   /ws/tts   — Pi TTS receiver (Pi-initiated)');
   }
 
   // --- Sensors (Shared Broadcast) ---
@@ -110,7 +113,7 @@ export class HardwareBroker {
   }
 
   // --- Actuators (Exclusive Claims) ---
-  
+
   claimTTS(appId) {
     if (this.ttsClaims && this.ttsClaims !== appId) {
       console.warn(`[HardwareBroker] App ${appId} attempted to claim TTS, but it is held by ${this.ttsClaims}`);
@@ -139,7 +142,7 @@ export class HardwareBroker {
     }
     return false;
   }
-  
+
   getPlatformStatus() {
     return {
       pi_audio_connected: this.audioIngress.isClientConnected(),

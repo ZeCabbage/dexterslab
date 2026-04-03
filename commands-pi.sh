@@ -13,7 +13,7 @@ import json, asyncio, websockets
 import sys
 
 async def fix():
-    target = 'http://100.119.202.9:3000/observer/eye-v2'
+    target = 'https://dexterslab.cclottaaworld.com/observer/eye-v2'
     ws_url = None
     
     # Get the websocket debugger URL

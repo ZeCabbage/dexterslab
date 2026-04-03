@@ -21,44 +21,44 @@
 ## Invariant Port Map
 
 ```
-PC Backend (HTTP + WS):    :8888   →  Express + WebSocket /ws/observer2
-PC Audio Ingress (WS):     :8889   →  Receives raw PCM from Pi mic
-PC TTS Commander (WS):     :8890   →  Sends TTS commands TO Pi
-Pi Edge Health (HTTP):     :8891   →  /health endpoint on Pi daemon
+PC Backend (HTTP + WS):    :8888   →  Express + all WebSocket endpoints
+  /ws/observer2  — Eye display state broadcast (60fps)
+  /ws/video      — Pi camera MJPEG stream
+  /ws/audio      — Pi microphone PCM stream
+  /ws/tts        — Pi TTS receiver (Pi-initiated)
+Pi Edge Health (HTTP):     :8891   →  /health endpoint on Pi daemon (local only)
 PC Frontend (Next.js):     :3000   →  Next.js dev/prod server
-Video UDP:                 :5600   →  Pi ffmpeg → PC video-ingress
 ```
 
-### Networking: Tailscale VPN
+### Networking: Cloudflare Tunnel
 
-All Pi↔PC communication uses **Tailscale IPs** — never raw LAN IPs. The Pi's Tailscale IP is configured in `.env.pi` as `PC_TAILSCALE_IP` (the PC's address from the Pi's perspective) and in the backend's `.env` as `PI_TAILSCALE_IP`.
+All Pi↔PC communication routes through **Cloudflare Tunnel** — no VPN, no direct IPs. The Pi only needs internet access. PC runs `cloudflared` routing `dexterslab-api.cclottaaworld.com` → `localhost:8888` and `dexterslab.cclottaaworld.com` → `localhost:3000`. The Pi's `.env` contains `PC_BACKEND_URL=dexterslab-api.cclottaaworld.com`.
 
 ---
 
 ## Data Flow Diagram
 
 ```
-┌──────────────── RASPBERRY PI ────────────────┐    ┌──────────────── WINDOWS PC ────────────────┐
-│                                               │    │                                             │
-│  Camera (/dev/video0)                         │    │                                             │
-│    └─► ffmpeg (MJPEG copy)                    │    │                                             │
-│         └─► UDP :5600 ─────────────────────────────►  video-ingress.js (ffmpeg → JPEG frames)   │
-│                                               │    │    └─► eye-state-machine.processFrame()     │
-│  Microphone (PyAudio)                         │    │         └─► motion-processor.js             │
-│    └─► audio_streamer.py                      │    │         └─► spatial-model.js                │
-│         └─► WS :8889 /ws/audio ───────────────────►  audio-ingress.js (PCM frames)             │
-│                                               │    │    └─► stt-engine.js → stt_worker.py (Vosk) │
-│  espeak-ng speaker                            │    │         └─► oracle-v2.js (Gemini)           │
-│    ◄── tts_receiver.py ◄── WS :8890 /ws/tts ──────  tts-commander.js                           │
-│                                               │    │                                             │
-│  Chromium Kiosk (5" display)                  │    │  Next.js Frontend (:3000)                   │
-│    └─► http://PC:3000/observer/eye-v2 ────────────►  /observer/eye-v2 page                     │
-│    │   Connects WS :8888 /ws/observer2 ───────────►  server.js → eye-state-machine 60fps tick  │
-│    │   Receives EyeState JSON packets ◄───────────   broadcasts {ix, iy, blink, dilation, ...} │
-│                                               │    │                                             │
-│  health.py (HTTP :8891 /health)               │    │  SQLite DB (data/dexterslab-memory.db)      │
-│                                               │    │  PM2 process manager                        │
-└───────────────────────────────────────────────┘    └─────────────────────────────────────────────┘
+┌──────────────── RASPBERRY PI ────────────────┐    ┌──── CLOUDFLARE ────┐    ┌──── WINDOWS PC ─────────────────┐
+│                                               │    │                    │    │                                 │
+│  Camera (/dev/video0)                         │    │                    │    │                                 │
+│    └─► ffmpeg (MJPEG copy → stdout pipe)      │    │                    │    │                                 │
+│         └─► video_streamer.py (WS client) ────────► CF Tunnel ────────────►  video-ingress.js /ws/video      │
+│                                               │    │                    │    │    └─► motion-processor.js      │
+│  Microphone (PyAudio)                         │    │                    │    │         └─► spatial-model.js    │
+│    └─► audio_streamer.py (WS client) ─────────────► CF Tunnel ────────────►  audio-ingress.js /ws/audio      │
+│                                               │    │                    │    │    └─► stt-engine.js → Vosk     │
+│  espeak-ng speaker                            │    │                    │    │         └─► oracle-v2.js        │
+│    ◄── tts_receiver.py (WS client) ◄──────────────── CF Tunnel ◄──────────  tts-commander.js /ws/tts        │
+│                                               │    │                    │    │                                 │
+│  Chromium Kiosk (5" display)                  │    │                    │    │  Next.js Frontend (:3000)       │
+│    └─► https://dexterslab.cclottaaworld.com ──────► CF Tunnel ────────────►  /observer/eye-v2 page           │
+│    │   Connects wss://.../ws/observer2 ───────────► CF Tunnel ────────────►  eye-state-machine 60fps tick    │
+│    │   Receives EyeState JSON packets ◄───────────── CF Tunnel ◄──────────  broadcasts {ix, iy, blink, ...} │
+│                                               │    │                    │    │                                 │
+│  health.py (HTTP :8891 /health) — local only  │    │                    │    │  SQLite DB (dexterslab-memory)  │
+│  cloudflared (SSH tunnel)                     │    │                    │    │  PM2 process manager            │
+└───────────────────────────────────────────────┘    └────────────────────┘    └─────────────────────────────────┘
 ```
 
 ---
@@ -264,10 +264,10 @@ A **Python daemon** that runs on the Raspberry Pi, managed by `systemd`.
 | File | Lines | Purpose |
 |------|-------|---------|
 | `main.py` | 73 | Entry point: starts all services, monitors health, handles signals |
-| `config.py` | 46 | Dataclass config loaded from `.env` (Tailscale IP, ports, camera params) |
-| `video_streamer.py` | 80 | ffmpeg subprocess: camera → UDP MJPEG stream to PC |
+| `config.py` | 43 | Dataclass config loaded from `.env` (Cloudflare URLs, camera params) |
+| `video_streamer.py` | 165 | ffmpeg subprocess → stdout pipe → WebSocket MJPEG stream to PC |
 | `audio_streamer.py` | 121 | PyAudio capture → WebSocket PCM stream to PC |
-| `tts_receiver.py` | 99 | WebSocket server on :8890, receives TTS commands, runs `espeak-ng` |
+| `tts_receiver.py` | 105 | WebSocket client to PC /ws/tts, receives TTS commands, runs `espeak-ng` |
 | `health.py` | 74 | HTTP server on :8891, reports service status |
 | `diagnostics.py` | ~100 | Diagnostic tooling |
 | `requirements.txt` | — | `pyaudio`, `websockets`, `python-dotenv` |
@@ -276,23 +276,23 @@ A **Python daemon** that runs on the Raspberry Pi, managed by `systemd`.
 ### Video Pipeline Detail
 
 ```bash
-# Pi side (video_streamer.py spawns):
+# Pi side (video_streamer.py spawns ffmpeg, reads stdout):
 ffmpeg -f v4l2 -input_format mjpeg \
   -video_size 320x240 -framerate 15 \
   -i /dev/video0 \
-  -vcodec copy -f mpegts \
-  udp://{PC_TAILSCALE_IP}:5600
+  -vcodec copy -f image2pipe -
+# Python extracts JPEG frames (SOI/EOI markers) and sends each
+# as a binary WebSocket message to wss://dexterslab-api.cclottaaworld.com/ws/video
 
-# PC side (video-ingress.js spawns):
-ffmpeg -i udp://0.0.0.0:5600 \
-  -f image2pipe -vcodec copy -
-# Then extracts JPEG frames by scanning for SOI/EOI markers
+# PC side (video-ingress.js):
+# WebSocket server at /ws/video — each binary message = one JPEG frame
+# No ffmpeg needed on PC side
 ```
 
 ### Audio Pipeline Detail
 
 ```
-Pi: PyAudio → 16kHz mono S16LE PCM → WebSocket → PC:8889 /ws/audio
+Pi: PyAudio → 16kHz mono S16LE PCM → wss://dexterslab-api.cclottaaworld.com/ws/audio
 Format negotiation: server sends format_requirements, Pi replies format_ack
 Queue: 50 frames, drops oldest on overflow
 Reconnect: exponential backoff up to 30s
@@ -301,10 +301,11 @@ Reconnect: exponential backoff up to 30s
 ### TTS Pipeline Detail
 
 ```
-PC: tts-commander.js connects → WS to Pi:8890 /ws/tts
-Sends: { type: "tts", text: "..." }
-Pi: tts_receiver.py → subprocess.run(["espeak-ng", text])
-Security: Only accepts connections from PC_TAILSCALE_IP or localhost
+Pi: tts_receiver.py connects → wss://dexterslab-api.cclottaaworld.com/ws/tts
+PC: tts-commander.js accepts the connection, sends { type: "tts", text: "..." }
+Pi: receives message → subprocess.run(["espeak-ng", text])
+Security: Cloudflare Tunnel handles access control
+Note: Connection is Pi-initiated (reversed from original design)
 ```
 
 ### systemd Service
@@ -359,8 +360,8 @@ GET  /api/admin/conversation-log   → Voice interaction history
 ### Kiosk Launcher (`scripts/observer-kiosk.sh`)
 
 Launches Chromium in fullscreen kiosk mode on the Pi:
-- Tries Cloudflare URL first (`dexterslab.cclottaaworld.com/observer/eye-v2`)
-- Falls back to Tailscale direct (`http://PC_TAILSCALE_IP:3000/observer/eye-v2`)
+- Always uses Cloudflare URL (`https://dexterslab.cclottaaworld.com/observer`)
+- Falls back to offline observer if Cloudflare unreachable
 - Hides cursor, clears crash state, enables Wayland, remote debugging on :9222
 
 ---
@@ -381,19 +382,18 @@ Captures real-time system telemetry to `.ndjson` files every ~3 seconds:
 
 ```
 PC → Pi deployment: scripts/deploy-to-pi.sh
-  1. Reads PI_TAILSCALE_IP from .env
-  2. Ping check
-  3. rsync edge-daemon/ → deploy@PI:~/dexterslab-edge/
-  4. SCP .env.pi → .env
-  5. SSH: sudo systemctl restart observer-capture.service
-  6. Wait 5s, check is-active
-  7. curl health endpoint (:8891/health)
-  8. Check journalctl for errors
+  1. SSH connectivity check via Cloudflare Tunnel
+  2. rsync edge-daemon/ → deploy@PI:~/dexterslab-edge/
+  3. SCP .env.pi → .env
+  4. SSH: sudo systemctl restart observer-capture.service
+  5. Wait 5s, check is-active
+  6. SSH: curl localhost:8891/health (health check via SSH)
+  7. Check journalctl for errors
 ```
 
 ### Pi Setup Runbook (`scripts/pi-setup-runbook.md`)
 
-Complete setup checklist: OS, packages (ffmpeg, espeak-ng, python3-venv, portaudio19-dev), Tailscale, deploy user + SSH keys, venv, systemd service, Chromium kiosk.
+Complete setup checklist: OS, packages (ffmpeg, espeak-ng, python3-venv, portaudio19-dev), Cloudflare Tunnel (cloudflared), deploy user + SSH keys, venv, systemd service, Chromium kiosk.
 
 ---
 
@@ -411,9 +411,9 @@ Complete setup checklist: OS, packages (ffmpeg, espeak-ng, python3-venv, portaud
 - [x] Memory engine (SQLite with WAL, batched writes)
 - [x] Context bus (pub/sub with backpressure)
 - [x] STT engine (Vosk via Python subprocess)
-- [x] Video ingress (ffmpeg UDP → JPEG extraction)
-- [x] Audio ingress (WebSocket PCM receiver)
-- [x] TTS commander (WebSocket client to Pi)
+- [x] Video ingress (WebSocket /ws/video → JPEG frames from Pi)
+- [x] Audio ingress (WebSocket /ws/audio → PCM from Pi)
+- [x] TTS commander (WebSocket /ws/tts server — Pi connects to PC)
 - [x] Admin dashboard with full API
 - [x] PM2 deployment config
 - [x] Field test capture (diagnostics)
@@ -473,10 +473,8 @@ Complete setup checklist: OS, packages (ffmpeg, espeak-ng, python3-venv, portaud
 
 **Pi `.env` (`edge-daemon/.env.pi`):**
 ```env
-PC_TAILSCALE_IP=<PC's Tailscale IP>
-VIDEO_UDP_PORT=5600
-AUDIO_WS_PORT=8889
-TTS_COMMAND_PORT=8890
+PC_BACKEND_URL=dexterslab-api.cclottaaworld.com
+PC_FRONTEND_URL=dexterslab.cclottaaworld.com
 HEALTH_PORT=8891
 CAMERA_DEVICE=/dev/video0
 CAMERA_WIDTH=320
@@ -492,10 +490,8 @@ LOG_LEVEL=INFO
 **PC Backend `.env` (`dexterslab-backend/.env`):**
 ```env
 PORT=8888
-PI_TAILSCALE_IP=<Pi's Tailscale IP>
 GEMINI_API_KEY=<key>
 MEMORY_DB_PATH=./data/dexterslab-memory.db
-FFMPEG_PATH=<path to ffmpeg.exe>
 ```
 
 ---
@@ -542,10 +538,10 @@ dexterslab/
 ├── edge-daemon/                           # RUNS ON PI ONLY
 │   ├── main.py                            # Entry point
 │   ├── config.py                          # Env-based config
-│   ├── video_streamer.py                  # Camera → UDP
-│   ├── audio_streamer.py                  # Mic → WebSocket
-│   ├── tts_receiver.py                    # WS → espeak-ng
-│   ├── health.py                          # HTTP health server
+│   ├── video_streamer.py                  # Camera → WebSocket (via Cloudflare)
+│   ├── audio_streamer.py                  # Mic → WebSocket (via Cloudflare)
+│   ├── tts_receiver.py                    # WS client → espeak-ng (Pi-initiated)
+│   ├── health.py                          # HTTP health server (local)
 │   ├── diagnostics.py                     # Diagnostic helpers
 │   ├── requirements.txt                   # pyaudio, websockets, python-dotenv
 │   ├── observer-capture.service           # systemd unit
@@ -573,4 +569,4 @@ dexterslab/
 4. **Backpressure** — Context bus drops non-critical events when dispatch queue exceeds 100
 5. **Graceful Degradation** — Each subsystem (video, audio, TTS) runs independently; failures reported via health endpoint
 6. **Exponential Backoff** — All reconnection logic uses doubling backoff with caps (TTS: 30s, Audio: 30s)
-7. **Security** — Prompt injection detection, transcript sanitization, IP whitelisting on TTS, conversation buffer validation
+7. **Security** — Prompt injection detection, transcript sanitization, Cloudflare Tunnel access control, conversation buffer validation

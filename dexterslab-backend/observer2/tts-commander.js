@@ -1,60 +1,84 @@
-import WebSocket from 'ws';
+/**
+ * TTS Commander — WebSocket Server (Pi-initiated connection)
+ *
+ * Previous architecture: PC connects TO Pi's WS server on port 8890
+ * New architecture:      Pi connects TO PC's /ws/tts endpoint,
+ *                        PC sends TTS commands DOWN that connection.
+ *
+ * This reversal is needed because Cloudflare Tunnel only proxies
+ * inbound connections to the PC — we can't reach the Pi directly.
+ */
 
 export class TTSCommander {
   constructor() {
-    this.tailscaleIp = process.env.PI_TAILSCALE_IP;
-    this.port = parseInt(process.env.TTS_COMMAND_PORT || '8890', 10);
-    this.ws = null;
-    this.reconnectTimer = null;
-    this.backoffMs = 1000;
-    this.active = false; // Whether we WANT to be connected
+    this.wsRouter = null;
+    this.client = null; // The connected Pi client
   }
 
-  connect() {
-    if (!this.tailscaleIp) {
-      console.warn('[TTSCommander] Missing PI_TAILSCALE_IP. TTS disabled.');
-      return;
-    }
-    
-    this.active = true;
-    this._doConnect();
-  }
+  /**
+   * Register the /ws/tts endpoint on the WSRouter.
+   * Called during HardwareBroker.init().
+   */
+  connect(wsRouter) {
+    this.wsRouter = wsRouter;
 
-  _doConnect() {
-    if (this.ws) return;
+    const wss = wsRouter.registerPath('/ws/tts');
+    console.log('[TTSCommander] Registered WebSocket endpoint at /ws/tts (waiting for Pi to connect)');
 
-    const url = `ws://${this.tailscaleIp}:${this.port}/ws/tts`;
-    console.log(`[TTSCommander] Connecting to Pi TTS at ${this.tailscaleIp}:${this.port}`);
-    
-    this.ws = new WebSocket(url);
+    wss.on('connection', (ws, req) => {
+      const ip = req.socket.remoteAddress;
 
-    this.ws.on('open', () => {
-      console.log('[TTSCommander] Connected');
-      this.backoffMs = 1000; // reset backoff
-    });
-
-    this.ws.on('close', () => {
-      this.ws = null;
-      if (this.active) {
-        console.log(`[TTSCommander] Disconnected — retrying in ${this.backoffMs / 1000}s`);
-        this.reconnectTimer = setTimeout(() => this._doConnect(), this.backoffMs);
-        this.backoffMs = Math.min(this.backoffMs * 2, 30000); // Max 30s
+      if (this.client) {
+        console.warn(`[TTSCommander] Rejected duplicate TTS client from ${ip} — already connected`);
+        ws.close(1008, 'TTS receiver already connected');
+        return;
       }
-    });
 
-    this.ws.on('error', () => {
-      // Error is caught here, 'close' will fire right after
+      this.client = ws;
+      console.log(`[TTSCommander] 🔊 Pi TTS receiver connected from ${ip}`);
+
+      ws.on('close', () => {
+        if (this.client === ws) {
+          this.client = null;
+          console.log('[TTSCommander] 🔊 Pi TTS receiver disconnected');
+        }
+      });
+
+      ws.on('error', (err) => {
+        console.error('[TTSCommander] WebSocket error:', err.message);
+        if (this.client === ws) {
+          this.client = null;
+        }
+      });
+
+      // Pi may send ack/status messages back — log them
+      ws.on('message', (data) => {
+        try {
+          const msg = JSON.parse(data.toString());
+          if (msg.type === 'tts_ack') {
+            // Pi acknowledged it spoke the text
+          } else if (msg.type === 'tts_error') {
+            console.warn(`[TTSCommander] Pi TTS error: ${msg.message}`);
+          }
+        } catch (e) {
+          // Ignore non-JSON messages
+        }
+      });
     });
   }
 
+  /**
+   * Send a TTS command to the connected Pi.
+   * The Pi's tts_receiver.py will call espeak-ng.
+   */
   speak(text) {
     if (!this.isConnected()) {
-      console.warn('[TTSCommander] speak() called but not connected — message dropped');
+      console.warn('[TTSCommander] speak() called but Pi not connected — message dropped');
       return false;
     }
 
     try {
-      this.ws.send(JSON.stringify({ type: 'tts', text }));
+      this.client.send(JSON.stringify({ type: 'tts', text }));
       return true;
     } catch (err) {
       console.error('[TTSCommander] Failed to send speak command:', err);
@@ -63,18 +87,13 @@ export class TTSCommander {
   }
 
   disconnect() {
-    this.active = false;
-    if (this.reconnectTimer) {
-      clearTimeout(this.reconnectTimer);
-      this.reconnectTimer = null;
-    }
-    if (this.ws) {
-      this.ws.close();
-      this.ws = null;
+    if (this.client) {
+      this.client.close();
+      this.client = null;
     }
   }
 
   isConnected() {
-    return this.ws !== null && this.ws.readyState === WebSocket.OPEN;
+    return this.client !== null && this.client.readyState === 1; // 1 = OPEN (WebSocket.OPEN)
   }
 }

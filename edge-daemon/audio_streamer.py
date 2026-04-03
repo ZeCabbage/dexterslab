@@ -1,15 +1,32 @@
+"""
+Audio Streamer — WebSocket Client
+
+Captures PCM audio from the Pi's microphone and streams it to
+the PC backend over WebSocket.
+
+Previous: Connected to ws://{tailscale_ip}:{port}/ws/audio
+New:      Connected to wss://{cloudflare_hostname}/ws/audio
+"""
+
 import pyaudio
 import threading
 import queue
 import logging
 import asyncio
-import websockets
 import time
 import json
+import ssl
 import sys
+
+try:
+    import websockets
+except ImportError:
+    websockets = None
+
 from config import Config
 
 logger = logging.getLogger(__name__)
+
 
 class AudioStreamer:
     def __init__(self, config: Config):
@@ -49,7 +66,7 @@ class AudioStreamer:
             input=True,
             frames_per_buffer=frames_per_buffer
         )
-        
+
         logger.info("[AudioStreamer] Capture active")
         try:
             while self._running:
@@ -74,31 +91,34 @@ class AudioStreamer:
         loop.close()
 
     async def _async_ws_loop(self):
-        uri = f"ws://{self.config.pc_tailscale_ip}:{self.config.audio_ws_port}/ws/audio"
+        uri = f"wss://{self.config.pc_backend_url}/ws/audio"
         backoff = 1
-        
+
+        # SSL context for wss://
+        ssl_ctx = ssl.create_default_context()
+
         while self._running:
             try:
-                async with websockets.connect(uri) as ws:
+                async with websockets.connect(uri, ssl=ssl_ctx, ping_interval=20, ping_timeout=10) as ws:
                     logger.info(f"[AudioStreamer] Connected to {uri}. Negotiating format...")
-                    
+
                     try:
                         format_msg = await asyncio.wait_for(ws.recv(), timeout=5.0)
                         reqs = json.loads(format_msg)
-                        
+
                         if reqs.get('type') != 'format_requirements':
                             raise ValueError(f"Expected format_requirements, got {reqs.get('type')}")
-                            
+
                         if reqs.get('sampleRate') != self.config.audio_sample_rate:
                             logger.fatal(f"[AudioStreamer] AUDIO FORMAT MISMATCH: Server requires sampleRate {reqs.get('sampleRate')}, but config has {self.config.audio_sample_rate}")
                             sys.exit(1)
                         if reqs.get('channels') != self.config.audio_channels:
                             logger.fatal(f"[AudioStreamer] AUDIO FORMAT MISMATCH: Server requires channels {reqs.get('channels')}, but config has {self.config.audio_channels}")
                             sys.exit(1)
-                            
+
                         await ws.send(json.dumps({"type": "format_ack"}))
                         logger.info("[AudioStreamer] Format negotiation successful")
-                        
+
                     except Exception as e:
                         logger.fatal(f"[AudioStreamer] Failed format negotiation: {e}")
                         sys.exit(1)

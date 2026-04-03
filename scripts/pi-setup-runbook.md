@@ -17,9 +17,6 @@ sudo apt update
 sudo apt install -y openssh-server
 ```
 ```bash
-curl -fsSL https://tailscale.com/install.sh | sh
-```
-```bash
 sudo apt install -y ffmpeg
 ```
 ```bash
@@ -32,12 +29,62 @@ sudo apt install -y python3-pip python3-venv
 sudo apt install -y portaudio19-dev libasound2-dev
 ```
 
-## Section 3: Tailscale Setup
-- Run `sudo tailscale up` to authenticate your Pi to your Tailnet.
-- To get the Tailscale IP (which will be populated in `.env` files):
+## Section 3: Cloudflare Tunnel Setup (replaces Tailscale)
+
+### 3a. Install cloudflared
 ```bash
-tailscale ip -4
+curl -L --output cloudflared.deb https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-arm64.deb
+sudo dpkg -i cloudflared.deb
+rm cloudflared.deb
 ```
+
+### 3b. Authenticate cloudflared
+```bash
+cloudflared tunnel login
+```
+This opens a browser URL. Copy it to your PC/phone browser, log in to Cloudflare, and authorize the tunnel.
+
+### 3c. Create the tunnel
+```bash
+cloudflared tunnel create dexterslab-pi
+```
+This creates a credentials file at `~/.cloudflared/<TUNNEL_ID>.json`. Note the Tunnel ID.
+
+### 3d. Configure the tunnel
+Create the config file:
+```bash
+mkdir -p ~/.cloudflared
+nano ~/.cloudflared/config.yml
+```
+
+Paste this content (replace `<TUNNEL_ID>` with your actual ID):
+```yaml
+tunnel: <TUNNEL_ID>
+credentials-file: /home/deploy/.cloudflared/<TUNNEL_ID>.json
+
+ingress:
+  - hostname: pi.dexterslab.cclottaaworld.com
+    service: ssh://localhost:22
+  - service: http_status:404
+```
+
+### 3e. Add DNS route
+```bash
+cloudflared tunnel route dns dexterslab-pi pi.dexterslab.cclottaaworld.com
+```
+
+### 3f. Install as systemd service
+```bash
+sudo cloudflared service install
+sudo systemctl enable cloudflared
+sudo systemctl start cloudflared
+```
+
+### 3g. Verify
+```bash
+sudo systemctl status cloudflared
+```
+Should show "active (running)".
 
 ## Section 4: Deploy User & SSH
 - Creating the deploy user:
@@ -102,9 +149,11 @@ WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 ~/observer-kiosk.sh
 ```
 
 ## Section 7: Verification Checklist
-- [ ] `curl http://localhost:8891/health` returns ok
+- [ ] `sudo systemctl status cloudflared` shows active
+- [ ] From PC: `ssh pi-deploy "echo ok"` connects successfully via Cloudflare Tunnel
+- [ ] `curl http://localhost:8891/health` on Pi returns ok
 - [ ] `sudo systemctl status observer-capture` shows active
-- [ ] Video stream arriving on PC: Check PM2 logs or backend terminal for "Received stream..." or view the frontend feed.
-- [ ] Audio stream arriving on PC: Ensure audio events are seen in PC backend via AudioIngress.
-- [ ] TTS test: Connect to Pi WebSocket port 8892 and send `{"type":"speak","text":"Hello world"}` or use `/speaker-test` endpoint on backend.
-- [ ] Chromium kiosk displays eye at `http://[PC_TAILSCALE_IP]:3000/observer/eye-v2`
+- [ ] Video stream arriving on PC: Check backend logs for `/ws/video` connection
+- [ ] Audio stream arriving on PC: Check backend logs for `/ws/audio` connection
+- [ ] TTS test: Send TTS command from PC dashboard, verify espeak-ng speaks on Pi
+- [ ] Chromium kiosk displays eye at `https://dexterslab.cclottaaworld.com/observer/eye-v2`

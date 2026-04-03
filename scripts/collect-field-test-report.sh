@@ -15,8 +15,8 @@ else
     echo "No PC diagnostic logs found."
 fi
 
-# 2. SCP Pi diagnostic NDJSON via Tailscale SSH
-PI_HOST="deploy@dexterslab-edge"
+# 2. SCP Pi diagnostic NDJSON via Cloudflare Tunnel SSH
+PI_HOST="pi-deploy"
 echo "Fetching Edge daemon logs..."
 if ssh -q "$PI_HOST" "ls /home/deploy/dexterslab-edge/field-test-*.ndjson" >/dev/null 2>&1; then
     scp -q "$PI_HOST:/home/deploy/dexterslab-edge/field-test-*.ndjson" "$REPORT_DIR"/

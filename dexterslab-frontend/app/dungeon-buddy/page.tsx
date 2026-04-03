@@ -105,6 +105,19 @@ export default function DungeonBuddyLobby() {
             <button onClick={createCharacter} className={styles.btnNew}>
               + Forge New Hero
             </button>
+
+            {/* Scribe Portal */}
+            <div className={styles.card} style={{ marginTop: '24px', background: 'var(--color-bg-panel)', border: '1px solid #4a3b2a', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+              <h2 className={styles.charName} style={{ color: '#d4af37' }}>The Session Scribe</h2>
+              <p className={styles.charDetails} style={{ textAlign: 'center', marginBottom: '16px' }}>
+                Live LLM Session Minutes & Semantic Transcription
+              </p>
+              <div className={styles.cardActions} style={{ width: '100%', justifyContent: 'center' }}>
+                <button className={styles.btnEnter} onClick={() => router.push('/dungeon-buddy/scribe')} style={{ background: '#3b2f2f', color: '#fff', border: '1px solid #5a4b4b' }}>
+                  ENTER RECORDING LOBBY
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}

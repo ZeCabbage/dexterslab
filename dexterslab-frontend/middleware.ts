@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import crypto from 'crypto';
 
 // Use Edge Runtime for Next.js middleware
 export const config = {
@@ -45,10 +44,11 @@ export function middleware(request: NextRequest) {
   let isMatch = false;
   if (cookieToken.length > 0 && cookieToken.length === secretToken.length) {
     try {
-      isMatch = crypto.timingSafeEqual(
-        Buffer.from(cookieToken),
-        Buffer.from(secretToken)
-      );
+      let result = 0;
+      for (let i = 0; i < cookieToken.length; i++) {
+        result |= cookieToken.charCodeAt(i) ^ secretToken.charCodeAt(i);
+      }
+      isMatch = result === 0;
     } catch (e) {
       isMatch = false;
     }

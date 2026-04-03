@@ -5,27 +5,14 @@ log() { echo -e "\n→ $1..."; }
 success() { echo -e "✓ $1"; }
 fail() { echo -e "✗ $1"; exit 1; }
 
-# Find .env.development
-ENV_FILE="dexterslab-backend/.env.development"
-if [ ! -f "$ENV_FILE" ]; then
-  ENV_FILE=".env.development"
-fi
-if [ ! -f "$ENV_FILE" ]; then
-  fail "Could not find .env.development"
-fi
-
-# Trim carriage returns using tr -d '\r' 
-PI_TAILSCALE_IP=$(grep "^PI_TAILSCALE_IP=" "$ENV_FILE" | cut -d '=' -f2 | tr -d '\r\n')
-if [ -z "$PI_TAILSCALE_IP" ]; then
-  fail "PI_TAILSCALE_IP not found in $ENV_FILE"
-fi
+# ── CONFIGURATION ──
+# SSH host alias "pi-deploy" is defined in ~/.ssh/config with:
+#   HostName = pi.dexterslab.cclottaaworld.com
+#   User = deploy
+#   ProxyCommand = cloudflared access ssh --hostname %h
+SSH_HOST="pi-deploy"
 
 # ── PRE-FLIGHT CHECKS ──
-log "Pinging $PI_TAILSCALE_IP"
-if ! ping -n 1 "$PI_TAILSCALE_IP" &>/dev/null && ! ping -c 1 "$PI_TAILSCALE_IP" &>/dev/null; then
-  fail "Pi at $PI_TAILSCALE_IP is unreachable via ping"
-fi
-success "Pinged $PI_TAILSCALE_IP successfully"
 
 log "Checking edge-daemon/ directory"
 if [ ! -d "edge-daemon" ]; then
@@ -43,14 +30,11 @@ if [ ! -f "$ENV_PI_FILE" ]; then
 fi
 success ".env.pi found at $ENV_PI_FILE"
 
-# SSH host alias "pi-deploy" is defined in ~/.ssh/config with:
-#   HostName = PI Tailscale IP, User = deploy, IdentityFile = ~/.ssh/id_ed25519
-SSH_HOST="pi-deploy"
-log "Checking SSH connectivity to $SSH_HOST"
-if ! ssh -o ConnectTimeout=5 "$SSH_HOST" "echo ok" &>/dev/null; then
-  fail "Cannot reach Pi via SSH host alias '$SSH_HOST'. Check ~/.ssh/config and Tailscale."
+log "Checking SSH connectivity to $SSH_HOST (via Cloudflare Tunnel)"
+if ! ssh -o ConnectTimeout=10 "$SSH_HOST" "echo ok" &>/dev/null; then
+  fail "Cannot reach Pi via SSH host alias '$SSH_HOST'. Check ~/.ssh/config and cloudflared."
 fi
-success "SSH connectivity verified"
+success "SSH connectivity verified (Cloudflare Tunnel)"
 
 # ── DEPLOYMENT ──
 log "RSYNC to Pi"
@@ -81,9 +65,8 @@ if ! ssh "$SSH_HOST" "systemctl is-active observer-capture.service"; then
 fi
 success "Service is active"
 
-log "Checking edge daemon health endpoint"
-HEALTH_URL="http://${PI_TAILSCALE_IP}:8891/health"
-RESPONSE=$(curl -s --max-time 5 "$HEALTH_URL" || echo "FAILED")
+log "Checking edge daemon health endpoint (via SSH)"
+RESPONSE=$(ssh "$SSH_HOST" "curl -s --max-time 5 http://localhost:8891/health" || echo "FAILED")
 if ! echo "$RESPONSE" | grep -q '"status":"ok"'; then
   fail "Health check failed or did not return status:ok! Response: $RESPONSE"
 fi
@@ -91,7 +74,6 @@ echo "$RESPONSE"
 success "Health check passed!"
 
 log "Checking journal for startup errors"
-# If grep FINDS an error, it returns 0 (which triggers the if block to fail the deploy)
 if ssh "$SSH_HOST" "journalctl -u observer-capture.service --since '5 seconds ago' | grep -iE 'error|fatal|traceback'"; then
   fail "Daemon started but logged fatal errors. Check journalctl on Pi."
 fi

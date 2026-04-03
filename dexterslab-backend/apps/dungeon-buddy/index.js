@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 
 const DATA_FILE = path.join(process.cwd(), 'data', 'dungeon-buddy-characters.json');
+const SESSIONS_FILE = path.join(process.cwd(), 'data', 'dungeon-buddy-sessions.json');
 
 export default class DungeonBuddyApp {
   static manifest = {
@@ -25,6 +26,9 @@ export default class DungeonBuddyApp {
     if (!fs.existsSync(DATA_FILE)) {
       fs.writeFileSync(DATA_FILE, JSON.stringify([], null, 2), 'utf8');
     }
+    if (!fs.existsSync(SESSIONS_FILE)) {
+      fs.writeFileSync(SESSIONS_FILE, JSON.stringify([], null, 2), 'utf8');
+    }
   }
 
   readData() {
@@ -42,6 +46,24 @@ export default class DungeonBuddyApp {
       fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), 'utf8');
     } catch (err) {
       console.error('[Dungeon Buddy] Error writing data:', err);
+    }
+  }
+
+  readSessions() {
+    try {
+      const raw = fs.readFileSync(SESSIONS_FILE, 'utf8');
+      return JSON.parse(raw);
+    } catch (err) {
+      console.error('[Dungeon Buddy] Error reading sessions data:', err);
+      return [];
+    }
+  }
+
+  writeSessions(data) {
+    try {
+      fs.writeFileSync(SESSIONS_FILE, JSON.stringify(data, null, 2), 'utf8');
+    } catch (err) {
+      console.error('[Dungeon Buddy] Error writing sessions data:', err);
     }
   }
 
@@ -148,6 +170,80 @@ export default class DungeonBuddyApp {
       } catch (err) {
         console.error('[Dungeon Buddy] Portrait generation error:', err.message);
         res.status(500).json({ error: 'Failed to generate portrait: ' + err.message });
+      }
+    });
+
+    // --- Session Scribe & Campaign Minutes ---
+
+    router.get('/sessions', (req, res) => {
+      res.json(this.readSessions().sort((a,b) => b.timestamp - a.timestamp));
+    });
+
+    router.post('/scribe/summarize', express.json({ limit: '50mb' }), async (req, res) => {
+      const { text } = req.body;
+      if (!text || text.trim().length < 10) {
+        return res.status(400).json({ error: 'Not enough transcript data to summarize.' });
+      }
+
+      const genai = this.platform.aiProvider?.getGenAI();
+      if (!genai) {
+        return res.status(500).json({ error: 'AI Provider not available' });
+      }
+
+      try {
+        const p = `Act as an expert Dungeons & Dragons Dungeon Master Assistant.
+Read the following raw, potentially messy voice transcription of a live D&D session.
+
+Extract the following details and return ONLY a valid JSON object matching this schema exactly:
+{
+  "title": "Epic 3-6 word title for this session",
+  "summary": "A 1-2 paragraph narrative summary of what happened.",
+  "locations": ["Name or description of locations visited"],
+  "npcs": ["NPC names or generic identifiers that were interacted with"],
+  "quests": ["Updates or resolutions to tasks/quests"],
+  "loot": ["Any items, gold, or artifacts mentioned as acquired"]
+}
+
+Raw Session Transcript:
+"""
+${text}
+"""
+`;
+
+        const response = await genai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: p,
+            config: {
+               responseMimeType: "application/json"
+            }
+        });
+
+        const rawJsonText = response.text().trim();
+        let payload = {};
+        
+        try {
+           payload = JSON.parse(rawJsonText);
+        } catch(e) {
+           console.error('[Dungeon Buddy Scribe] LLM returned invalid JSON:', rawJsonText);
+           throw new Error("LLM failed to generate valid structured JSON");
+        }
+
+        const newSession = {
+           id: 'session_' + Date.now(),
+           timestamp: Date.now(),
+           ...payload,
+           rawTranscriptLength: text.length
+        };
+
+        const sessions = this.readSessions();
+        sessions.push(newSession);
+        this.writeSessions(sessions);
+
+        res.status(200).json(newSession);
+
+      } catch (err) {
+        console.error('[Dungeon Buddy Scribe] Summarization Error:', err);
+        res.status(500).json({ error: 'Failed to summarize session.' });
       }
     });
 

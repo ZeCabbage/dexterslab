@@ -1,7 +1,7 @@
-// Test WebSocket connectivity to PC backend with correct /ws path
+// Test WebSocket connectivity to PC backend via Cloudflare Tunnel
 const { WebSocket } = require('ws');
 
-const url = 'ws://192.168.1.136:8888/ws';
+const url = 'wss://dexterslab-api.cclottaaworld.com/ws';
 console.log('Testing:', url);
 
 const ws = new WebSocket(url);

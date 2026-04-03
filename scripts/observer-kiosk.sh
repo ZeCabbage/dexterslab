@@ -4,36 +4,18 @@
 #  Launches Chromium in fullscreen kiosk mode
 #  for the 5" circular display on Raspberry Pi.
 #
-#  Waits for the Next.js server, then opens
-#  Chromium with all UI chrome hidden.
+#  Connects to the PC frontend via Cloudflare Tunnel.
 # ═══════════════════════════════════════════
 
-# ── Identify Target URL ──
-CLOUDFLARE_URL="https://dexterslab.cclottaaworld.com/observer"
-
-ENV_FILE="$HOME/dexterslab-edge/.env"
-PC_TAILSCALE_IP=""
-if [ -f "$ENV_FILE" ]; then
-  PC_TAILSCALE_IP=$(grep "^PC_TAILSCALE_IP=" "$ENV_FILE" | cut -d '=' -f2 | tr -d '\r\n')
-fi
-FALLBACK_URL="http://${PC_TAILSCALE_IP}:7777/observer"
-
-echo "$LOG_TAG Checking Cloudflare reachability..."
-if curl -s --max-time 5 -o /dev/null "$CLOUDFLARE_URL" 2>/dev/null; then
-  OBSERVER_URL="$CLOUDFLARE_URL"
-  echo "$LOG_TAG ✓ Cloudflare is reachable."
-else
-  echo "$LOG_TAG ⚠ Cloudflare unreachable. Falling back to Tailscale IP."
-  OBSERVER_URL="$FALLBACK_URL"
-fi
-
+# ── Target URL (always Cloudflare) ──
+OBSERVER_URL="https://dexterslab.cclottaaworld.com/observer"
 MAX_WAIT=90  # seconds to wait for the server
 
 echo "$LOG_TAG Starting kiosk launcher..."
 echo "$LOG_TAG Target: $OBSERVER_URL"
 
-# ── Wait for the Next.js server to be ready ──
-echo "$LOG_TAG Waiting for Next.js server on port 7777..."
+# ── Wait for Cloudflare / server to be reachable ──
+echo "$LOG_TAG Waiting for server at $OBSERVER_URL..."
 elapsed=0
 while ! curl -s -o /dev/null -w '' "$OBSERVER_URL" 2>/dev/null; do
   sleep 2
@@ -71,6 +53,7 @@ fi
 echo "$LOG_TAG Launching Chromium kiosk..."
 
 # ── Launch Chromium in fullscreen kiosk mode ──
+# All connections go through Cloudflare (HTTPS), so no insecure-origin flags needed.
 FLAGS=(
   # Opens without browser chrome (no address bar, tabs)
   "--app=$OBSERVER_URL"
@@ -103,9 +86,5 @@ FLAGS=(
   # Enable remote debugging for headless diagnostics
   "--remote-debugging-port=9222"
 )
-
-if [ "$OBSERVER_URL" = "$FALLBACK_URL" ] && [ -n "$PC_TAILSCALE_IP" ]; then
-  FLAGS+=("--unsafely-treat-insecure-origin-as-secure=http://${PC_TAILSCALE_IP}:7777")
-fi
 
 chromium-browser "${FLAGS[@]}"

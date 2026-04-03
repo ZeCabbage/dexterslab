@@ -1,0 +1,9 @@
+tunnel: 8dcc84e6-a956-4a01-bd5f-568a9e619c02
+credentials-file: /home/deploy/.cloudflared/8dcc84e6-a956-4a01-bd5f-568a9e619c02.json
+
+ingress:
+  - hostname: pi.dexterslab.cclottaaworld.com
+    service: ssh://localhost:22
+  - hostname: dexterslab-ssh.cclottaaworld.com
+    service: ssh://localhost:22
+  - service: http_status:404

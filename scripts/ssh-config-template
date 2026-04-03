@@ -1,37 +1,32 @@
-# dexterslab SSH Configuration
-# Replace [PC_TAILSCALE_IP], [PI_TAILSCALE_IP], [PC_USERNAME] 
-# with actual values. Never commit the filled-in version.
+# dexterslab SSH Configuration (Cloudflare Tunnel)
+#
+# All Pi SSH access goes through Cloudflare Tunnel.
+# Requires cloudflared installed on the connecting machine.
+# Install: https://developers.cloudflare.com/cloudflare-one/connections/connect-networks/downloads/
+#
+# Replace [PC_USERNAME] with your actual Windows username.
 
-Host dexterslab-pc
-    HostName [PC_TAILSCALE_IP]
-    User [PC_USERNAME]
-    IdentityFile ~/.ssh/dexterslab_ed25519
-    ForwardAgent no
-    ServerAliveInterval 30
-    ServerAliveCountMax 3
-    ControlMaster auto
-    ControlPath ~/.ssh/cm-%r@%h:%p
-    ControlPersist 10m
-
+# SSH to Pi via Cloudflare Tunnel (for interactive use)
 Host dexterslab-pi
-    HostName [PI_TAILSCALE_IP]
+    HostName pi.dexterslab.cclottaaworld.com
     User deploy
     IdentityFile ~/.ssh/dexterslab_pi_ed25519
     ForwardAgent no
     ServerAliveInterval 30
     ServerAliveCountMax 3
+    ProxyCommand cloudflared access ssh --hostname %h
 
-Host dexterslab-pi-deploy
-    HostName [PI_TAILSCALE_IP]
+# SSH to Pi via Cloudflare Tunnel (for deployment scripts)
+Host pi-deploy
+    HostName pi.dexterslab.cclottaaworld.com
     User deploy
     IdentityFile ~/.ssh/pc_to_pi_deploy
     ForwardAgent no
+    ProxyCommand cloudflared access ssh --hostname %h
 
-# Emergency fallback: reach Pi through PC
-# Use only if Tailscale is down on Pi
-Host dexterslab-pi-via-pc
-    HostName [PI_TAILSCALE_IP]
-    User deploy
-    ProxyJump dexterslab-pc
-    IdentityFile ~/.ssh/dexterslab_pi_ed25519
+# SSH to PC (local — no tunnel needed since you're on the PC)
+Host dexterslab-pc
+    HostName localhost
+    User [PC_USERNAME]
+    IdentityFile ~/.ssh/dexterslab_ed25519
     ForwardAgent no

@@ -1,7 +1,8 @@
 @import url('https://fonts.googleapis.com/css2?family=Cinzel:wght@400;600;700;900&family=Cinzel+Decorative:wght@400;700;900&family=Inter:wght@300;400;500;600&display=swap');
 
 .container {
-  min-height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   /* Video Game Cinematic Background */
   background: 
     linear-gradient(to right, rgba(0,0,0,0.8) 0%, rgba(0,0,0,0.4) 40%, rgba(0,0,0,0.3) 100%),
