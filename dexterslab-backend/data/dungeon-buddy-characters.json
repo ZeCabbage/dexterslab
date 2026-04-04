@@ -925,5 +925,166 @@
     },
     "conditions": [],
     "alignment": ""
+  },
+  {
+    "id": "char_1775264086136_864",
+    "name": "Joe",
+    "race": "Dragonborn",
+    "class": "Druid",
+    "background": "Acolyte",
+    "level": 1,
+    "maxHp": 7,
+    "currentHp": 7,
+    "ac": 9,
+    "stats": {
+      "str": 10,
+      "dex": 8,
+      "con": 8,
+      "int": 8,
+      "wis": 8,
+      "cha": 9
+    },
+    "skills": [
+      "insight",
+      "religion",
+      "animal_handling",
+      "nature"
+    ],
+    "hitDie": 8,
+    "hitDiceTotal": 1,
+    "hitDiceUsed": 0,
+    "speed": 30,
+    "proficiencyBonus": 2,
+    "savingThrows": [
+      "int",
+      "wis"
+    ],
+    "armorProficiencies": [
+      "Light",
+      "Medium",
+      "Shields (non-metal)"
+    ],
+    "weaponProficiencies": [
+      "Clubs",
+      "Daggers",
+      "Darts",
+      "Javelins",
+      "Maces",
+      "Quarterstaffs",
+      "Scimitars",
+      "Sickles",
+      "Slings",
+      "Spears"
+    ],
+    "spellcaster": true,
+    "spellcastingAbility": "wis",
+    "resources": {
+      "spell_slot_1": {
+        "name": "1st Level Slots",
+        "max": 2,
+        "used": 0,
+        "recharge": "long"
+      }
+    },
+    "cantrips": [],
+    "knownSpells": [],
+    "preparedSpells": [],
+    "customSpells": [],
+    "traits": [
+      "Draconic Ancestry",
+      "Breath Weapon",
+      "Damage Resistance"
+    ],
+    "languages": [
+      "Common",
+      "Draconic"
+    ],
+    "inventory": [],
+    "equipped": {
+      "head": null,
+      "chest": null,
+      "cloak": null,
+      "mainHand": {
+        "id": "inst_1775264086307_1",
+        "name": "Scimitar",
+        "qty": 1,
+        "weight": 3,
+        "equipped": true,
+        "attuned": false,
+        "slot": "mainHand",
+        "type": "weapon",
+        "description": "",
+        "actionCost": "action"
+      },
+      "offHand": {
+        "id": "inst_1775264086307_0",
+        "name": "Wooden Shield",
+        "qty": 1,
+        "weight": 6,
+        "equipped": true,
+        "attuned": false,
+        "slot": "offHand",
+        "type": "armor",
+        "description": "",
+        "armorClass": 2,
+        "armorCategory": "shield"
+      },
+      "gloves": null,
+      "boots": null,
+      "ring1": null,
+      "ring2": null,
+      "amulet": null
+    },
+    "equipment": [
+      "Holy symbol",
+      "Prayer book",
+      "Incense (5 sticks)",
+      "Vestments",
+      "15 gp"
+    ],
+    "features": [
+      {
+        "level": 1,
+        "name": "Druidic",
+        "description": "You know Druidic, the secret language of druids."
+      },
+      {
+        "level": 1,
+        "name": "Spellcasting",
+        "description": "Cast druid spells using Wisdom."
+      }
+    ],
+    "portrait": null,
+    "notes": "",
+    "quests": "",
+    "people": "",
+    "places": "",
+    "feats": [],
+    "logbook": [
+      {
+        "id": "log_1775264086307",
+        "timestamp": 1775264086307,
+        "type": "creation",
+        "description": "Joe was born. A Level 1 Dragonborn Druid, Acolyte background.",
+        "previousState": null
+      }
+    ],
+    "xp": 0,
+    "tempHp": 0,
+    "expertise": [],
+    "attacks": [],
+    "gold": 0,
+    "silver": 0,
+    "copper": 0,
+    "personalityTraits": "",
+    "ideals": "",
+    "bonds": "",
+    "flaws": "",
+    "deathSaves": {
+      "successes": 0,
+      "failures": 0
+    },
+    "conditions": [],
+    "alignment": ""
   }
 ]

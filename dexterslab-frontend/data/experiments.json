@@ -1,51 +1,58 @@
 [
-    {
-        "name":  "OBSERVER HUB",
-        "route":  "/observer",
-        "description":  "Voice-controlled command center for the circular display — system control, version switching, diagnostics",
-        "status":  "active",
-        "icon":  "❖"
-    },
-    {
-        "name":  "OBSERVER EYE V2",
-        "route":  "/observer/eye-v2",
-        "description":  "PC-powered photorealistic eye — thin client architecture, server-side tracking & behavior",
-        "status":  "wip",
-        "icon":  "◉"
-    },
-    {
-        "name":  "OFFLINE OBSERVER",
-        "route":  "/offline-observer.html",
-        "description":  "Standalone edge daemon V1 observer (Local Face Tracking & Vosk STT via ws://127.0.0.1:8892)",
-        "status":  "active",
-        "icon":  "⏣"
-    },
-    {
-        "name":  "RULES LAWYER",
-        "route":  "/observer/rules-lawyer",
-        "description":  "LLM-powered board game rules assistant — 32-bit character, voice I/O, game-themed persona",
-        "status":  "active",
-        "icon":  "§"
-    },
-    {
-        "name":  "INBOX BUDDY",
-        "route":  "/inbox-buddy",
-        "description":  "Gmail assistant — inbox cleanup, VIP alerts, security scans, weekly reports",
-        "status":  "wip",
-        "icon":  "✉"
-    },
-    {
-        "name":  "The Record Clerk",
-        "route":  "/record-clerk",
-        "description":  "Digital assistant for Dandelion Records",
-        "status":  "wip",
-        "icon":  "⊚"
-    },
-    {
-        "name": "DUNGEON BUDDY",
-        "route": "/dungeon-buddy",
-        "description": "D&D 5E Campaign Manager - Grim Dark character creator and progress tracker.",
-        "status": "wip",
-        "icon": "🐉"
-    }
+  {
+    "name": "OBSERVER HUB",
+    "route": "/observer",
+    "description": "Voice-controlled command center for the circular display — system control, version switching, diagnostics",
+    "status": "active",
+    "icon": "▣"
+  },
+  {
+    "name": "OBSERVER EYE V2",
+    "route": "/observer/eye-v2",
+    "description": "PC-powered photorealistic eye — thin client architecture, server-side tracking \u0026 behavior",
+    "status": "wip",
+    "icon": "◉"
+  },
+  {
+    "name": "OFFLINE OBSERVER",
+    "route": "/offline-observer.html",
+    "description": "Standalone edge daemon V1 observer (Local Face Tracking \u0026 Vosk STT via ws://127.0.0.1:8892)",
+    "status": "active",
+    "icon": "⣿"
+  },
+  {
+    "name": "RULES LAWYER",
+    "route": "/observer/rules-lawyer",
+    "description": "LLM-powered board game rules assistant — 32-bit character, voice I/O, game-themed persona",
+    "status": "active",
+    "icon": "§"
+  },
+  {
+    "name": "INBOX BUDDY",
+    "route": "/inbox-buddy",
+    "description": "Gmail assistant — inbox cleanup, VIP alerts, security scans, weekly reports",
+    "status": "wip",
+    "icon": "✉"
+  },
+  {
+    "name": "The Record Clerk",
+    "route": "/record-clerk",
+    "description": "Digital assistant for Dandelion Records",
+    "status": "wip",
+    "icon": "⊚"
+  },
+  {
+    "name": "DUNGEON BUDDY",
+    "route": "/dungeon-buddy",
+    "description": "D\u0026D 5E Campaign Manager - Grim Dark character creator and progress tracker.",
+    "status": "wip",
+    "icon": "🐉"
+  },
+  {
+    "name": "DOGGIE DUKES",
+    "route": "/doggie-dukes",
+    "description": "Underground dog betting simulation — real breeds, personality quirks, and simulated credits",
+    "status": "wip",
+    "icon": "🐕"
+  }
 ]
