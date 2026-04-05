@@ -166,7 +166,7 @@ export default function CombatTab() {
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '32px' }}>
+      <div className={styles.twoColumnMobileWrap}>
         {/* Death Saves */}
         <div>
           <h3 className={styles.sectionHeading}>Death Saves</h3>

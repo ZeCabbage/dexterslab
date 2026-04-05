@@ -13,6 +13,8 @@ interface SpellCardProps {
 }
 
 export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle, onLearnToggle, lockReason }: SpellCardProps) {
+  const [isExpanded, setIsExpanded] = React.useState(false);
+
   return (
     <div style={{
       background: 'rgba(20,20,20,0.8)',
@@ -23,9 +25,12 @@ export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle,
       boxShadow: isPrepared ? '0 0 10px rgba(207, 170, 94, 0.1)' : 'none',
       display: 'flex', flexDirection: 'column'
     }}>
-      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
-        <div>
-          <h4 style={{ margin: '0 0 4px 0', color: isPrepared ? '#fff' : '#cfaa5e', fontSize: '16px' }}>{spell.name}</h4>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+        <div style={{ cursor: 'pointer', flex: 1 }} onClick={() => setIsExpanded(!isExpanded)}>
+          <h4 style={{ margin: '0 0 4px 0', color: isPrepared ? '#fff' : '#cfaa5e', fontSize: '16px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            {spell.name}
+            <span style={{ fontSize: '10px', color: '#cfaa5e', border: '1px solid #cfaa5e', borderRadius: '50%', width: '16px', height: '16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', paddingBottom: '1px' }}>i</span>
+          </h4>
           <span style={{ fontSize: '12px', color: '#888', fontStyle: 'italic' }}>
             {spell.level === 0 ? 'Cantrip' : `Level ${spell.level}`} {spell.school}
           </span>
@@ -65,19 +70,23 @@ export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle,
         </div>
       </div>
 
-      <div style={{ display: 'flex', gap: '16px', marginTop: '12px', marginBottom: '12px', borderBottom: '1px solid #333', paddingBottom: '8px' }}>
-        <div style={{ fontSize: '11px', color: '#aaa' }}><strong>Time:</strong> {spell.castingTime}</div>
-        <div style={{ fontSize: '11px', color: '#aaa' }}><strong>Range:</strong> {spell.range}</div>
-        <div style={{ fontSize: '11px', color: '#aaa' }}><strong>Duration:</strong> {spell.duration}</div>
-      </div>
+      {isExpanded && (
+        <div style={{ animation: 'fadeIn 0.2s', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #333' }}>
+          <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', paddingBottom: '8px' }}>
+            <div style={{ fontSize: '11px', color: '#aaa' }}><strong>Time:</strong> {spell.castingTime}</div>
+            <div style={{ fontSize: '11px', color: '#aaa' }}><strong>Range:</strong> {spell.range}</div>
+            <div style={{ fontSize: '11px', color: '#aaa' }}><strong>Duration:</strong> {spell.duration}</div>
+          </div>
 
-      <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#bbb', lineHeight: '1.4' }}>
-        {spell.description}
-      </p>
+          <p style={{ margin: '0 0 12px 0', fontSize: '13px', color: '#bbb', lineHeight: '1.4' }}>
+            {spell.description}
+          </p>
 
-      {spell.damage && (
-        <div style={{ marginTop: 'auto', background: 'rgba(255, 50, 50, 0.1)', border: '1px solid rgba(255,50,50,0.3)', padding: '6px', borderRadius: '4px', textAlign: 'center', fontSize: '12px', color: '#ff6666' }}>
-          <strong>{spell.damage}</strong>
+          {spell.damage && (
+            <div style={{ background: 'rgba(255, 50, 50, 0.1)', border: '1px solid rgba(255,50,50,0.3)', padding: '6px', borderRadius: '4px', textAlign: 'center', fontSize: '12px', color: '#ff6666' }}>
+              <strong>{spell.damage}</strong>
+            </div>
+          )}
         </div>
       )}
     </div>

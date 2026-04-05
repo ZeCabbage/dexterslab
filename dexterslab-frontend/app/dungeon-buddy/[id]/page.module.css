@@ -542,6 +542,21 @@
 .logDesc { font-size: 0.85rem; color: var(--text-primary); }
 
 /* ═══════════════════════════════
+   LAYOUT WRAPPERS (Dynamic)
+   ═══════════════════════════════ */
+.twoColumnMobileWrap {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 32px;
+}
+.inventoryLayoutWrapper {
+  display: flex;
+  gap: 32px;
+  height: 100%;
+  align-items: flex-start;
+}
+
+/* ═══════════════════════════════
    RESPONSIVE
    ═══════════════════════════════ */
 @media (max-width: 768px) {
@@ -582,4 +597,14 @@
 
   /* Grid Restrictors to prevent overflow */
   .spellListSection, .inventoryHeader, .combatTopRow, .activeResources { max-width: 100vw; overflow-x: hidden; }
+
+  /* Dynamic Layout Overrides */
+  .twoColumnMobileWrap {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .inventoryLayoutWrapper {
+    flex-direction: column;
+    align-items: center;
+  }
 }

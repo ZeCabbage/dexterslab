@@ -61,10 +61,10 @@ export default function InventoryTab() {
   };
 
   return (
-    <div style={{ display: 'flex', gap: '32px', height: '100%', alignItems: 'flex-start' }}>
+    <div className={styles.inventoryLayoutWrapper}>
       
       {/* LEFT: Paper Doll */}
-      <div style={{ flex: '0 0 350px', background: 'rgba(10,10,10,0.8)', padding: '24px', borderRadius: '8px', border: '1px solid #333', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <div style={{ flex: '0 0 auto', width: '100%', maxWidth: '350px', background: 'rgba(10,10,10,0.8)', padding: '24px', borderRadius: '8px', border: '1px solid #333', display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
         <h3 className={styles.sectionHeading} style={{ width: '100%', textAlign: 'center', marginBottom: '24px' }}>Equipped Gear</h3>
         
         {/* Visual Humanoid Silhouette */}
@@ -149,7 +149,10 @@ export default function InventoryTab() {
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.1s'
               }}
             >
-              <span style={{ color: '#ccc', fontSize: '14px' }}>{item.qty > 1 ? `${item.qty}x ` : ''}{item.name}</span>
+              <span style={{ color: '#ccc', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                {item.qty > 1 ? `${item.qty}x ` : ''}{item.name}
+                <span style={{ flexShrink: 0, fontSize: '10px', color: '#cfaa5e', border: '1px solid #cfaa5e', borderRadius: '50%', width: '16px', height: '16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', paddingBottom: '1px' }}>i</span>
+              </span>
               <span style={{ color: '#666', fontSize: '12px' }}>{item.weight} lb</span>
             </div>
           ))}
