@@ -178,17 +178,26 @@ class VideoStreamer:
 
         while self._running:
             try:
-                async with websockets.connect(uri, ssl=ssl_ctx, ping_interval=20, ping_timeout=10) as ws:
+                async with websockets.connect(
+                    uri, ssl=ssl_ctx,
+                    ping_interval=15,
+                    ping_timeout=20,
+                    close_timeout=5,
+                    max_size=2**22,     # 4MB for video frames
+                ) as ws:
                     logger.info(f"[VideoStreamer] Connected to {uri}")
                     backoff = 1
 
                     while self._running:
                         try:
-                            frame = self._frame_queue.get(timeout=0.1)
+                            frame = self._frame_queue.get(timeout=0.5)
                             await ws.send(frame)
                         except queue_module.Empty:
-                            # Send a text ping to keep connection alive
-                            await asyncio.sleep(0.01)
+                            # No frames for 500ms — send a text keepalive
+                            try:
+                                await ws.send(b'')  # Empty binary = keepalive
+                            except Exception:
+                                break
                             continue
 
             except (Exception,) as e:
@@ -196,4 +205,4 @@ class VideoStreamer:
                     break
                 logger.warning(f"[VideoStreamer] Connection failed ({e}). Reconnecting in {backoff}s")
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30)
+                backoff = min(backoff * 2, 5)  # Cap at 5s for fast recovery

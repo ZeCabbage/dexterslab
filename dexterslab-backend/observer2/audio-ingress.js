@@ -61,7 +61,12 @@ export class AudioIngressServer {
           return;
         }
 
-        // data is raw PCM buffer
+        // data is raw PCM buffer — skip any text keepalive messages
+        if (!Buffer.isBuffer(data)) {
+          // Text message (keepalive or control) — ignore
+          return;
+        }
+        if (data.length === 0) return; // Empty keepalive
         this.events.emit('audio_frame', data);
       });
 

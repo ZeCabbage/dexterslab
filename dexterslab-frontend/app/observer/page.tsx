@@ -13,7 +13,7 @@
  *  - Chrome Web Speech API for voice commands (via VoiceProvider)
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import styles from './page.module.css';
@@ -72,6 +72,12 @@ export default function ObserverHub() {
   const [scanY, setScanY] = useState(0);
   const [cursorBlink, setCursorBlink] = useState(true);
 
+  // ── Browser Media ──
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const [transcript, setTranscript] = useState('');
+  const [isListening, setIsListening] = useState(false);
+
+
 
 
   // ── Helpers ──
@@ -125,6 +131,50 @@ export default function ObserverHub() {
   }, []);
 
 
+
+  // ── Browser Media Setup ──
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+
+    // 1. Camera Feed
+    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+      navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } })
+        .then(stream => {
+          if (videoRef.current) videoRef.current.srcObject = stream;
+        })
+        .catch(err => console.error("Camera error:", err));
+    }
+
+    // 2. Mic Tracking
+    const sr = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+    if (sr) {
+      const recognition = new sr();
+      recognition.continuous = true;
+      recognition.interimResults = true;
+      recognition.lang = 'en-US';
+
+      recognition.onresult = (event: any) => {
+        let current = '';
+        for (let i = Math.max(0, event.results.length - 3); i < event.results.length; ++i) {
+          current += event.results[i][0].transcript + ' ';
+        }
+        setTranscript(current.trim().slice(-60)); // keep it short
+      };
+
+      recognition.onstart = () => setIsListening(true);
+      recognition.onend = () => {
+        setIsListening(false);
+        try { recognition.start(); } catch (e) {}
+      };
+
+      try { recognition.start(); } catch (e) {}
+
+      return () => {
+        recognition.onend = null;
+        recognition.stop();
+      };
+    }
+  }, []);
 
   // ── Actions ──
   const doAction = async (action: string, label: string) => {
@@ -231,34 +281,38 @@ export default function ObserverHub() {
               CAMERA {status.diagnostics?.health?.video_stream_active ? 'ACTIVE' : 'OFFLINE'}
               {status.diagnostics?.health?.video_fps ? <span style={{fontSize: '0.8em', color: '#888'}}>{status.diagnostics.health.video_fps} FPS</span> : null}
             </div>
-            <div className={styles.panelDetail}>
-              {status.diagnostics?.entities && status.diagnostics.entities.length > 0 ? (
-                status.diagnostics.entities.slice(0, 4).map((ent, i) => (
-                  <div key={i} className={styles.logLine} style={{ color: 'var(--color-cyan)' }}>
-                    TARGET: {ent.tags?.join(', ') || 'Unknown'} {(ent.confidence ? `(${(ent.confidence * 100).toFixed(0)}%)` : '')}
-                  </div>
-                ))
-              ) : (
-                <div style={{ color: '#555' }}>No objects detected...</div>
-              )}
+            <div className={styles.panelDetail} style={{ position: 'relative' }}>
+              <video autoPlay muted playsInline ref={videoRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.3, zIndex: 0 }} />
+              <div style={{ position: 'relative', zIndex: 1, textShadow: '0 0 4px #000' }}>
+                {status.diagnostics?.entities && status.diagnostics.entities.length > 0 ? (
+                  status.diagnostics.entities.slice(0, 4).map((ent, i) => (
+                    <div key={i} className={styles.logLine} style={{ color: 'var(--color-cyan)' }}>
+                      TARGET: {ent.tags?.join(', ') || 'Unknown'} {(ent.confidence ? `(${(ent.confidence * 100).toFixed(0)}%)` : '')}
+                    </div>
+                  ))
+                ) : (
+                  <div style={{ color: '#aaa', fontWeight: 'bold' }}>SCANNING...</div>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Audio Panel */}
-          <div className={`${styles.panel} ${status.diagnostics?.health?.pi_audio_connected ? styles.panelActive : styles.panelInactive}`}>
+          <div className={`${styles.panel} ${status.diagnostics?.health?.pi_audio_connected || isListening ? styles.panelActive : styles.panelInactive}`}>
             <div className={styles.panelHeader}>╔══ AUDIO IN ══╗</div>
-            <div className={styles.panelValue} style={{ color: status.diagnostics?.health?.pi_audio_connected ? 'var(--color-green)' : 'var(--color-red)' }}>
-              MIC {status.diagnostics?.health?.pi_audio_connected ? 'LISTENING' : 'OFFLINE'}
+            <div className={styles.panelValue} style={{ color: status.diagnostics?.health?.pi_audio_connected || isListening ? 'var(--color-green)' : 'var(--color-red)' }}>
+              MIC {status.diagnostics?.health?.pi_audio_connected || isListening ? 'LISTENING' : 'OFFLINE'}
             </div>
             <div className={styles.panelDetail}>
-              {status.diagnostics?.conversation && status.diagnostics.conversation.filter(c => c.role === 'user').length > 0 ? (
-                status.diagnostics.conversation.filter(c => c.role === 'user').slice(-4).reverse().map((conv, i) => (
+              <div style={{ color: '#ccc', fontStyle: 'italic', marginBottom: '4px', textShadow: '0 0 4px #000' }}>
+                {transcript ? `> ${transcript}` : 'Awaiting speech...'}
+              </div>
+              {status.diagnostics?.conversation && status.diagnostics.conversation.filter(c => c.role === 'user').length > 0 && (
+                status.diagnostics.conversation.filter(c => c.role === 'user').slice(-2).reverse().map((conv, i) => (
                   <div key={i} className={styles.logLine} style={{ color: 'var(--color-amber)' }}>
-                    &gt; &quot;{conv.text}&quot;
+                    &quot;{conv.text}&quot;
                   </div>
                 ))
-              ) : (
-                <div style={{ color: '#555' }}>Awaiting speech...</div>
               )}
             </div>
           </div>
@@ -281,9 +335,14 @@ export default function ObserverHub() {
                   className={styles.miniBtn}
                   style={{ width: '80%', padding: '4px' }}
                   onClick={() => {
-                     if (speakerEnabled) fetch('/api/test/tts?text=Speaker+test+successful');
+                     if (speakerEnabled) {
+                       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+                         window.speechSynthesis.speak(new SpeechSynthesisUtterance('hello'));
+                       }
+                       fetch('/api/test/tts?text=hello');
+                     }
                   }}
-                  disabled={!speakerEnabled || !status.diagnostics?.health?.pi_tts_connected}
+                  disabled={!speakerEnabled}
                 >
                   ▶ TEST SOUND
                 </button>

@@ -62,7 +62,12 @@ class TTSReceiver:
 
         while self._running:
             try:
-                async with websockets.connect(uri, ssl=ssl_ctx, ping_interval=20, ping_timeout=10) as ws:
+                async with websockets.connect(
+                    uri, ssl=ssl_ctx,
+                    ping_interval=15,
+                    ping_timeout=20,
+                    close_timeout=5,
+                ) as ws:
                     logger.info(f"[TTSReceiver] Connected to {uri}")
                     backoff = 1
 
@@ -97,7 +102,7 @@ class TTSReceiver:
                     break
                 logger.warning(f"[TTSReceiver] Connection failed ({e}). Reconnecting in {backoff}s")
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30)
+                backoff = min(backoff * 2, 5)  # Cap at 5s for fast recovery
 
     def _speak(self, text: str):
         logger.info(f"[TTSReceiver] Speaking: {text}")

@@ -24,6 +24,35 @@
   letter-spacing: 2px;
 }
 
+.tabBar {
+  display: flex;
+  gap: 16px;
+  margin-right: auto;
+  margin-left: 40px;
+}
+
+.tabBtn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: #887050;
+  font-family: 'Georgia', serif;
+  font-size: 14px;
+  text-transform: uppercase;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: all 0.2s;
+  letter-spacing: 1px;
+}
+
+.tabBtn:hover {
+  color: #cfa85e;
+}
+
+.tabBtn.active {
+  color: #e6cc80;
+  border-bottom: 2px solid #e6cc80;
+}
+
 .backBtn {
   color: #887050;
   text-decoration: none;
@@ -193,6 +222,49 @@
   color: #d4af37;
   font-size: 12px;
   margin-top: 2px;
+}
+
+.archiveLayout {
+  display: grid;
+  grid-template-columns: 2fr 1fr;
+  gap: 24px;
+  width: 100%;
+}
+
+.timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.sessionCard {
+  background: #141110;
+  border: 1px solid #3f2e1c;
+  border-radius: 8px;
+  padding: 24px;
+}
+
+.sessionCardTitle {
+  font-size: 24px;
+  color: #d4af37;
+  border-bottom: 1px solid #5a4b3a;
+  padding-bottom: 8px;
+  margin-bottom: 16px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+}
+
+.sessionDate {
+  font-size: 14px;
+  color: #a08c6a;
+  font-family: 'Courier New', monospace;
+}
+
+.aggregateSidebar {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
 }
 
 .loadingOverlay {

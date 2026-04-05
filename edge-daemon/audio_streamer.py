@@ -99,7 +99,13 @@ class AudioStreamer:
 
         while self._running:
             try:
-                async with websockets.connect(uri, ssl=ssl_ctx, ping_interval=20, ping_timeout=10) as ws:
+                async with websockets.connect(
+                    uri, ssl=ssl_ctx,
+                    ping_interval=15,   # Send WS ping every 15s (CF idle timeout is 100s)
+                    ping_timeout=20,    # Allow 20s for pong (CF adds latency)
+                    close_timeout=5,
+                    max_size=2**20,     # 1MB
+                ) as ws:
                     logger.info(f"[AudioStreamer] Connected to {uri}. Negotiating format...")
 
                     try:
@@ -124,17 +130,26 @@ class AudioStreamer:
                         sys.exit(1)
 
                     backoff = 1
+                    idle_count = 0
                     while self._running:
                         try:
-                            # Use timeout to allow checking self._running
                             data = self._queue.get(timeout=0.1)
                             await ws.send(data)
+                            idle_count = 0
                         except queue.Empty:
+                            idle_count += 1
+                            # Every ~5s of no data, send an explicit app-level keepalive
+                            if idle_count > 50:
+                                try:
+                                    await ws.send(json.dumps({"type": "keepalive"}))
+                                except Exception:
+                                    break
+                                idle_count = 0
                             await asyncio.sleep(0.01)
                             continue
             except (websockets.exceptions.ConnectionClosed, OSError) as e:
                 if not self._running:
                     break
-                logger.warning(f"[AudioStreamer] Connection dropped ({e}). Reconnecting in {backoff}s (attempt...)")
+                logger.warning(f"[AudioStreamer] Connection dropped ({e}). Reconnecting in {backoff}s")
                 await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 30)
+                backoff = min(backoff * 2, 5)  # Cap at 5s, not 30s — fast recovery
