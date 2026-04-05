@@ -6,14 +6,14 @@
  *
  * Features:
  *  - WiFi signal diagnostics (SSID, signal %, IP, status)
- *  - Voice feedback display (last heard text, partial, command log)
- *  - System launch log (rolling timestamped events)
+ *  - Live Pi camera feed (polled JPEG snapshots from backend)
+ *  - Live STT transcripts (from Pi mic → Vosk on PC)
+ *  - TTS test button (sends to Pi espeak-ng via backend)
  *  - Sub-project launcher (touch-friendly tiles)
  *  - Shutdown with confirmation
- *  - Chrome Web Speech API for voice commands (via VoiceProvider)
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import styles from './page.module.css';
@@ -39,6 +39,11 @@ interface LogEntry {
   time: string;
   msg: string;
   type: 'info' | 'success' | 'error' | 'command' | 'kill' | 'heard';
+}
+
+interface TranscriptEntry {
+  text: string;
+  timestamp: number;
 }
 
 // ═══ Sub-Projects ═══
@@ -72,13 +77,10 @@ export default function ObserverHub() {
   const [scanY, setScanY] = useState(0);
   const [cursorBlink, setCursorBlink] = useState(true);
 
-  // ── Browser Media ──
-  const videoRef = useRef<HTMLVideoElement>(null);
-  const [transcript, setTranscript] = useState('');
-  const [isListening, setIsListening] = useState(false);
-
-
-
+  // ── Pi Data State ──
+  const [cameraUrl, setCameraUrl] = useState<string | null>(null);
+  const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
+  const [soundPlaying, setSoundPlaying] = useState(false);
 
   // ── Helpers ──
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -114,7 +116,7 @@ export default function ObserverHub() {
     return () => clearInterval(id);
   }, []);
 
-  // ── Poll status ──
+  // ── Poll hub status ──
   useEffect(() => {
     const poll = async () => {
       try {
@@ -130,51 +132,81 @@ export default function ObserverHub() {
     return () => clearInterval(id);
   }, []);
 
-
-
-  // ── Browser Media Setup ──
+  // ── Poll camera snapshot (low-res JPEG from Pi → backend → here) ──
   useEffect(() => {
-    if (typeof window === 'undefined') return;
+    let active = true;
 
-    // 1. Camera Feed
-    if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
-      navigator.mediaDevices.getUserMedia({ video: { width: 320, height: 240 } })
-        .then(stream => {
-          if (videoRef.current) videoRef.current.srcObject = stream;
-        })
-        .catch(err => console.error("Camera error:", err));
-    }
+    const pollFrame = async () => {
+      while (active) {
+        try {
+          const res = await fetch(`/api/hub/video-snapshot?t=${Date.now()}`);
+          if (res.ok && res.status !== 204) {
+            const blob = await res.blob();
+            const url = URL.createObjectURL(blob);
+            setCameraUrl(prev => {
+              if (prev) URL.revokeObjectURL(prev);
+              return url;
+            });
+          }
+        } catch { /* backend unreachable */ }
+        // Poll at ~2fps for low-res diagnostic feed
+        await new Promise(r => setTimeout(r, 500));
+      }
+    };
 
-    // 2. Mic Tracking
-    const sr = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-    if (sr) {
-      const recognition = new sr();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.lang = 'en-US';
-
-      recognition.onresult = (event: any) => {
-        let current = '';
-        for (let i = Math.max(0, event.results.length - 3); i < event.results.length; ++i) {
-          current += event.results[i][0].transcript + ' ';
-        }
-        setTranscript(current.trim().slice(-60)); // keep it short
-      };
-
-      recognition.onstart = () => setIsListening(true);
-      recognition.onend = () => {
-        setIsListening(false);
-        try { recognition.start(); } catch (e) {}
-      };
-
-      try { recognition.start(); } catch (e) {}
-
-      return () => {
-        recognition.onend = null;
-        recognition.stop();
-      };
-    }
+    pollFrame();
+    return () => { active = false; };
   }, []);
+
+  // ── Poll STT transcripts ──
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/hub/transcripts');
+        if (res.ok) {
+          const data = await res.json();
+          setTranscripts(data);
+        }
+      } catch { /* offline */ }
+    };
+    poll();
+    const id = setInterval(poll, 1500);
+    return () => clearInterval(id);
+  }, []);
+
+  // ── Play hello sound (Web Audio API beep + backend TTS) ──
+  const playHelloSound = useCallback(() => {
+    if (soundPlaying) return;
+    setSoundPlaying(true);
+
+    // 1. Play locally via Web Audio API (a synthesized "hello" tone)
+    try {
+      const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
+      const osc = ctx.createOscillator();
+      const gain = ctx.createGain();
+      osc.connect(gain);
+      gain.connect(ctx.destination);
+
+      // Two-tone "hello" beep
+      osc.frequency.setValueAtTime(440, ctx.currentTime);         // "he-"
+      osc.frequency.setValueAtTime(349, ctx.currentTime + 0.15);  // "-llo"
+      gain.gain.setValueAtTime(0.3, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+
+      osc.start(ctx.currentTime);
+      osc.stop(ctx.currentTime + 0.4);
+
+      osc.onended = () => {
+        ctx.close();
+        setSoundPlaying(false);
+      };
+    } catch {
+      setSoundPlaying(false);
+    }
+
+    // 2. Also send to Pi TTS (will play espeak-ng "hello" on the speaker)
+    fetch('/api/test/tts?text=hello').catch(() => {});
+  }, [soundPlaying]);
 
   // ── Actions ──
   const doAction = async (action: string, label: string) => {
@@ -190,11 +222,9 @@ export default function ObserverHub() {
       const data = await res.json();
       if (data.success) {
         addLog(data.message, 'success');
-        // Log sync details
         if (data.details) {
           for (const d of data.details) addLog(`  ↳ ${d}`, 'info');
         }
-        // Navigate if backend says so
         if (data.navigate) {
           router.push(data.navigate);
         }
@@ -231,10 +261,9 @@ export default function ObserverHub() {
   const verText = status.version === 2 ? '● OBSERVER V2 ACTIVE' : '○ NO OBSERVER RUNNING';
   const verColor = status.version === 2 ? 'var(--color-blue)' : '#555';
 
-  const logColors: Record<string, string> = {
-    info: '#5a7a6a', success: 'var(--color-green)', error: 'var(--color-red)',
-    command: 'var(--color-amber)', kill: 'var(--color-red)', heard: 'var(--color-blue)',
-  };
+  const hasCameraFeed = !!cameraUrl;
+  const hasMicData = status.diagnostics?.health?.pi_audio_connected || transcripts.length > 0;
+  const latestTranscript = transcripts.length > 0 ? transcripts[transcripts.length - 1].text : '';
 
   return (
     <div className={styles.container}>
@@ -279,10 +308,22 @@ export default function ObserverHub() {
             <div className={styles.panelHeader}>╔══ VISION ══╗</div>
             <div className={styles.panelValue} style={{ color: status.diagnostics?.health?.video_stream_active ? 'var(--color-green)' : 'var(--color-red)' }}>
               CAMERA {status.diagnostics?.health?.video_stream_active ? 'ACTIVE' : 'OFFLINE'}
-              {status.diagnostics?.health?.video_fps ? <span style={{fontSize: '0.8em', color: '#888'}}>{status.diagnostics.health.video_fps} FPS</span> : null}
+              {status.diagnostics?.health?.video_fps ? <span style={{fontSize: '0.8em', color: '#888'}}> {status.diagnostics.health.video_fps} FPS</span> : null}
             </div>
-            <div className={styles.panelDetail} style={{ position: 'relative' }}>
-              <video autoPlay muted playsInline ref={videoRef} style={{ position: 'absolute', top: 0, left: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.3, zIndex: 0 }} />
+            <div className={styles.panelDetail} style={{ position: 'relative', overflow: 'hidden' }}>
+              {/* Pi camera feed via polled JPEG snapshots */}
+              {hasCameraFeed ? (
+                <img
+                  src={cameraUrl}
+                  alt="Pi Camera"
+                  style={{
+                    position: 'absolute', top: 0, left: 0,
+                    width: '100%', height: '100%',
+                    objectFit: 'cover', opacity: 0.4,
+                    zIndex: 0, imageRendering: 'auto',
+                  }}
+                />
+              ) : null}
               <div style={{ position: 'relative', zIndex: 1, textShadow: '0 0 4px #000' }}>
                 {status.diagnostics?.entities && status.diagnostics.entities.length > 0 ? (
                   status.diagnostics.entities.slice(0, 4).map((ent, i) => (
@@ -291,29 +332,35 @@ export default function ObserverHub() {
                     </div>
                   ))
                 ) : (
-                  <div style={{ color: '#aaa', fontWeight: 'bold' }}>SCANNING...</div>
+                  <div style={{ color: hasCameraFeed ? '#aaa' : '#555', fontWeight: 'bold' }}>
+                    {hasCameraFeed ? 'SCANNING...' : 'NO FEED'}
+                  </div>
                 )}
               </div>
             </div>
           </div>
 
           {/* Audio Panel */}
-          <div className={`${styles.panel} ${status.diagnostics?.health?.pi_audio_connected || isListening ? styles.panelActive : styles.panelInactive}`}>
+          <div className={`${styles.panel} ${hasMicData ? styles.panelActive : styles.panelInactive}`}>
             <div className={styles.panelHeader}>╔══ AUDIO IN ══╗</div>
-            <div className={styles.panelValue} style={{ color: status.diagnostics?.health?.pi_audio_connected || isListening ? 'var(--color-green)' : 'var(--color-red)' }}>
-              MIC {status.diagnostics?.health?.pi_audio_connected || isListening ? 'LISTENING' : 'OFFLINE'}
+            <div className={styles.panelValue} style={{ color: hasMicData ? 'var(--color-green)' : 'var(--color-red)' }}>
+              MIC {hasMicData ? 'LISTENING' : 'OFFLINE'}
             </div>
             <div className={styles.panelDetail}>
-              <div style={{ color: '#ccc', fontStyle: 'italic', marginBottom: '4px', textShadow: '0 0 4px #000' }}>
-                {transcript ? `> ${transcript}` : 'Awaiting speech...'}
-              </div>
-              {status.diagnostics?.conversation && status.diagnostics.conversation.filter(c => c.role === 'user').length > 0 && (
-                status.diagnostics.conversation.filter(c => c.role === 'user').slice(-2).reverse().map((conv, i) => (
+              {latestTranscript ? (
+                <div style={{ color: 'var(--color-cyan)', fontStyle: 'italic', marginBottom: '2px', textShadow: '0 0 4px #000' }}>
+                  &gt; &quot;{latestTranscript}&quot;
+                </div>
+              ) : null}
+              {status.diagnostics?.conversation && status.diagnostics.conversation.filter(c => c.role === 'user').length > 0 ? (
+                status.diagnostics.conversation.filter(c => c.role === 'user').slice(-3).reverse().map((conv, i) => (
                   <div key={i} className={styles.logLine} style={{ color: 'var(--color-amber)' }}>
-                    &quot;{conv.text}&quot;
+                    &gt; &quot;{conv.text}&quot;
                   </div>
                 ))
-              )}
+              ) : !latestTranscript ? (
+                <div style={{ color: '#555' }}>Awaiting speech...</div>
+              ) : null}
             </div>
           </div>
 
@@ -334,17 +381,10 @@ export default function ObserverHub() {
                 <button
                   className={styles.miniBtn}
                   style={{ width: '80%', padding: '4px' }}
-                  onClick={() => {
-                     if (speakerEnabled) {
-                       if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
-                         window.speechSynthesis.speak(new SpeechSynthesisUtterance('hello'));
-                       }
-                       fetch('/api/test/tts?text=hello');
-                     }
-                  }}
-                  disabled={!speakerEnabled}
+                  onClick={playHelloSound}
+                  disabled={!speakerEnabled || soundPlaying}
                 >
-                  ▶ TEST SOUND
+                  {soundPlaying ? '♪ PLAYING...' : '▶ HELLO'}
                 </button>
               </div>
             </div>
@@ -430,4 +470,3 @@ export default function ObserverHub() {
       </div>
   );
 }
-

@@ -64,9 +64,10 @@ export default function SessionScribe() {
 
       recognition.onerror = (event: any) => {
         console.error('Speech recognition error', event.error);
-        if (event.error === 'not-allowed') {
+        if (event.error === 'not-allowed' || event.error === 'audio-capture') {
           setIsRecording(false);
           isRecordingRef.current = false;
+          alert(`Speech Engine Error: ${event.error}`);
         }
       };
 
@@ -108,19 +109,31 @@ export default function SessionScribe() {
     }
   };
 
-  const toggleRecording = () => {
-    if (!recognitionRef.current) return alert('Speech recognition not supported.');
+  const toggleRecording = async () => {
+    if (!recognitionRef.current) return alert('Speech recognition not supported on this browser.');
 
     if (isRecording) {
       setIsRecording(false);
       isRecordingRef.current = false;
       recognitionRef.current.stop();
     } else {
+      // iOS Safari requires explicit audio track permission before WebKitSpeech can bind
+      try {
+        await navigator.mediaDevices.getUserMedia({ audio: true });
+      } catch (err) {
+        return alert("Microphone access denied or entirely unavailable: " + (err as Error).message);
+      }
+
       setIsRecording(true);
       isRecordingRef.current = true;
       try {
         recognitionRef.current.start();
-      } catch (e) {}
+      } catch (e: any) {
+         console.error(e);
+         alert("WebKit Speech Engine failure: " + e.message);
+         setIsRecording(false);
+         isRecordingRef.current = false;
+      }
     }
   };
 

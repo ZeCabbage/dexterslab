@@ -127,6 +127,32 @@ app.get('/health', (_req, res) => {
   });
 });
 
+// ── Video Snapshot (latest frame from Pi camera) ──
+let latestVideoFrame = null;
+hardwareBroker.subscribeVideo((jpegBuffer) => {
+  latestVideoFrame = jpegBuffer;
+});
+
+app.get('/api/video/snapshot', (req, res) => {
+  if (!latestVideoFrame) {
+    return res.status(204).end(); // No content — no frames received yet
+  }
+  res.set('Content-Type', 'image/jpeg');
+  res.set('Cache-Control', 'no-cache, no-store');
+  res.send(latestVideoFrame);
+});
+
+// ── Latest STT Transcript ──
+const sttTranscripts = [];
+hardwareBroker.subscribeSTT((text) => {
+  sttTranscripts.push({ text, timestamp: Date.now() });
+  if (sttTranscripts.length > 20) sttTranscripts.shift();
+});
+
+app.get('/api/audio/latest-transcript', (_req, res) => {
+  res.json(sttTranscripts.slice(-5));
+});
+
 // ── Test TTS ──
 app.get('/api/test/tts', (req, res) => {
   const { text } = req.query;
