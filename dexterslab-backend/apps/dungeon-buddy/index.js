@@ -218,7 +218,7 @@ ${text}
             }
         });
 
-        const rawJsonText = response.text().trim();
+        const rawJsonText = (response.text || "").trim();
         let payload = {};
         
         try {
@@ -243,7 +243,7 @@ ${text}
 
       } catch (err) {
         console.error('[Dungeon Buddy Scribe] Summarization Error:', err);
-        res.status(500).json({ error: 'Failed to summarize session.' });
+        res.status(500).json({ error: `Oracle Failure: ${err.message}` });
       }
     });
 
