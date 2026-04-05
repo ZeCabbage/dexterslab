@@ -155,7 +155,10 @@ export default function SessionScribe() {
         body: JSON.stringify({ text: fullText })
       });
 
-      if (!res.ok) throw new Error('Failed to summarize.');
+      if (!res.ok) {
+        const errorData = await res.json().catch(() => ({}));
+        throw new Error(errorData.error || 'System failed to contact the Oracle backend.');
+      }
       
       const payload = await res.json();
       setMinutes(payload);
@@ -167,9 +170,9 @@ export default function SessionScribe() {
       // Update archives with new session silently
       await fetchSessions();
       
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('The Oracle refused to answer. See console.');
+      alert('The Oracle refused to answer: ' + err.message);
     } finally {
       setLoading(false);
     }
