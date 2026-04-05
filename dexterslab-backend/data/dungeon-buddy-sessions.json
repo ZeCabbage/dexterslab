@@ -1,1 +1,40 @@
-[]
+[
+  {
+    "id": "session_1775363695092",
+    "timestamp": 1775363695092,
+    "title": "Tavern Stop, Sword Quest Begins",
+    "summary": "The adventurers entered a local tavern, where they had a brief interaction with the bartender. Following this encounter, they quickly departed the establishment, setting off on a new quest to locate and acquire a specific sword.",
+    "locations": [
+      "Tavern"
+    ],
+    "npcs": [
+      "Bartender"
+    ],
+    "quests": [
+      "Started quest: Find the Sword"
+    ],
+    "loot": [],
+    "rawTranscriptLength": 130
+  },
+  {
+    "id": "session_1775363752750",
+    "timestamp": 1775363752750,
+    "title": "Quest for the Mad King God's Throne",
+    "summary": "The adventuring party set out with a clear objective: to confront the king and locate the mythical throne of the Mad King God. Their journey successfully led them to the throne, where they anticipated a significant reward upon its discovery.",
+    "locations": [
+      "throne of the Mad King God"
+    ],
+    "npcs": [
+      "the king",
+      "Mad King God"
+    ],
+    "quests": [
+      "Fight the king",
+      "Find where the throne of the Mad King God was"
+    ],
+    "loot": [
+      "many many jewels"
+    ],
+    "rawTranscriptLength": 178
+  }
+]

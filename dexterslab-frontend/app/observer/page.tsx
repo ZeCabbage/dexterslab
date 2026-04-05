@@ -13,7 +13,7 @@
  *  - Shutdown with confirmation
  */
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import styles from './page.module.css';
@@ -79,8 +79,9 @@ export default function ObserverHub() {
 
   // ── Pi Data State ──
   const [cameraUrl, setCameraUrl] = useState<string | null>(null);
-  const [transcripts, setTranscripts] = useState<TranscriptEntry[]>([]);
-  const [soundPlaying, setSoundPlaying] = useState(false);
+  const [transcriptLog, setTranscriptLog] = useState<TranscriptEntry[]>([]);
+  const [soundStatus, setSoundStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
+  const seenTimestamps = useRef(new Set<number>());
 
   // ── Helpers ──
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -158,14 +159,21 @@ export default function ObserverHub() {
     return () => { active = false; };
   }, []);
 
-  // ── Poll STT transcripts ──
+  // ── Poll STT transcripts (accumulate, don't replace) ──
   useEffect(() => {
     const poll = async () => {
       try {
         const res = await fetch('/api/hub/transcripts');
         if (res.ok) {
-          const data = await res.json();
-          setTranscripts(data);
+          const data: TranscriptEntry[] = await res.json();
+          setTranscriptLog(prev => {
+            const newEntries = data.filter(d => !seenTimestamps.current.has(d.timestamp));
+            if (newEntries.length === 0) return prev;
+            for (const e of newEntries) seenTimestamps.current.add(e.timestamp);
+            // Keep last 30 entries max
+            const merged = [...prev, ...newEntries];
+            return merged.slice(-30);
+          });
         }
       } catch { /* offline */ }
     };
@@ -174,12 +182,12 @@ export default function ObserverHub() {
     return () => clearInterval(id);
   }, []);
 
-  // ── Play hello sound (Web Audio API beep + backend TTS) ──
-  const playHelloSound = useCallback(() => {
-    if (soundPlaying) return;
-    setSoundPlaying(true);
+  // ── Play hello sound (send to Pi TTS + local beep) ──
+  const playHelloSound = useCallback(async () => {
+    if (soundStatus === 'sending') return;
+    setSoundStatus('sending');
 
-    // 1. Play locally via Web Audio API (a synthesized "hello" tone)
+    // 1. Local beep for instant feedback (louder, more distinct)
     try {
       const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
       const osc = ctx.createOscillator();
@@ -187,26 +195,35 @@ export default function ObserverHub() {
       osc.connect(gain);
       gain.connect(ctx.destination);
 
-      // Two-tone "hello" beep
-      osc.frequency.setValueAtTime(440, ctx.currentTime);         // "he-"
-      osc.frequency.setValueAtTime(349, ctx.currentTime + 0.15);  // "-llo"
-      gain.gain.setValueAtTime(0.3, ctx.currentTime);
-      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.4);
+      // Bright two-tone chime
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(523, ctx.currentTime);         // C5
+      osc.frequency.setValueAtTime(659, ctx.currentTime + 0.2);   // E5
+      osc.frequency.setValueAtTime(784, ctx.currentTime + 0.4);   // G5
+      gain.gain.setValueAtTime(0.8, ctx.currentTime);
+      gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.6);
 
       osc.start(ctx.currentTime);
-      osc.stop(ctx.currentTime + 0.4);
+      osc.stop(ctx.currentTime + 0.6);
+      osc.onended = () => ctx.close();
+    } catch { /* no audio context */ }
 
-      osc.onended = () => {
-        ctx.close();
-        setSoundPlaying(false);
-      };
+    // 2. Send "hello" to Pi espeak-ng via backend TTS
+    try {
+      const res = await fetch('/api/test/tts?text=hello');
+      const data = await res.json();
+      if (data.success) {
+        setSoundStatus('sent');
+      } else {
+        setSoundStatus('failed');
+      }
     } catch {
-      setSoundPlaying(false);
+      setSoundStatus('failed');
     }
 
-    // 2. Also send to Pi TTS (will play espeak-ng "hello" on the speaker)
-    fetch('/api/test/tts?text=hello').catch(() => {});
-  }, [soundPlaying]);
+    // Reset after 2 seconds
+    setTimeout(() => setSoundStatus('idle'), 2000);
+  }, [soundStatus]);
 
   // ── Actions ──
   const doAction = async (action: string, label: string) => {
@@ -262,8 +279,8 @@ export default function ObserverHub() {
   const verColor = status.version === 2 ? 'var(--color-blue)' : '#555';
 
   const hasCameraFeed = !!cameraUrl;
-  const hasMicData = status.diagnostics?.health?.pi_audio_connected || transcripts.length > 0;
-  const latestTranscript = transcripts.length > 0 ? transcripts[transcripts.length - 1].text : '';
+  const hasMicData = status.diagnostics?.health?.pi_audio_connected || transcriptLog.length > 0;
+  const hasTranscripts = transcriptLog.length > 0;
 
   return (
     <div className={styles.container}>
@@ -345,22 +362,21 @@ export default function ObserverHub() {
             <div className={styles.panelHeader}>╔══ AUDIO IN ══╗</div>
             <div className={styles.panelValue} style={{ color: hasMicData ? 'var(--color-green)' : 'var(--color-red)' }}>
               MIC {hasMicData ? 'LISTENING' : 'OFFLINE'}
+              {hasTranscripts ? <span style={{ fontSize: '0.75em', color: '#888' }}> ({transcriptLog.length})</span> : null}
             </div>
-            <div className={styles.panelDetail}>
-              {latestTranscript ? (
-                <div style={{ color: 'var(--color-cyan)', fontStyle: 'italic', marginBottom: '2px', textShadow: '0 0 4px #000' }}>
-                  &gt; &quot;{latestTranscript}&quot;
-                </div>
-              ) : null}
-              {status.diagnostics?.conversation && status.diagnostics.conversation.filter(c => c.role === 'user').length > 0 ? (
-                status.diagnostics.conversation.filter(c => c.role === 'user').slice(-3).reverse().map((conv, i) => (
-                  <div key={i} className={styles.logLine} style={{ color: 'var(--color-amber)' }}>
-                    &gt; &quot;{conv.text}&quot;
+            <div className={styles.panelDetail} style={{ overflowY: 'auto' }}>
+              {hasTranscripts ? (
+                transcriptLog.map((t, i) => (
+                  <div key={t.timestamp} className={styles.logLine} style={{
+                    color: i === transcriptLog.length - 1 ? 'var(--color-cyan)' : 'var(--color-amber)',
+                    fontWeight: i === transcriptLog.length - 1 ? 'bold' : 'normal',
+                  }}>
+                    &gt; &quot;{t.text}&quot;
                   </div>
                 ))
-              ) : !latestTranscript ? (
+              ) : (
                 <div style={{ color: '#555' }}>Awaiting speech...</div>
-              ) : null}
+              )}
             </div>
           </div>
 
@@ -380,12 +396,24 @@ export default function ObserverHub() {
               <div style={{ marginTop: 'auto', textAlign: 'center' }}>
                 <button
                   className={styles.miniBtn}
-                  style={{ width: '80%', padding: '4px' }}
+                  style={{
+                    width: '80%', padding: '6px',
+                    background: soundStatus === 'sent' ? '#0a2a0a' : soundStatus === 'failed' ? '#2a0a0a' : undefined,
+                    borderColor: soundStatus === 'sent' ? 'var(--color-green)' : soundStatus === 'failed' ? 'var(--color-red)' : undefined,
+                    color: soundStatus === 'sent' ? 'var(--color-green)' : soundStatus === 'failed' ? 'var(--color-red)' : undefined,
+                    transition: 'all 0.3s ease',
+                  }}
                   onClick={playHelloSound}
-                  disabled={!speakerEnabled || soundPlaying}
+                  disabled={!speakerEnabled || soundStatus === 'sending'}
                 >
-                  {soundPlaying ? '♪ PLAYING...' : '▶ HELLO'}
+                  {soundStatus === 'sending' ? '♪ SENDING...' :
+                   soundStatus === 'sent' ? '✓ SENT TO PI' :
+                   soundStatus === 'failed' ? '✗ FAILED' :
+                   '▶ HELLO'}
                 </button>
+                <div style={{ fontSize: 'clamp(6px, 0.9vmin, 8px)', color: '#555', marginTop: '3px' }}>
+                  Plays on Pi speaker via espeak-ng
+                </div>
               </div>
             </div>
           </div>

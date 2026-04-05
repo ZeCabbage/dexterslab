@@ -280,3 +280,44 @@
   z-index: 100;
   font-family: 'Courier New', monospace;
 }
+
+/* ── RESPONSIVE OVERRIDES ── */
+@media (max-width: 768px) {
+  .header {
+    flex-wrap: wrap;
+    gap: 12px;
+    padding: 12px;
+  }
+  .title {
+    font-size: 20px;
+    width: 100%;
+    text-align: center;
+  }
+  .tabBar {
+    width: 100%;
+    margin: 0;
+    justify-content: center;
+  }
+  .mainLayout {
+    flex-direction: column;
+    padding: 16px;
+  }
+  .archiveLayout {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .listGrid {
+    grid-template-columns: 1fr;
+  }
+  .controlsArea {
+    flex-wrap: wrap;
+    justify-content: center;
+  }
+  .recordBtn, .summarizeBtn {
+    width: 100%;
+  }
+  .sessionCardTitle {
+    flex-direction: column;
+    gap: 4px;
+  }
+}

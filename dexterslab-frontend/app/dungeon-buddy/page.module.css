@@ -197,3 +197,31 @@
   padding: 100px;
   text-shadow: 0 0 10px rgba(207,170,94, 0.5);
 }
+
+/* ── RESPONSIVE OVERRIDES ── */
+@media (max-width: 768px) {
+  .container {
+    padding: 20px;
+  }
+  .header {
+    flex-direction: column;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 20px;
+  }
+  .title {
+    font-size: 2rem;
+    text-align: center;
+    line-height: 1.2;
+  }
+  .rosterArea {
+    width: 100%;
+    margin-left: 0;
+  }
+  .cardActions {
+    opacity: 1; /* Always visible on touch devices */
+  }
+  .btnEnter, .btnDelete {
+    padding: 14px 16px; /* Fat finger safe */
+  }
+}
