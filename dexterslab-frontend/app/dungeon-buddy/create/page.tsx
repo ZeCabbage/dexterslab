@@ -194,13 +194,13 @@ export default function CharacterCreationWizard() {
       if (data.flaws) setOracleFlaws(data.flaws);
       if (data.customSpells && Array.isArray(data.customSpells)) {
         setOracleCustomSpells(data.customSpells.map((cs: any) => ({
-           id: cs.id || `homebrew_${Date.now()}_${Math.floor(Math.random()*1000)}`,
+           id: `custom_spell_${Date.now()}_${Math.floor(Math.random()*10000)}`,
            name: cs.name || "Unknown Spell",
            level: parseInt(cs.level) || 0,
            school: cs.school || "Evocation",
            castingTime: cs.castingTime || "1 Action",
            range: cs.range || "Touch",
-           components: cs.components || "V, S",
+           components: cs.components || "V, S, M",
            duration: cs.duration || "Instantaneous",
            description: cs.description || "",
            damage: cs.damage || "",
@@ -384,7 +384,7 @@ export default function CharacterCreationWizard() {
       spellcastingAbility: selectedClass.spellcastingAbility || null,
       resources: initialResources,
       cantrips: [],
-      knownSpells: [],
+      knownSpells: oracleCustomSpells.map(s => s.id),
       preparedSpells: [],
       customSpells: oracleCustomSpells.length > 0 ? oracleCustomSpells : [],
       traits: [...(selectedRace.traits || []), ...(selectedSubrace?.traits || [])],
@@ -670,7 +670,7 @@ export default function CharacterCreationWizard() {
             />
             <button
               className={styles.generateBtn}
-              onClick={generatePortrait}
+              onClick={() => generatePortrait()}
               disabled={portraitLoading || !portraitDescription.trim()}
             >
               {portraitLoading ? 'Conjuring...' : '✦ Generate Portrait'}
