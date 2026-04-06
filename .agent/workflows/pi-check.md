@@ -6,40 +6,47 @@ description: SSH into Raspberry Pi and check if services are running
 
 SSH into the Raspberry Pi and check system health.
 
-> **Prerequisites**: SSH must be configured. Use `ssh rpi` (local network) or `ssh rpi-remote` (via Cloudflare Tunnel).
+> **Prerequisites**: SSH must be configured. Use `ssh pi` (via Cloudflare Tunnel) or `ssh -i ~/.ssh/id_ed25519 thecabbage@raspberrypi.local` (LAN/mDNS).
 
-1. Check if the Pi is reachable:
+1. Check if the Pi is reachable (LAN first, then Cloudflare):
 ```powershell
-ssh rpi "echo 'Pi is reachable'" 2>&1
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" thecabbage@raspberrypi.local "echo 'Pi is reachable (LAN)'" 2>&1
 ```
-If this fails, try the remote route:
+If this fails, try the Cloudflare route:
 ```powershell
-ssh rpi-remote "echo 'Pi is reachable (via Cloudflare)'" 2>&1
+ssh pi "echo 'Pi is reachable (via Cloudflare)'" 2>&1
 ```
 
 2. Check disk space:
 ```powershell
-ssh rpi "df -h / | tail -1"
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" thecabbage@raspberrypi.local "df -h / | tail -1"
 ```
 
-3. Check systemd services (Observer kiosk):
+3. Check edge-daemon systemd service:
 ```powershell
-ssh rpi "systemctl --user status observer-kiosk.service 2>/dev/null || echo 'observer-kiosk service not found'"
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" thecabbage@raspberrypi.local "sudo systemctl status edge-daemon --no-pager | head -15"
 ```
 
-4. Check if Chromium kiosk is running:
+4. Check edge-daemon logs for errors:
 ```powershell
-ssh rpi "pgrep -a chromium 2>/dev/null || echo 'Chromium is not running'"
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" thecabbage@raspberrypi.local "sudo journalctl -u edge-daemon --no-pager -n 20"
 ```
 
-5. Check Node.js processes:
+5. Check observer kiosk (Chromium):
 ```powershell
-ssh rpi "pgrep -a node 2>/dev/null || echo 'No Node processes running'"
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" thecabbage@raspberrypi.local "pgrep -a chromium 2>/dev/null || echo 'Chromium is not running'"
 ```
 
 6. Check system uptime and memory:
 ```powershell
-ssh rpi "uptime && free -h | head -2"
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" thecabbage@raspberrypi.local "uptime && free -h | head -2"
 ```
 
-7. Report findings to user with a summary table of what's running vs what's not.
+7. Check WebSocket connections from edge-daemon:
+```powershell
+ssh -i "$env:USERPROFILE\.ssh\id_ed25519" thecabbage@raspberrypi.local "sudo ss -tnpa | grep python | grep ESTAB"
+```
+> Should show 3 ESTABLISHED connections (audio, video, tts).
+
+8. Report findings to user with a summary table of what's running vs what's not.
+
