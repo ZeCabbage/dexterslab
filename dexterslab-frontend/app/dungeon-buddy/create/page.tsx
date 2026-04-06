@@ -56,6 +56,7 @@ export default function CharacterCreationWizard() {
   const [oracleBonds, setOracleBonds] = useState('');
   const [oracleFlaws, setOracleFlaws] = useState('');
   const [oracleCustomSpells, setOracleCustomSpells] = useState<any[]>([]);
+  const [oracleCustomEquipment, setOracleCustomEquipment] = useState<any[]>([]);
 
   // Portrait state
   const [portraitDescription, setPortraitDescription] = useState('');
@@ -208,6 +209,23 @@ export default function CharacterCreationWizard() {
            classes: [data.classId] // Bind it to their class
         })));
       }
+      if (data.customEquipment && Array.isArray(data.customEquipment)) {
+        setOracleCustomEquipment(data.customEquipment.map((ce: any) => ({
+           id: `inst_${Date.now()}_${Math.floor(Math.random()*10000)}`,
+           name: ce.name || "Unknown Item",
+           qty: ce.qty || 1,
+           weight: ce.weight || 0,
+           equipped: !!ce.slot,
+           attuned: false,
+           slot: ce.slot || null,
+           type: ce.type || 'gear',
+           description: ce.description || '',
+           armorClass: ce.armorClass,
+           armorCategory: ce.armorCategory,
+           damage: ce.damage,
+           actionCost: ce.actionCost || (ce.type === 'weapon' ? 'action' : null),
+        })));
+      }
 
       if (data.portraitPrompt) {
         setPortraitDescription(data.portraitPrompt);
@@ -352,6 +370,17 @@ export default function CharacterCreationWizard() {
       return true;
     });
 
+    // Merge Oracle Custom Equipment
+    if (oracleCustomEquipment.length > 0) {
+      oracleCustomEquipment.forEach(item => {
+        if (item.slot && !equipped[item.slot]) {
+          equipped[item.slot] = item;
+        } else {
+          startingInventory.push(item);
+        }
+      });
+    }
+
     const initialResources: Record<string, any> = {};
     if (selectedClass.spellcaster) {
       if (selectedClass.id === 'warlock') {
@@ -385,7 +414,7 @@ export default function CharacterCreationWizard() {
       resources: initialResources,
       cantrips: [],
       knownSpells: oracleCustomSpells.map(s => s.id),
-      preparedSpells: [],
+      preparedSpells: oracleCustomSpells.map(s => s.id),
       customSpells: oracleCustomSpells.length > 0 ? oracleCustomSpells : [],
       traits: [...(selectedRace.traits || []), ...(selectedSubrace?.traits || [])],
       languages: selectedRace.languages,

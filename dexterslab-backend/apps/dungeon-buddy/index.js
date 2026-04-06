@@ -292,6 +292,20 @@ You must return a valid JSON object strictly matching this schema:
       "damage": "e.g. 1d8 / 2d6",
       "actionCost": "one of: 'action', 'bonus_action', 'reaction', 'special', 'none'"
     }
+  ],
+  "customEquipment": [
+    {
+      "name": "E.g. Scrap-Metal Shortsword or Rat-bitten Leather Armor",
+      "qty": 1,
+      "weight": "Number (e.g. 2 for 2 lbs)",
+      "type": "one of: 'weapon', 'armor', 'gear', 'tool'",
+      "slot": "null OR one of: 'mainHand', 'offHand', 'chest', 'head', 'cloak', 'gloves', 'boots', 'ring1', 'amulet'",
+      "description": "Flavorful description of the item.",
+      "damage": "E.g. 1d6 (for weapons only)",
+      "armorClass": "Number (for armor only, e.g. 12)",
+      "armorCategory": "null OR one of: 'light', 'medium', 'heavy', 'shield'",
+      "actionCost": "E.g. 'action' for most weapons"
+    }
   ]
 }
 
@@ -301,6 +315,7 @@ CRITICAL RULES:
 3. The "baseScores" MUST perfectly adhere to D&D 5e Point Buy rules: exactly 27 points must be spent. (Costs: 8=0, 9=1, 10=2, 11=3, 12=4, 13=5, 14=7, 15=9). Do not overspend or underspend. Do NOT add racial bonuses to these base scores.
 4. The "skills" array must contain EXACTLY the number of skill choices allowed by the chosen class (usually 2, sometimes 3 or 4 like Rogue/Bard). You can only choose skills from the chosen Class's allowed skill list. DO NOT include skills already provided by the chosen Background.
 5. "customSpells": If the chosen Class is a spellcaster, invent 2 or 3 completely custom, wildly creative homebrew spells (Level 0 Cantrips or Level 1 Spells ONLY) that strictly fit the user's narrative theme. Make sure they are balanced for D&D 5E rules. If the chosen class is a martial (Fighter, Barbarian, Rogue, Monk) without spellcasting provided, leave the "customSpells" array EMPTY.
+6. "customEquipment": Invent 3 to 5 deeply thematic starting items for this character. Include at least one weapon (type: "weapon", slot: "mainHand") and one set of armor or clothing (type: "armor", slot: "chest") tailored to the theme. Give weapons balanced 5E damage (e.g. 1d8) and armor balanced AC (e.g. 11 to 14).
 `;
 
         if (mode === 'chaos') {

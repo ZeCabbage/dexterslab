@@ -7,7 +7,8 @@
 #  Connects to the PC frontend via Cloudflare Tunnel.
 # ═══════════════════════════════════════════
 
-# ── Target URL (always Cloudflare) ──
+# ── Config ──
+LOG_TAG="[OBSERVER-KIOSK]"
 OBSERVER_URL="https://dexterslab.cclottaaworld.com/observer"
 MAX_WAIT=90  # seconds to wait for the server
 

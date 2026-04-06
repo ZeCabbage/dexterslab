@@ -214,13 +214,21 @@ export default function CombatTab() {
         {/* Dynamic Weapons from Equipped Slots */}
         {(actionFilter === 'all' || actionFilter === 'action') && char.equipped?.mainHand && (
           <div className={styles.attackRow} style={{ background: 'rgba(20,20,20,0.8)', padding: '12px', border: '1px solid #cfaa5e' }}>
-            <span style={{ flex: 1, color: '#cfaa5e', fontWeight: 'bold' }}>{char.equipped.mainHand.name}</span>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <span style={{ color: '#cfaa5e', fontWeight: 'bold', fontSize: '1.1rem' }}>{char.equipped.mainHand.name}</span>
+              {char.equipped.mainHand.description && <span style={{ color: '#888', fontSize: '0.85rem', fontStyle: 'italic', marginTop: '4px' }}>{char.equipped.mainHand.description}</span>}
+            </div>
+            {char.equipped.mainHand.damage && <span style={{ color: '#fff', marginRight: '16px', background: '#332211', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>{char.equipped.mainHand.damage}</span>}
             <span style={{ color: '#aaa', fontSize: '14px' }}>Main Hand (Action 🟢)</span>
           </div>
         )}
         {(actionFilter === 'all' || actionFilter === 'bonus_action') && char.equipped?.offHand && char.equipped.offHand.type === 'weapon' && (
           <div className={styles.attackRow} style={{ background: 'rgba(20,20,20,0.8)', padding: '12px', border: '1px solid #aa4444' }}>
-            <span style={{ flex: 1, color: '#ff8888', fontWeight: 'bold' }}>{char.equipped.offHand.name}</span>
+            <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+              <span style={{ color: '#ff8888', fontWeight: 'bold', fontSize: '1.1rem' }}>{char.equipped.offHand.name}</span>
+              {char.equipped.offHand.description && <span style={{ color: '#888', fontSize: '0.85rem', fontStyle: 'italic', marginTop: '4px' }}>{char.equipped.offHand.description}</span>}
+            </div>
+            {char.equipped.offHand.damage && <span style={{ color: '#fff', marginRight: '16px', background: '#442222', padding: '4px 8px', borderRadius: '4px', fontWeight: 'bold' }}>{char.equipped.offHand.damage}</span>}
             <span style={{ color: '#aaa', fontSize: '14px' }}>Off Hand (Bonus Action 🔺)</span>
           </div>
         )}
