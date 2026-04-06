@@ -118,6 +118,60 @@ export default function CharacterCreationWizard() {
   };
 
   // ── Handlers ──
+  const [oracleQuery, setOracleQuery] = useState('');
+  const [oracleLoading, setOracleLoading] = useState(false);
+
+  const invokeOracle = async (mode: 'text' | 'chaos') => {
+    if (mode === 'text' && !oracleQuery.trim()) return;
+    setOracleLoading(true);
+    try {
+      // Package only the IDs and valid limits, not the entire massive object schema, to save tokens.
+      const constraints = {
+        races: RACES.map(r => ({ id: r.id, subraces: r.subraces?.map(s => s.id) || null })),
+        classes: CLASSES.map(c => ({ id: c.id, allowedSkills: c.skillChoices, numChoices: c.numSkillChoices })),
+        backgrounds: BACKGROUNDS.map(b => b.id)
+      };
+
+      const res = await fetch('/api/dungeon-buddy/oracle/forge-character', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: oracleQuery, mode, constraints })
+      });
+
+      if (!res.ok) throw new Error("Forge connection failed.");
+      const data = await res.json();
+      if (data.error) throw new Error(data.error);
+
+      // ── FORCE MAP STATE ──
+      const fRace = RACES.find(r => r.id === data.raceId);
+      if (fRace) {
+        setSelectedRace(fRace);
+        if (data.subraceId) setSelectedSubrace(fRace.subraces?.find(s => s.id === data.subraceId) || null);
+      }
+      const fClass = CLASSES.find(c => c.id === data.classId);
+      if (fClass) setSelectedClass(fClass);
+      
+      const fBg = BACKGROUNDS.find(b => b.id === data.backgroundId);
+      if (fBg) setSelectedBackground(fBg);
+
+      setAbilityMethod('point_buy');
+      if (data.baseScores) setBaseScores(data.baseScores);
+      if (data.skills) setSelectedSkills(data.skills);
+
+      if (data.portraitPrompt) {
+        setPortraitDescription(data.portraitPrompt);
+        await generatePortrait(data.portraitPrompt, fRace, fClass); // Auto-Generate
+      }
+
+      setStep(7); // Jump straight to Finalize screen!
+    } catch (e: any) {
+      console.error(e);
+      alert('The Oracle failed to conjure a valid character: ' + e.message);
+    } finally {
+      setOracleLoading(false);
+    }
+  };
+
   const randomizePointBuy = () => {
     const currentBase: Record<AbilityName, number> = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
     let points = POINT_BUY_TOTAL;
@@ -181,17 +235,21 @@ export default function CharacterCreationWizard() {
     }
   };
 
-  const generatePortrait = async () => {
-    if (!portraitDescription.trim()) return;
+  const generatePortrait = async (forcedPrompt?: string, forcedRace?: any, forcedClass?: any) => {
+    const descriptionToUse = forcedPrompt || portraitDescription;
+    if (!descriptionToUse.trim()) return;
     setPortraitLoading(true);
     try {
+      const raceLabel = forcedRace ? forcedRace.name : (selectedRace?.name + (selectedSubrace ? ` (${selectedSubrace.name})` : ''));
+      const classLabel = forcedClass ? forcedClass.name : selectedClass?.name;
+      
       const res = await fetch(`/api/dungeon-buddy/generate-portrait`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          description: portraitDescription,
-          race: selectedRace?.name + (selectedSubrace ? ` (${selectedSubrace.name})` : ''),
-          charClass: selectedClass?.name,
+          description: descriptionToUse,
+          race: raceLabel,
+          charClass: classLabel,
         }),
       });
 
@@ -316,6 +374,29 @@ export default function CharacterCreationWizard() {
 
   const renderRaceStep = () => (
     <>
+      <div className={styles.oracleSection} style={{ marginBottom: '32px', borderRadius: '8px', border: '1px solid var(--border-gold)' }}>
+        <div className={styles.oracleHeader}>
+          <h3 className={styles.oracleTitle}>✨ The Character Oracle</h3>
+        </div>
+        <p className={styles.oracleDesc}>Describe the character you want to play, and the Oracle will forge their stats, class, and portrait automatically. Or surrender to chaos for a completely random hero.</p>
+        
+        <div className={styles.oracleInputWrapper} style={{ flexDirection: 'column' }}>
+          <textarea 
+            className={styles.oracleInput} 
+            placeholder="e.g. 'A sneaky halfling who uses daggers and loves stealing cheese.'" 
+            value={oracleQuery}
+            onChange={e => setOracleQuery(e.target.value)}
+            disabled={oracleLoading}
+          />
+          <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', alignItems: 'center' }}>
+             <button title="Randomize a fully chaotic character" className={styles.btnChaos} onClick={() => invokeOracle('chaos')} disabled={oracleLoading}>🎲 Pure Chaos</button>
+             <button className={styles.btnOracle} onClick={() => invokeOracle('text')} disabled={!oracleQuery.trim() || oracleLoading}>
+               {oracleLoading ? 'Conjuring...' : 'Forge from Description'}
+             </button>
+          </div>
+        </div>
+      </div>
+
       <h2 className={styles.sectionTitle}>Choose Your Race</h2>
       <p className={styles.sectionSubtitle}>Your race determines your physical traits, innate abilities, and cultural heritage in the world.</p>
       <div className={styles.optionsGrid}>

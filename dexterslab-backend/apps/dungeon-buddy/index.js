@@ -247,6 +247,76 @@ ${text}
       }
     });
 
+    router.post('/oracle/forge-character', express.json(), async (req, res) => {
+      const { description, mode, constraints } = req.body;
+      
+      const genai = this.platform.aiProvider?.getGenAI();
+      if (!genai) {
+        return res.status(500).json({ error: 'AI Provider not available' });
+      }
+
+      try {
+        let systemPrompt = `You are the Oracle of character creation for a D&D 5E game.
+You must return a valid JSON object strictly matching this schema:
+{
+  "raceId": "ID of the race",
+  "subraceId": "ID of the subrace (or null if the race has none)",
+  "classId": "ID of the class",
+  "backgroundId": "ID of the background",
+  "baseScores": {
+     "str": number (8-15),
+     "dex": number (8-15),
+     "con": number (8-15),
+     "int": number (8-15),
+     "wis": number (8-15),
+     "cha": number (8-15)
+  },
+  "skills": ["Array of skill IDs appropriate for this class to choose"],
+  "portraitPrompt": "A highly detailed, atmospheric image prompt describing this character's visual appearance based on your choices and the user's description."
+}
+
+CRITICAL RULES:
+1. You MUST pick "raceId", "classId", and "backgroundId" ONLY from the provided allowed lists below.
+2. If "raceId" has subraces in the allowed list, you MUST pick a valid "subraceId" from that specific race's subrace list. If it has no subraces, use null.
+3. The "baseScores" MUST perfectly adhere to D&D 5e Point Buy rules: exactly 27 points must be spent. (Costs: 8=0, 9=1, 10=2, 11=3, 12=4, 13=5, 14=7, 15=9). Do not overspend or underspend. Do NOT add racial bonuses to these base scores.
+4. The "skills" array must contain EXACTLY the number of skill choices allowed by the chosen class (usually 2, sometimes 3 or 4 like Rogue/Bard). You can only choose skills from the chosen Class's allowed skill list. DO NOT include skills already provided by the chosen Background.
+`;
+
+        if (mode === 'chaos') {
+          systemPrompt += `\nThe user requested PURE CHAOS. Ignore their description if any, and invent a fully randomized but thematically brilliant character concept.`;
+        } else {
+          systemPrompt += `\nThe user requested a character matching this description (if vague, extrapolate intuitively): "${description || 'A generic adventurer'}"`;
+        }
+
+        systemPrompt += `\n\nALLOWED CONSTRAINTS (YOU MUST NOT DEVIATE FROM THESE):\n`;
+        systemPrompt += JSON.stringify(constraints, null, 2);
+
+        const response = await genai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: systemPrompt,
+            config: {
+               responseMimeType: "application/json"
+            }
+        });
+
+        const rawJsonText = (response.text || "").trim();
+        let payload = {};
+        
+        try {
+           payload = JSON.parse(rawJsonText);
+        } catch(e) {
+           console.error('[Dungeon Buddy Oracle] LLM returned invalid JSON:', rawJsonText);
+           throw new Error("Oracle failed to forge a coherent structure");
+        }
+
+        res.status(200).json(payload);
+
+      } catch (err) {
+        console.error('[Dungeon Buddy Oracle] Forge Error:', err);
+        res.status(500).json({ error: `Oracle Failure: ${err.message}` });
+      }
+    });
+
     return router;
   }
 }

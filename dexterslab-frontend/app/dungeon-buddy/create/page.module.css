@@ -81,6 +81,105 @@
   text-transform: uppercase;
 }
 
+/* ── Oracle / Chaos Generators ── */
+.oracleSection {
+  background: rgba(10, 10, 15, 0.95);
+  border-bottom: 1px solid var(--border-gold);
+  padding: 16px 40px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  z-index: 10;
+  position: relative;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+}
+
+.oracleHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.oracleTitle {
+  font-family: 'Cinzel', serif;
+  font-size: 1.1rem;
+  color: var(--gold-bright);
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.oracleDesc {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  max-width: 600px;
+  margin: 0;
+}
+
+.oracleInputWrapper {
+  display: flex;
+  gap: 12px;
+}
+
+.oracleInput {
+  flex: 1;
+  background: var(--bg-card);
+  border: 1px solid var(--border-dim);
+  padding: 12px;
+  border-radius: 4px;
+  color: var(--text-primary);
+  font-family: 'Inter', sans-serif;
+  font-size: 0.9rem;
+  outline: none;
+  resize: vertical;
+  min-height: 48px;
+  max-height: 120px;
+}
+.oracleInput:focus {
+  border-color: var(--gold);
+  box-shadow: 0 0 10px var(--gold-glow);
+}
+
+.btnOracle {
+  background: linear-gradient(180deg, rgba(212, 175, 55, 0.15) 0%, rgba(180, 150, 80, 0.05) 100%);
+  border: 1px solid var(--border-gold);
+  color: var(--gold-bright);
+  font-family: 'Cinzel', serif;
+  padding: 0 24px;
+  font-size: 0.9rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  white-space: nowrap;
+}
+.btnOracle:hover:not(:disabled) {
+  background: rgba(212, 175, 55, 0.25);
+  box-shadow: 0 0 15px var(--gold-glow);
+}
+.btnOracle:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+
+.btnChaos {
+  background: linear-gradient(180deg, rgba(140, 32, 32, 0.15) 0%, rgba(100, 20, 20, 0.05) 100%);
+  border: 1px solid #631;
+  color: #d66;
+  font-family: 'Cinzel', serif;
+  padding: 8px 16px;
+  font-size: 0.8rem;
+  font-weight: 600;
+  cursor: pointer;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+.btnChaos:hover:not(:disabled) {
+  background: rgba(140, 32, 32, 0.3);
+  box-shadow: 0 0 15px rgba(140,32,32,0.4);
+}
+
 /* ── Step indicator ── */
 .stepsBar {
   display: flex;
