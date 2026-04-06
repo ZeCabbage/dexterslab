@@ -89,6 +89,8 @@ export class VoiceNavigator {
       this.appManager.deactivateDisplayApp().catch(e =>
         console.error('[VoiceNav] Failed to deactivate:', e)
       );
+      // Directly broadcast navigation to hub (don't rely solely on bus event)
+      this._broadcast('/observer');
       this._speakConfirmation('COPY');
       return true;
     }
@@ -122,7 +124,18 @@ export class VoiceNavigator {
       'go home', 'go back', 'go to hub', 'return to hub', 'return home',
       'back to hub', 'exit', 'exit application', 'exit app',
     ];
-    return CLOSE_PATTERNS.some(p => text.includes(p));
+    if (CLOSE_PATTERNS.some(p => text.includes(p))) return true;
+
+    // Also match "close [app name]", "stop [app name]", "kill [app name]"
+    const CLOSE_PREFIXES = ['close ', 'stop ', 'kill ', 'shut down '];
+    for (const prefix of CLOSE_PREFIXES) {
+      if (text.startsWith(prefix)) {
+        const target = text.substring(prefix.length).trim();
+        // If the target matches any known app, treat as close
+        if (this._matchApp(target)) return true;
+      }
+    }
+    return false;
   }
 
   _extractOpenTarget(text) {
@@ -211,12 +224,29 @@ export class VoiceNavigator {
   }
 
   _broadcast(route) {
-    if (this.wsClients.size === 0) return;
     const packet = JSON.stringify({ type: 'navigate', route });
+    let sent = 0;
     for (const client of this.wsClients) {
-      if (client.readyState === 1) client.send(packet);
+      if (client.readyState === 1) {
+        client.send(packet);
+        sent++;
+      }
     }
-    console.log(`[VoiceNav] Broadcast navigate → ${route} (${this.wsClients.size} clients)`);
+    console.log(`[VoiceNav] Broadcast navigate → ${route} (${sent}/${this.wsClients.size} clients)`);
+
+    // Retry twice more with short delays to handle momentary WS reconnects
+    if (this.wsClients.size > 0) {
+      setTimeout(() => {
+        for (const client of this.wsClients) {
+          if (client.readyState === 1) client.send(packet);
+        }
+      }, 300);
+      setTimeout(() => {
+        for (const client of this.wsClients) {
+          if (client.readyState === 1) client.send(packet);
+        }
+      }, 800);
+    }
   }
 
   // ═══ Side-effects ═══
