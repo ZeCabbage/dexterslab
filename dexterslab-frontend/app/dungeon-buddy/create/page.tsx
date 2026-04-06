@@ -118,6 +118,32 @@ export default function CharacterCreationWizard() {
   };
 
   // ── Handlers ──
+  const randomizePointBuy = () => {
+    const currentBase: Record<AbilityName, number> = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
+    let points = POINT_BUY_TOTAL;
+    const abilities = ABILITY_NAMES.map(a => a.key);
+    
+    while (points > 0) {
+      const validAbilities = abilities.filter(ability => {
+        const val = currentBase[ability];
+        if (val >= 15) return false;
+        const currentCost = getPointBuyCost(currentBase);
+        const nextCost = getPointBuyCost({ ...currentBase, [ability]: val + 1 });
+        return (nextCost - currentCost) <= points;
+      });
+      
+      if (validAbilities.length === 0) break;
+      
+      const target = validAbilities[Math.floor(Math.random() * validAbilities.length)];
+      const currentCost = getPointBuyCost(currentBase);
+      currentBase[target] += 1;
+      const nextCost = getPointBuyCost(currentBase);
+      points -= (nextCost - currentCost);
+    }
+    
+    setBaseScores(currentBase);
+  };
+
   const handlePointBuyChange = (ability: AbilityName, delta: number) => {
     const newVal = baseScores[ability] + delta;
     if (newVal < 8 || newVal > 15) return;
@@ -367,7 +393,15 @@ export default function CharacterCreationWizard() {
       </div>
 
       {abilityMethod === 'point_buy' && (
-        <div className={styles.pointsRemaining}>Points Remaining: <span>{pointsLeft}</span> / {POINT_BUY_TOTAL}</div>
+        <div className={styles.pointsRemaining} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <span>Points Remaining: <span style={{ color: pointsLeft === 0 ? '#44cc44' : '#cfaa5e' }}>{pointsLeft}</span> / {POINT_BUY_TOTAL}</span>
+          <button 
+            onClick={randomizePointBuy} 
+            style={{ display: 'flex', alignItems: 'center', gap: '6px', background: 'transparent', border: '1px solid var(--border-gold)', color: 'var(--gold)', padding: '4px 10px', borderRadius: '4px', cursor: 'pointer', fontSize: '0.8rem', fontFamily: 'Cinzel, serif' }}
+          >
+            Randomize 🎲
+          </button>
+        </div>
       )}
       {abilityMethod === 'standard_array' && (
         <div className={styles.pointsRemaining}>
