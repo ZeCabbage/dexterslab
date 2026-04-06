@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import { useCharacterStore } from '../lib/store';
 import styles from '../[id]/page.module.css';
+import { ITEM_DATABASE } from '../lib/data/items';
 import { InventoryItem, EquipSlot } from '../lib/types';
 
 const SLOTS: { id: EquipSlot, label: string }[] = [
@@ -19,10 +20,31 @@ const SLOTS: { id: EquipSlot, label: string }[] = [
 ];
 
 export default function InventoryTab() {
-  const { char, equipItem, unequipSlot } = useCharacterStore();
+  const { char, equipItem, unequipSlot, updateField } = useCharacterStore();
   const [selectedBackpackItem, setSelectedBackpackItem] = useState<InventoryItem | null>(null);
+  const [isAdding, setIsAdding] = useState(false);
+  const [newItemMode, setNewItemMode] = useState<'srd' | 'custom'>('srd');
+  const [srdSelection, setSrdSelection] = useState(Object.keys(ITEM_DATABASE)[0]);
+  const [customDraft, setCustomDraft] = useState({ name: '', type: 'gear', weight: 1 });
 
   if (!char) return null;
+
+  const addItemToInventory = () => {
+    let itemToAdd: any;
+    if (newItemMode === 'srd') {
+      itemToAdd = { ...ITEM_DATABASE[srdSelection], id: `item_${Date.now()}`, qty: 1 };
+    } else {
+      itemToAdd = { 
+         id: `custom_item_${Date.now()}`, 
+         name: customDraft.name || 'Unknown Item', 
+         type: customDraft.type as any, 
+         weight: customDraft.weight, 
+         qty: 1, 
+      };
+    }
+    updateField('inventory', [...(char.inventory || []), itemToAdd]);
+    setIsAdding(false);
+  };
 
   const handleEquipToSlot = (slot: EquipSlot) => {
     if (!selectedBackpackItem) return;
@@ -103,7 +125,61 @@ export default function InventoryTab() {
 
       {/* RIGHT: Backpack */}
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        <h3 className={styles.sectionHeading}>Backpack Inventory</h3>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <h3 className={styles.sectionHeading} style={{ margin: 0 }}>Backpack Inventory</h3>
+          <button 
+            onClick={() => setIsAdding(true)}
+            style={{ padding: '6px 12px', background: '#332211', border: '1px solid #cfaa5e', color: '#cfaa5e', borderRadius: '4px', cursor: 'pointer' }}
+          >
+            + Add Item
+          </button>
+        </div>
+
+        {isAdding && (
+          <div style={{ padding: '16px', background: '#1a1a1a', border: '1px solid #55aacc', borderRadius: '6px', marginBottom: '16px' }}>
+            <h4 style={{ margin: '0 0 16px 0', color: '#55aacc' }}>Add New Item</h4>
+            <div style={{ display: 'flex', gap: '16px', marginBottom: '16px' }}>
+               <label style={{ color: '#ccc', fontSize: '14px', cursor: 'pointer' }}>
+                 <input type="radio" checked={newItemMode === 'srd'} onChange={() => setNewItemMode('srd')} style={{ marginRight: '8px' }} />
+                 Database Item
+               </label>
+               <label style={{ color: '#ccc', fontSize: '14px', cursor: 'pointer' }}>
+                 <input type="radio" checked={newItemMode === 'custom'} onChange={() => setNewItemMode('custom')} style={{ marginRight: '8px' }} />
+                 Write Custom Item
+               </label>
+            </div>
+
+            {newItemMode === 'srd' ? (
+              <select 
+                value={srdSelection} 
+                onChange={e => setSrdSelection(e.target.value)}
+                style={{ width: '100%', padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', marginBottom: '16px' }}
+              >
+                {Object.entries(ITEM_DATABASE).map(([key, item]) => (
+                  <option key={key} value={key}>{item.name}</option>
+                ))}
+              </select>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
+                <input placeholder="Item Name" value={customDraft.name} onChange={e => setCustomDraft({...customDraft, name: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
+                <div style={{ display: 'flex', gap: '8px' }}>
+                  <select value={customDraft.type} onChange={e => setCustomDraft({...customDraft, type: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', flex: 1 }}>
+                    <option value="gear">Standard Gear</option>
+                    <option value="weapon">Weapon</option>
+                    <option value="armor">Armor</option>
+                    <option value="tool">Tool</option>
+                  </select>
+                  <input type="number" placeholder="Weight (lbs)" value={customDraft.weight} onChange={e => setCustomDraft({...customDraft, weight: parseFloat(e.target.value)||0})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', width: '100px' }} />
+                </div>
+              </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px' }}>
+              <button onClick={addItemToInventory} style={{ padding: '8px 16px', background: '#55aacc', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Add to Backpack</button>
+              <button onClick={() => setIsAdding(false)} style={{ padding: '8px 16px', background: 'transparent', color: '#888', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
+            </div>
+          </div>
+        )}
         
         {selectedBackpackItem && (
           <div style={{ padding: '16px', background: '#1a1a1a', border: '1px solid #cfaa5e', borderRadius: '6px' }}>
