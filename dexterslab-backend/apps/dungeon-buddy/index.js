@@ -259,6 +259,7 @@ ${text}
         let systemPrompt = `You are the Oracle of character creation for a D&D 5E game.
 You must return a valid JSON object strictly matching this schema:
 {
+  "name": "A creative, thematic name for the character",
   "raceId": "ID of the race",
   "subraceId": "ID of the subrace (or null if the race has none)",
   "classId": "ID of the class",
@@ -272,7 +273,26 @@ You must return a valid JSON object strictly matching this schema:
      "cha": number (8-15)
   },
   "skills": ["Array of skill IDs appropriate for this class to choose"],
-  "portraitPrompt": "A highly detailed, atmospheric image prompt describing this character's visual appearance based on your choices and the user's description."
+  "portraitPrompt": "A highly detailed, atmospheric image prompt describing this character's visual appearance based on your choices and the user's description.",
+  "personalityTraits": "A brief, evocative personality trait.",
+  "ideals": "An ideal driving the character.",
+  "bonds": "A bond to a person, place, or event.",
+  "flaws": "A fatal flaw or secret.",
+  "customSpells": [
+    {
+      "id": "A lower-case unique ID like 'spell_fire_punch'",
+      "name": "Spell Name",
+      "level": "Number (0 for cantrip, 1 for 1st level)",
+      "school": "Magic school (Evocation, Necromancy, etc)",
+      "castingTime": "1 Action / 1 Bonus Action",
+      "range": "60 ft. / Touch",
+      "components": "V, S, M",
+      "duration": "Instantaneous / 1 Minute",
+      "description": "Full homebrew spell description fitting the theme.",
+      "damage": "e.g. 1d8 / 2d6",
+      "actionCost": "one of: 'action', 'bonus_action', 'reaction', 'special', 'none'"
+    }
+  ]
 }
 
 CRITICAL RULES:
@@ -280,6 +300,7 @@ CRITICAL RULES:
 2. If "raceId" has subraces in the allowed list, you MUST pick a valid "subraceId" from that specific race's subrace list. If it has no subraces, use null.
 3. The "baseScores" MUST perfectly adhere to D&D 5e Point Buy rules: exactly 27 points must be spent. (Costs: 8=0, 9=1, 10=2, 11=3, 12=4, 13=5, 14=7, 15=9). Do not overspend or underspend. Do NOT add racial bonuses to these base scores.
 4. The "skills" array must contain EXACTLY the number of skill choices allowed by the chosen class (usually 2, sometimes 3 or 4 like Rogue/Bard). You can only choose skills from the chosen Class's allowed skill list. DO NOT include skills already provided by the chosen Background.
+5. "customSpells": If the chosen Class is a spellcaster, invent 2 or 3 completely custom, wildly creative homebrew spells (Level 0 Cantrips or Level 1 Spells ONLY) that strictly fit the user's narrative theme. Make sure they are balanced for D&D 5E rules. If the chosen class is a martial (Fighter, Barbarian, Rogue, Monk) without spellcasting provided, leave the "customSpells" array EMPTY.
 `;
 
         if (mode === 'chaos') {

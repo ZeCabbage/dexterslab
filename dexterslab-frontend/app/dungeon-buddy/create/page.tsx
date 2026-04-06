@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
@@ -49,6 +49,13 @@ export default function CharacterCreationWizard() {
   const [selectedSkills, setSelectedSkills] = useState<SkillName[]>([]);
   const [selectedEquipmentPack, setSelectedEquipmentPack] = useState<number>(0);
   const [characterName, setCharacterName] = useState('');
+  
+  // Oracle Extended State Buffer
+  const [oraclePersonalityTraits, setOracleTraits] = useState('');
+  const [oracleIdeals, setOracleIdeals] = useState('');
+  const [oracleBonds, setOracleBonds] = useState('');
+  const [oracleFlaws, setOracleFlaws] = useState('');
+  const [oracleCustomSpells, setOracleCustomSpells] = useState<any[]>([]);
 
   // Portrait state
   const [portraitDescription, setPortraitDescription] = useState('');
@@ -120,6 +127,28 @@ export default function CharacterCreationWizard() {
   // ── Handlers ──
   const [oracleQuery, setOracleQuery] = useState('');
   const [oracleLoading, setOracleLoading] = useState(false);
+  const [oracleLoadingText, setOracleLoadingText] = useState('Forging your destiny...');
+
+  useEffect(() => {
+    if (!oracleLoading) return;
+    const phrases = [
+      "Consulting the Elder Gods...",
+      "Rolling digital D20s...",
+      "Balancing Point Buy stats...",
+      "Inventing homebrew spells...",
+      "Painting character portrait...",
+      "Assigning tragic flaws...",
+      "Distributing skill points...",
+      "Weaving your backstory...",
+      "Almost ready..."
+    ];
+    let i = 0;
+    const interval = setInterval(() => {
+      i = (i + 1) % phrases.length;
+      setOracleLoadingText(phrases[i]);
+    }, 2500);
+    return () => clearInterval(interval);
+  }, [oracleLoading]);
 
   const invokeOracle = async (mode: 'text' | 'chaos') => {
     if (mode === 'text' && !oracleQuery.trim()) return;
@@ -157,6 +186,28 @@ export default function CharacterCreationWizard() {
       setAbilityMethod('point_buy');
       if (data.baseScores) setBaseScores(data.baseScores);
       if (data.skills) setSelectedSkills(data.skills);
+
+      if (data.name) setCharacterName(data.name);
+      if (data.personalityTraits) setOracleTraits(data.personalityTraits);
+      if (data.ideals) setOracleIdeals(data.ideals);
+      if (data.bonds) setOracleBonds(data.bonds);
+      if (data.flaws) setOracleFlaws(data.flaws);
+      if (data.customSpells && Array.isArray(data.customSpells)) {
+        setOracleCustomSpells(data.customSpells.map((cs: any) => ({
+           id: cs.id || `homebrew_${Date.now()}_${Math.floor(Math.random()*1000)}`,
+           name: cs.name || "Unknown Spell",
+           level: parseInt(cs.level) || 0,
+           school: cs.school || "Evocation",
+           castingTime: cs.castingTime || "1 Action",
+           range: cs.range || "Touch",
+           components: cs.components || "V, S",
+           duration: cs.duration || "Instantaneous",
+           description: cs.description || "",
+           damage: cs.damage || "",
+           actionCost: cs.actionCost || "action",
+           classes: [data.classId] // Bind it to their class
+        })));
+      }
 
       if (data.portraitPrompt) {
         setPortraitDescription(data.portraitPrompt);
@@ -335,7 +386,7 @@ export default function CharacterCreationWizard() {
       cantrips: [],
       knownSpells: [],
       preparedSpells: [],
-      customSpells: [],
+      customSpells: oracleCustomSpells.length > 0 ? oracleCustomSpells : [],
       traits: [...(selectedRace.traits || []), ...(selectedSubrace?.traits || [])],
       languages: selectedRace.languages,
       inventory: startingInventory,
@@ -344,6 +395,10 @@ export default function CharacterCreationWizard() {
       features: selectedClass.features.filter(f => f.level <= 1),
       portrait: portraitData || null,
       notes: '', quests: '', people: '', places: '', feats: [],
+      personalityTraits: oraclePersonalityTraits,
+      ideals: oracleIdeals,
+      bonds: oracleBonds,
+      flaws: oracleFlaws,
       logbook: [{
         id: 'log_' + Date.now(),
         timestamp: Date.now(),
@@ -389,6 +444,7 @@ export default function CharacterCreationWizard() {
             disabled={oracleLoading}
           />
           <div style={{ display: 'flex', gap: '12px', justifyContent: 'flex-end', alignItems: 'center' }}>
+             {oracleLoading && <span style={{ color: 'var(--gold-bright)', fontStyle: 'italic', fontSize: '0.9rem', marginRight: 'auto' }}>{oracleLoadingText}</span>}
              <button title="Randomize a fully chaotic character" className={styles.btnChaos} onClick={() => invokeOracle('chaos')} disabled={oracleLoading}>🎲 Pure Chaos</button>
              <button className={styles.btnOracle} onClick={() => invokeOracle('text')} disabled={!oracleQuery.trim() || oracleLoading}>
                {oracleLoading ? 'Conjuring...' : 'Forge from Description'}
