@@ -191,32 +191,51 @@ export default class DungeonBuddyApp {
       }
 
       try {
-        const p = `Act as an expert Dungeons & Dragons Dungeon Master Assistant.
-Read the following raw, potentially messy voice transcription of a live D&D session.
+        const systemPrompt = `You are The Chronicler — an expert Dungeons & Dragons archivist and historian with decades of experience distilling chaotic session notes into elegant campaign records.
 
-Extract the following details and return ONLY a valid JSON object matching this schema exactly:
+Your task: Read the following raw, potentially messy session notes (which may be voice transcription, handwritten shorthand, or stream-of-consciousness text) from a live D&D session. Extract the narrative and metadata into a beautifully structured chronicle.
+
+You MUST return ONLY a valid JSON object matching this EXACT schema:
 {
-  "title": "Epic 3-6 word title for this session",
-  "summary": "A 1-2 paragraph narrative summary of what happened.",
-  "locations": ["Name or description of locations visited"],
-  "npcs": ["NPC names or generic identifiers that were interacted with"],
-  "quests": ["Updates or resolutions to tasks/quests"],
-  "loot": ["Any items, gold, or artifacts mentioned as acquired"]
+  "title": "A catchy, epic 3-7 word title for this session that captures the dramatic arc (e.g. 'The Siege of Ember's Reach', 'Whispers in the Underdark')",
+  "summary": "A 2-3 paragraph engaging narrative summary written in past tense, third person, with vivid literary prose. Describe the key events, dramatic moments, and turning points. Make it read like a chapter summary from a fantasy novel — NOT a dry bullet list.",
+  "locations": ["Every named place, region, building, or geographic feature visited or mentioned"],
+  "npcs": ["Every named NPC or creature type the party interacted with, fought, or heard about. Include a brief descriptor if possible, e.g. 'Theron — the blind oracle of Ashvale'"],
+  "quests": ["Every quest, mission, objective, or plot thread that was advanced, completed, discovered, or acquired during this session. Use active language, e.g. 'Agreed to investigate the missing caravan for Mayor Blackwood'"],
+  "loot": ["Every notable item, weapon, armor, gold amount, spell scroll, potion, or artifact acquired, traded, or lost. Be specific about quantities when mentioned."]
 }
 
-Raw Session Transcript:
+CRITICAL RULES:
+1. If an array category has no relevant data, return an empty array []. NEVER omit a field.
+2. Deduplicate entries — don't list the same NPC or location multiple times.
+3. The "summary" MUST be 2-3 paragraphs of engaging narrative prose, NOT a list.
+4. JSON SYNTAX: You MUST NOT use literal newlines inside JSON strings. Use \\n if needed.
+5. Infer and extrapolate intelligently from messy notes — fill gaps with reasonable assumptions marked subtly.
+
+Raw Session Notes / Transcript:
 """
 ${text}
-"""
-`;
+"""`;
 
-        const response = await genai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: p,
-            config: {
-               responseMimeType: "application/json"
-            }
-        });
+        let response;
+        let retries = 2;
+        while (retries >= 0) {
+          try {
+            response = await genai.models.generateContent({
+                model: 'gemini-2.5-flash',
+                contents: systemPrompt,
+                config: {
+                   responseMimeType: "application/json"
+                }
+            });
+            break;
+          } catch (apiErr) {
+            if (retries === 0) throw apiErr;
+            console.warn('[Dungeon Buddy Scribe] Gemini API error, retrying in 2s...', apiErr.message);
+            await new Promise(r => setTimeout(r, 2000));
+            retries--;
+          }
+        }
 
         const rawJsonText = (response.text || "").trim().replace(/^```json/i, '').replace(/```$/i, '').trim();
         let payload = {};
@@ -227,6 +246,14 @@ ${text}
            console.error('[Dungeon Buddy Scribe] LLM returned invalid JSON:', rawJsonText);
            throw new Error("LLM failed to generate valid structured JSON");
         }
+
+        // Validate required fields exist
+        payload.title = payload.title || 'Untitled Session';
+        payload.summary = payload.summary || 'No summary generated.';
+        payload.locations = payload.locations || [];
+        payload.npcs = payload.npcs || [];
+        payload.quests = payload.quests || [];
+        payload.loot = payload.loot || [];
 
         const newSession = {
            id: 'session_' + Date.now(),

@@ -3,10 +3,11 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useCharacterStore } from '../lib/store';
-import { CLASSES, ClassData } from '../data/srd';
+import { CLASSES, ClassData, ASI_LEVELS } from '../data/srd';
 import SpellBrowser from './SpellBrowser';
 import { ELDRITCH_INVOCATIONS } from '../data/invocations';
 import { FeatureData } from '../lib/types';
+import { WARLOCK_PACT_SLOTS } from '../data/resource-scaling';
 
 interface Props {
   onClose: () => void;
@@ -27,7 +28,8 @@ export default function LevelUpModal({ onClose }: Props) {
   const targetClassLevel = (char?.classes?.[targetClass] || TargetClassLevelFallback) + 1;
 
   const conMod = Math.floor(((char?.stats?.con || 10) - 10) / 2);
-  const hitDie = tClassData?.hitDie || 8;
+  // Custom class resilience: fall back to character's stored hitDie if class isn't in SRD
+  const hitDie = tClassData?.hitDie || (typeof char?.hitDie === 'string' ? parseInt(char.hitDie) || 8 : char?.hitDie) || 8;
   const avgHp = Math.ceil(hitDie / 2) + 1;
   
   // State: HP
@@ -40,8 +42,9 @@ export default function LevelUpModal({ onClose }: Props) {
   const [isOracleForging, setIsOracleForging] = useState(false);
   const [oracleTheme, setOracleTheme] = useState('');
 
-  // State: ASI / Feat
-  const needsAsi = tClassData?.asiLevels?.includes(targetClassLevel);
+  // State: ASI / Feat — Custom class fallback uses standard 5E ASI levels
+  const effectiveAsiLevels = tClassData?.asiLevels || ASI_LEVELS.default;
+  const needsAsi = effectiveAsiLevels.includes(targetClassLevel);
   const [asiMode, setAsiMode] = useState<'asi'|'feat'>('asi');
   const [asiAlloc, setAsiAlloc] = useState({str:0, dex:0, con:0, int:0, wis:0, cha:0});
   const [customFeat, setCustomFeat] = useState({ name: '', description: '' });
@@ -134,7 +137,13 @@ export default function LevelUpModal({ onClose }: Props) {
       if (data.features && data.features.length > 0) {
         setCustomFeatures([
            ...customFeatures, 
-           ...data.features.map((f:any) => ({ name: f.name, description: f.description }))
+           ...data.features.map((f:any) => ({
+             name: f.name,
+             description: f.description,
+             modifiers: f.modifiers || [],
+             level: targetClassLevel,
+             source: data.subclassName || 'Oracle Path',
+           }))
         ]);
       }
     } catch (err: any) {
@@ -161,7 +170,13 @@ export default function LevelUpModal({ onClose }: Props) {
       if (data.features && data.features.length > 0) {
         setCustomFeatures([
            ...customFeatures, 
-           ...data.features.map((f:any) => ({ name: f.name, description: f.description }))
+           ...data.features.map((f:any) => ({
+             name: f.name,
+             description: f.description,
+             modifiers: f.modifiers || [],
+             level: targetClassLevel,
+             source: finalSubclass || 'Subclass Oracle',
+           }))
         ]);
         alert(`The Oracle uncovered ${data.features.length} feature(s) for the ${finalSubclass} at Level ${targetClassLevel}!`);
       } else {
@@ -201,8 +216,21 @@ export default function LevelUpModal({ onClose }: Props) {
       }
     }
 
-    // Unified Slot Math
-    if (tClassData?.spellSlots && tClassData.spellSlots[targetClassLevel]) {
+    // ── Warlock Pact Magic: bypass standard spell slot delta math ──
+    if (targetClass === 'Warlock' || targetClass === 'warlock') {
+      const pact = WARLOCK_PACT_SLOTS[targetClassLevel];
+      if (pact) {
+        payload.overrideSpellSlots = {
+          pact_magic: {
+            name: `Pact Slots (Lv.${pact.level})`,
+            max: pact.slots,
+            used: char.resources?.['pact_magic']?.used || 0,
+            recharge: 'short',
+          }
+        };
+      }
+    } else if (tClassData?.spellSlots && tClassData.spellSlots[targetClassLevel]) {
+      // Standard caster spell slot delta math
       const currentSlotsArr = tClassData.spellSlots[targetClassLevel] as number[];
       const previousSlotsArr = (targetClassLevel > 1 && tClassData.spellSlots[targetClassLevel-1]) ? (tClassData.spellSlots[targetClassLevel-1] as number[]) : [];
       
@@ -218,7 +246,7 @@ export default function LevelUpModal({ onClose }: Props) {
             name: `Level ${sLevel} Spell Slots`,
             max: existingMax + delta,
             used: char.resources?.[key]?.used || 0,
-            recharge: targetClass.toLowerCase() === 'warlock' ? 'short' : 'long'
+            recharge: 'long'
           };
         }
       });

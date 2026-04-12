@@ -12,6 +12,7 @@ import {
   type AbilityName, type SkillName,
 } from '../data/srd';
 import { STARTING_EQUIPMENT_DB } from '../data/starting-equipment';
+import { WARLOCK_PACT_SLOTS } from '../data/resource-scaling';
 import { ITEM_DATABASE } from '../lib/data/items';
 import { useCharacterStore } from '../lib/store';
 import Tooltip from '../components/Tooltip';
@@ -65,6 +66,19 @@ export default function CharacterCreationWizard() {
   // Oracle-generated flag (shows review banner + inline edit buttons on Finalize)
   const [oracleGenerated, setOracleGenerated] = useState(false);
 
+  // ── Custom Homebrew Identity State ──
+  const [customRaceMode, setCustomRaceMode] = useState(false);
+  const [customRaceName, setCustomRaceName] = useState('');
+  const [customRaceDesc, setCustomRaceDesc] = useState('');
+  const [customClassMode, setCustomClassMode] = useState(false);
+  const [customClassName, setCustomClassName] = useState('');
+  const [customClassDesc, setCustomClassDesc] = useState('');
+  const [customClassHitDie, setCustomClassHitDie] = useState('8');
+  const [customClassSpellAbility, setCustomClassSpellAbility] = useState<string>('');
+  const [customBgMode, setCustomBgMode] = useState(false);
+  const [customBgName, setCustomBgName] = useState('');
+  const [customBgDesc, setCustomBgDesc] = useState('');
+
   // Portrait state
   const [portraitDescription, setPortraitDescription] = useState('');
   const [portraitData, setPortraitData] = useState<string | null>(null);
@@ -116,12 +130,15 @@ export default function CharacterCreationWizard() {
   // ── Validation ──
   const canProceed = () => {
     switch (step) {
-      case 0: return !!selectedRace && (!selectedRace.subraces?.length || !!selectedSubrace);
-      case 1: 
+      case 0: return (!!selectedRace && (!selectedRace.subraces?.length || !!selectedSubrace)) || (customRaceMode && customRaceName.trim().length > 0);
+      case 1: {
+        if (customClassMode) return customClassName.trim().length > 0;
         if (!selectedClass) return false;
         if (selectedClass.subclassLevel === 1 && !selectedSubclassChoice) return false;
         return true;
+      }
       case 2: 
+        if (customClassMode) return true;
         if (!selectedClass?.spellcaster) return true;
         return true; // we don't strictly gate on full spell cap for flexibility
       case 3: {
@@ -129,8 +146,8 @@ export default function CharacterCreationWizard() {
         if (abilityMethod === 'standard_array') return usedArrayValues.length === 6;
         return true;
       }
-      case 4: return !!selectedBackground;
-      case 5: return selectedSkills.length === maxSkillChoices;
+      case 4: return !!selectedBackground || (customBgMode && customBgName.trim().length > 0);
+      case 5: return customClassMode || selectedSkills.length === maxSkillChoices;
       case 6: return true; // Equipment just defaults to first option
       case 7: return true; // portrait is optional
       case 8: return characterName.trim().length > 0;
@@ -403,9 +420,27 @@ export default function CharacterCreationWizard() {
   };
 
   const handleCreate = async () => {
-    if (!selectedRace || !selectedClass || !selectedBackground) return;
+    // Build safe fallback objects for custom modes
+    const effectiveRace = customRaceMode
+      ? { name: customRaceName, speed: 30, abilityBonuses: {}, traits: [], languages: ['Common'], id: 'custom', description: customRaceDesc }
+      : selectedRace;
+    const effectiveClass = customClassMode
+      ? {
+          name: customClassName, id: 'custom', description: customClassDesc,
+          hitDie: parseInt(customClassHitDie) || 8, spellcaster: !!customClassSpellAbility,
+          spellcastingAbility: customClassSpellAbility || null,
+          savingThrows: [], armorProficiencies: [], weaponProficiencies: [],
+          features: [], primaryAbility: [], numSkillChoices: 2, skillChoices: [],
+          spellSlots: null, subclasses: null, subclassLevel: 0, subclassLabel: '',
+        }
+      : selectedClass;
+    const effectiveBackground = customBgMode
+      ? { name: customBgName, id: 'custom', description: customBgDesc, skillProficiencies: [], equipment: [] }
+      : selectedBackground;
+
+    if (!effectiveRace || !effectiveClass || !effectiveBackground) return;
     const conMod = calculateModifier(finalScores.con);
-    const startingHp = calculateStartingHp(selectedClass, conMod);
+    const startingHp = calculateStartingHp(effectiveClass as any, conMod);
     const allSkills = [...new Set([...lockedSkills, ...selectedSkills])];
 
     const gearIds = Object.values(draftGearSelections).flat();
@@ -442,7 +477,20 @@ export default function CharacterCreationWizard() {
       return true;
     });
 
-    // Merge Oracle Custom Equipment
+    // ── Homebrew Registry: Route Oracle output into proper structures ──
+    const homebrewSpells = oracleCustomSpells.map((cs: any) => ({
+      ...cs,
+      isHomebrew: true as const,
+      createdAt: Date.now(),
+    }));
+
+    const homebrewItems = oracleCustomEquipment.map((ce: any) => ({
+      ...ce,
+      isHomebrew: true as const,
+      createdAt: Date.now(),
+    }));
+
+    // Merge Oracle Custom Equipment into equipped/inventory
     if (oracleCustomEquipment.length > 0) {
       oracleCustomEquipment.forEach(item => {
         if (item.slot && !equipped[item.slot]) {
@@ -454,78 +502,108 @@ export default function CharacterCreationWizard() {
     }
 
     const initialResources: Record<string, any> = {};
-    if (selectedClass.spellcaster && selectedClass.spellSlots) {
-       const slotsForLevel = selectedClass.spellSlots[1]; // Level 1 slots
-       if (slotsForLevel) {
-          Object.entries(slotsForLevel).forEach(([levelKey, maxSlots]) => {
-             const numericLevel = levelKey.replace('spell_slot_', '');
-             if ((maxSlots as number) > 0) {
-               initialResources[levelKey] = {
-                 name: `${numericLevel}${numericLevel === '1' ? 'st' : numericLevel === '2' ? 'nd' : numericLevel === '3' ? 'rd' : 'th'} Level Slots`,
-                 max: maxSlots,
-                 used: 0,
-                 recharge: selectedClass.id === 'warlock' ? 'short' : 'long'
-               };
-             }
-          });
-       }
+    // ── Spell Slot Initialization (1-indexed to match LevelUp convention) ──
+    if ((effectiveClass as any).id === 'warlock') {
+      // Warlock uses Pact Magic — completely separate from standard spell slots
+      const pact = WARLOCK_PACT_SLOTS[1];
+      if (pact) {
+        initialResources['pact_magic'] = {
+          name: `Pact Slots (Lv.${pact.level})`,
+          max: pact.slots,
+          used: 0,
+          recharge: 'short',
+        };
+      }
+    } else if ((effectiveClass as any).spellcaster && (effectiveClass as any).spellSlots) {
+      const slotsForLevel = (effectiveClass as any).spellSlots[1]; // number[] for level 1
+      if (slotsForLevel && Array.isArray(slotsForLevel)) {
+        slotsForLevel.forEach((count: number, idx: number) => {
+          if (count > 0) {
+            const sLevel = idx + 1;
+            const key = `spell_slot_${sLevel}`;
+            initialResources[key] = {
+              name: `Level ${sLevel} Spell Slots`,
+              max: count,
+              used: 0,
+              recharge: 'long',
+            };
+          }
+        });
+      }
     }
 
     const subclasses: Record<string, string> = {};
     let subclassFeatures: any[] = [];
     if (selectedSubclassChoice) {
-       subclasses[selectedClass.name] = selectedSubclassChoice;
-       const scData = selectedClass.subclasses?.find((sc:any) => sc.name === selectedSubclassChoice);
+       subclasses[(effectiveClass as any).name] = selectedSubclassChoice;
+       const scData = (effectiveClass as any).subclasses?.find((sc:any) => sc.name === selectedSubclassChoice);
        if (scData && scData.features) {
          subclassFeatures = scData.features.filter((f:any) => f.level === 1);
        }
     }
 
     const newChar = {
+      id: '', // populated by backend POST response
       name: characterName,
-      race: selectedRace.name + (selectedSubrace ? ` (${selectedSubrace.name})` : ''),
-      class: selectedClass.name,
+      race: (effectiveRace as any).name + (selectedSubrace ? ` (${selectedSubrace.name})` : ''),
+      class: (effectiveClass as any).name,
       subclass: selectedSubclassChoice || null,
       subclasses,
-      background: selectedBackground.name,
+      background: (effectiveBackground as any).name,
       level: 1,
+      xp: 0,
+      alignment: '',
       maxHp: startingHp,
       currentHp: startingHp,
+      tempHp: 0,
       ac: 10 + calculateModifier(finalScores.dex),
       stats: finalScores,
       skills: allSkills,
-      hitDie: selectedClass.hitDie,
+      expertise: [],
+      hitDie: (effectiveClass as any).hitDie,
       hitDiceTotal: 1,
       hitDiceUsed: 0,
-      speed: selectedRace.speed,
+      speed: (effectiveRace as any).speed,
       proficiencyBonus: 2,
-      savingThrows: selectedClass.savingThrows,
-      armorProficiencies: selectedClass.armorProficiencies,
-      weaponProficiencies: selectedClass.weaponProficiencies,
-      spellcaster: selectedClass.spellcaster,
-      spellcastingAbility: selectedClass.spellcastingAbility || null,
+      savingThrows: (effectiveClass as any).savingThrows || [],
+      armorProficiencies: (effectiveClass as any).armorProficiencies || [],
+      weaponProficiencies: (effectiveClass as any).weaponProficiencies || [],
+      spellcaster: (effectiveClass as any).spellcaster,
+      spellcastingAbility: (effectiveClass as any).spellcastingAbility || null,
       resources: initialResources,
-      cantrips: [], // We merge all drafted spells into known/prepared. The Grimoire tab inherently filters by level 0.
-      knownSpells: [...oracleCustomSpells.map(s => s.id), ...draftedSpells],
-      preparedSpells: [...oracleCustomSpells.map(s => s.id), ...draftedSpells],
-      customSpells: oracleCustomSpells.length > 0 ? oracleCustomSpells : [],
-      traits: [...(selectedRace.traits || []), ...(selectedSubrace?.traits || [])],
-      languages: selectedRace.languages,
+      cantrips: [],
+      knownSpells: [...homebrewSpells.map((s: any) => s.id), ...draftedSpells],
+      preparedSpells: [...homebrewSpells.map((s: any) => s.id), ...draftedSpells],
+      customSpells: homebrewSpells.length > 0 ? homebrewSpells : [],
+      conditions: [],
+      deathSaves: { successes: 0, failures: 0 },
+      attacks: [],
+      traits: [...((effectiveRace as any).traits || []), ...(selectedSubrace?.traits || [])],
+      languages: (effectiveRace as any).languages || ['Common'],
       inventory: startingInventory,
+      gold: 0,
+      silver: 0,
+      copper: 0,
       equipped,
-      equipment: selectedBackground.equipment, // Legacy
-      features: [...selectedClass.features.filter((f:any) => f.level <= 1), ...subclassFeatures],
+      equipment: (effectiveBackground as any).equipment || [],
+      features: [...((effectiveClass as any).features || []).filter((f:any) => f.level <= 1), ...subclassFeatures],
       portrait: portraitData || null,
       notes: '', quests: '', people: '', places: '', feats: [],
       personalityTraits: oraclePersonalityTraits,
       ideals: oracleIdeals,
       bonds: oracleBonds,
       flaws: oracleFlaws,
+      homebrew: {
+        spells: homebrewSpells,
+        items: homebrewItems,
+        features: [],
+        subclasses: [],
+      },
       logbook: [{
         id: 'log_' + Date.now(),
         timestamp: Date.now(),
         type: 'creation',
-        description: `${characterName} was born. A Level 1 ${selectedRace.name} ${selectedClass.name}, ${selectedBackground.name} background.`,
+        description: `${characterName} was born. A Level 1 ${(effectiveRace as any).name} ${(effectiveClass as any).name}, ${(effectiveBackground as any).name} background.`,
         previousState: null,
       }],
     };
@@ -581,8 +659,8 @@ export default function CharacterCreationWizard() {
         {RACES.map(race => (
           <div
             key={race.id}
-            className={`${styles.optionCard} ${selectedRace?.id === race.id ? styles.selected : ''}`}
-            onClick={() => { setSelectedRace(race); setSelectedSubrace(null); }}
+            className={`${styles.optionCard} ${selectedRace?.id === race.id && !customRaceMode ? styles.selected : ''}`}
+            onClick={() => { setSelectedRace(race); setSelectedSubrace(null); setCustomRaceMode(false); }}
           >
             <h3 className={styles.optionName}>{race.name}</h3>
             <p className={styles.optionMeta}>
@@ -591,7 +669,39 @@ export default function CharacterCreationWizard() {
             <p className={styles.optionDesc}>{race.description}</p>
           </div>
         ))}
+
+        {/* Custom Race Card */}
+        <div
+          className={`${styles.optionCard} ${customRaceMode ? styles.selected : ''}`}
+          onClick={() => { setCustomRaceMode(true); setSelectedRace(null); setSelectedSubrace(null); }}
+          style={{ borderStyle: customRaceMode ? 'solid' : 'dashed', borderColor: customRaceMode ? '#cfaa5e' : '#cfaa5e55' }}
+        >
+          <h3 className={styles.optionName} style={{ color: '#cfaa5e' }}>✨ Custom Race</h3>
+          <p className={styles.optionMeta}>Homebrew · Speed 30 ft · No racial bonuses</p>
+          <p className={styles.optionDesc}>Create a completely custom race for your homebrew world.</p>
+        </div>
       </div>
+
+      {/* Custom Race Form */}
+      {customRaceMode && (
+        <div style={{ marginTop: '16px', padding: '16px', background: 'rgba(207,170,94,0.06)', border: '1px solid #cfaa5e', borderRadius: '8px' }}>
+          <input
+            placeholder="Race Name (e.g., Aetherborn)"
+            value={customRaceName}
+            onChange={e => setCustomRaceName(e.target.value)}
+            className={styles.oracleInput}
+            style={{ width: '100%', marginBottom: '8px', padding: '10px', background: '#111', border: '1px solid #444' }}
+          />
+          <textarea
+            placeholder="Brief description of this race..."
+            value={customRaceDesc}
+            onChange={e => setCustomRaceDesc(e.target.value)}
+            className={styles.oracleInput}
+            style={{ width: '100%', minHeight: '60px', padding: '10px', background: '#111', border: '1px solid #444', resize: 'vertical' }}
+          />
+          <p style={{ fontSize: '11px', color: '#888', marginTop: '8px' }}>Defaults: Speed 30ft, no ability bonuses. You can add homebrew features later via the Features tab.</p>
+        </div>
+      )}
       {selectedRace?.subraces && selectedRace.subraces.length > 0 && (
         <div className={styles.subraceSection}>
           <h3 className={styles.subraceTitle}>Choose Subrace</h3>
@@ -623,8 +733,8 @@ export default function CharacterCreationWizard() {
         {CLASSES.map(cls => (
           <div
             key={cls.id}
-            className={`${styles.optionCard} ${selectedClass?.id === cls.id ? styles.selected : ''}`}
-            onClick={() => { setSelectedClass(cls); setSelectedSkills([]); setSelectedSubclassChoice(''); }}
+            className={`${styles.optionCard} ${selectedClass?.id === cls.id && !customClassMode ? styles.selected : ''}`}
+            onClick={() => { setSelectedClass(cls); setSelectedSkills([]); setSelectedSubclassChoice(''); setCustomClassMode(false); }}
           >
             <h3 className={styles.optionName}>{cls.name}</h3>
             <p className={styles.optionMeta}>
@@ -633,7 +743,67 @@ export default function CharacterCreationWizard() {
             <p className={styles.optionDesc}>{cls.description}</p>
           </div>
         ))}
+
+        {/* Custom Class Card */}
+        <div
+          className={`${styles.optionCard} ${customClassMode ? styles.selected : ''}`}
+          onClick={() => { setCustomClassMode(true); setSelectedClass(null); setSelectedSkills([]); setSelectedSubclassChoice(''); }}
+          style={{ borderStyle: customClassMode ? 'solid' : 'dashed', borderColor: customClassMode ? '#cfaa5e' : '#cfaa5e55' }}
+        >
+          <h3 className={styles.optionName} style={{ color: '#cfaa5e' }}>✨ Custom Class</h3>
+          <p className={styles.optionMeta}>Homebrew · Configure hit die & spellcasting</p>
+          <p className={styles.optionDesc}>Create a fully custom class — select a hit die and optional spellcasting ability.</p>
+        </div>
       </div>
+
+      {/* Custom Class Form */}
+      {customClassMode && (
+        <div style={{ marginTop: '16px', padding: '16px', background: 'rgba(207,170,94,0.06)', border: '1px solid #cfaa5e', borderRadius: '8px' }}>
+          <input
+            placeholder="Class Name (e.g., Chronomancer)"
+            value={customClassName}
+            onChange={e => setCustomClassName(e.target.value)}
+            className={styles.oracleInput}
+            style={{ width: '100%', marginBottom: '8px', padding: '10px', background: '#111', border: '1px solid #444' }}
+          />
+          <textarea
+            placeholder="Brief description of this class..."
+            value={customClassDesc}
+            onChange={e => setCustomClassDesc(e.target.value)}
+            className={styles.oracleInput}
+            style={{ width: '100%', minHeight: '50px', marginBottom: '8px', padding: '10px', background: '#111', border: '1px solid #444', resize: 'vertical' }}
+          />
+          <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+            <div style={{ flex: 1, minWidth: '140px' }}>
+              <label style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Hit Die</label>
+              <select
+                value={customClassHitDie}
+                onChange={e => setCustomClassHitDie(e.target.value)}
+                style={{ width: '100%', padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
+              >
+                <option value="6">d6 (Wizard/Sorcerer)</option>
+                <option value="8">d8 (Bard/Cleric/Rogue)</option>
+                <option value="10">d10 (Fighter/Ranger)</option>
+                <option value="12">d12 (Barbarian)</option>
+              </select>
+            </div>
+            <div style={{ flex: 1, minWidth: '140px' }}>
+              <label style={{ fontSize: '11px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px', display: 'block', marginBottom: '4px' }}>Spellcasting Ability</label>
+              <select
+                value={customClassSpellAbility}
+                onChange={e => setCustomClassSpellAbility(e.target.value)}
+                style={{ width: '100%', padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', borderRadius: '4px' }}
+              >
+                <option value="">None (Martial)</option>
+                <option value="int">Intelligence</option>
+                <option value="wis">Wisdom</option>
+                <option value="cha">Charisma</option>
+              </select>
+            </div>
+          </div>
+          <p style={{ fontSize: '11px', color: '#888', marginTop: '8px' }}>You can add custom features, spells, and equipment after creation via the Homebrew system.</p>
+        </div>
+      )}
 
       {selectedClass && selectedClass.subclassLevel === 1 && (
         <div style={{ marginTop: '32px', animation: 'fadeIn 0.3s' }}>
@@ -824,15 +994,47 @@ export default function CharacterCreationWizard() {
         {BACKGROUNDS.map(bg => (
           <div
             key={bg.id}
-            className={`${styles.optionCard} ${selectedBackground?.id === bg.id ? styles.selected : ''}`}
-            onClick={() => setSelectedBackground(bg)}
+            className={`${styles.optionCard} ${selectedBackground?.id === bg.id && !customBgMode ? styles.selected : ''}`}
+            onClick={() => { setSelectedBackground(bg); setCustomBgMode(false); }}
           >
             <h3 className={styles.optionName}>{bg.name}</h3>
             <p className={styles.optionMeta}>{bg.skillProficiencies.map(s => SKILL_LABELS[s]).join(', ')}</p>
             <p className={styles.optionDesc}>{bg.description}</p>
           </div>
         ))}
+
+        {/* Custom Background Card */}
+        <div
+          className={`${styles.optionCard} ${customBgMode ? styles.selected : ''}`}
+          onClick={() => { setCustomBgMode(true); setSelectedBackground(null); }}
+          style={{ borderStyle: customBgMode ? 'solid' : 'dashed', borderColor: customBgMode ? '#cfaa5e' : '#cfaa5e55' }}
+        >
+          <h3 className={styles.optionName} style={{ color: '#cfaa5e' }}>✨ Custom Background</h3>
+          <p className={styles.optionMeta}>Homebrew · No default skill proficiencies</p>
+          <p className={styles.optionDesc}>Define a unique backstory that doesn't fit any standard template.</p>
+        </div>
       </div>
+
+      {/* Custom Background Form */}
+      {customBgMode && (
+        <div style={{ marginTop: '16px', padding: '16px', background: 'rgba(207,170,94,0.06)', border: '1px solid #cfaa5e', borderRadius: '8px' }}>
+          <input
+            placeholder="Background Name (e.g., Displaced Noble)"
+            value={customBgName}
+            onChange={e => setCustomBgName(e.target.value)}
+            className={styles.oracleInput}
+            style={{ width: '100%', marginBottom: '8px', padding: '10px', background: '#111', border: '1px solid #444' }}
+          />
+          <textarea
+            placeholder="Brief description of this background..."
+            value={customBgDesc}
+            onChange={e => setCustomBgDesc(e.target.value)}
+            className={styles.oracleInput}
+            style={{ width: '100%', minHeight: '60px', padding: '10px', background: '#111', border: '1px solid #444', resize: 'vertical' }}
+          />
+          <p style={{ fontSize: '11px', color: '#888', marginTop: '8px' }}>Custom backgrounds start with no locked skill proficiencies. Choose your skills freely in the Skills step.</p>
+        </div>
+      )}
     </>
   );
 

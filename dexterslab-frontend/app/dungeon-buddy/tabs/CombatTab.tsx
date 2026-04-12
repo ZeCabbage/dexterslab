@@ -17,6 +17,7 @@ export default function CombatTab() {
   const [showLongRest, setShowLongRest] = useState(false);
   
   const [spentHitDice, setSpentHitDice] = useState(0);
+  const [hpRolled, setHpRolled] = useState(0);
 
   const [actionFilter, setActionFilter] = useState<'all' | 'action' | 'bonus_action' | 'reaction'>('all');
 
@@ -46,7 +47,52 @@ export default function CombatTab() {
   const calcMod = (score: number) => Math.floor(((score || 10) - 10) / 2);
   const strMod = calcMod(char.stats?.str);
   const dexMod = calcMod(char.stats?.dex);
+  const conMod = calcMod(char.stats?.con);
   const profBonus = Math.ceil((char.level || 1) / 4) + 1;
+
+  // Hit Die math for Short Rest
+  const hitDieSize = typeof char.hitDie === 'string' ? parseInt(char.hitDie) || 8 : char.hitDie || 8;
+  const hitDiceAvailable = (char.hitDiceTotal || 1) - (char.hitDiceUsed || 0);
+  const avgHitDieRoll = Math.ceil(hitDieSize / 2) + 1;
+
+  const handleRollHitDie = () => {
+    if (spentHitDice >= hitDiceAvailable) return;
+    const roll = Math.floor(Math.random() * hitDieSize) + 1;
+    const totalGain = Math.max(1, roll + conMod); // Min 1 HP per die
+    setSpentHitDice(prev => prev + 1);
+    setHpRolled(prev => prev + totalGain);
+  };
+
+  const handleAvgHitDie = () => {
+    if (spentHitDice >= hitDiceAvailable) return;
+    const totalGain = Math.max(1, avgHitDieRoll + conMod);
+    setSpentHitDice(prev => prev + 1);
+    setHpRolled(prev => prev + totalGain);
+  };
+
+  // Short rest resources preview
+  const shortRestResources = Object.entries(char.resources || {})
+    .filter(([_, res]) => res.recharge === 'short' && res.used > 0)
+    .map(([_, res]) => res.name);
+
+  // Long rest resources preview
+  const longRestResources = Object.entries(char.resources || {})
+    .filter(([_, res]) => (res.recharge === 'short' || res.recharge === 'long') && res.used > 0)
+    .map(([_, res]) => res.name);
+  const longRestHpGain = char.maxHp - char.currentHp;
+  const longRestDiceRecovery = Math.min(char.hitDiceUsed || 0, Math.max(1, Math.floor((char.hitDiceTotal || 1) / 2)));
+
+  const handleShortRestConfirm = () => {
+    shortRest(spentHitDice, hpRolled);
+    setShowShortRest(false);
+    setSpentHitDice(0);
+    setHpRolled(0);
+  };
+
+  const handleLongRestConfirm = () => {
+    longRest();
+    setShowLongRest(false);
+  };
 
   const handleRoll = (name: string, diceString: string, bonus: number, isAttack: boolean = false) => {
     const split = diceString.toLowerCase().split('d');
@@ -472,16 +518,7 @@ export default function CombatTab() {
     return interceptCard(card, spellData);
   });
 
-  const handleShortRestConfirm = () => {
-    shortRest(spentHitDice);
-    setShowShortRest(false);
-    setSpentHitDice(0);
-  };
 
-  const handleLongRestConfirm = () => {
-    longRest();
-    setShowLongRest(false);
-  };
 
   const addResource = () => {
     const defaultRes = { name: 'Action Surge', max: 1, used: 0, recharge: 'short' as const };
@@ -642,23 +679,98 @@ export default function CombatTab() {
       </div>
 
       {showShortRest && (
-        <div style={{ padding: '16px', background: 'rgba(50,30,10,0.8)', border: '1px solid #cfaa5e', borderRadius: '8px', marginBottom: '24px' }}>
-           <h3 style={{ margin: '0 0 8px 0', color: '#cfaa5e' }}>Short Rest Check</h3>
-           <div style={{ display: 'flex', gap: '8px' }}>
-             <input type="number" placeholder="HP Healed" value={spentHitDice} onChange={e => setSpentHitDice(parseInt(e.target.value) || 0)} style={{ width: '100px', padding: '8px', background: '#1a1a1a', border: '1px solid #333', color: '#fff' }} />
-             <button onClick={handleShortRestConfirm} style={{ padding: '8px', background: '#cfaa5e', color: '#000', border: 'none', cursor: 'pointer' }}>Confirm</button>
-             <button onClick={() => setShowShortRest(false)} style={{ padding: '8px', background: 'transparent', color: '#cfaa5e', border: '1px solid #cfaa5e', cursor: 'pointer' }}>Cancel</button>
+        <div style={{ padding: '20px', background: 'linear-gradient(135deg, rgba(50,30,10,0.95), rgba(30,20,8,0.95))', border: '1px solid #cfaa5e', borderRadius: '12px', marginBottom: '24px', boxShadow: '0 0 20px rgba(207,170,94,0.15)' }}>
+           <h3 style={{ margin: '0 0 4px 0', color: '#cfaa5e', fontFamily: 'Cinzel, serif', fontSize: '18px' }}>🏕️ Short Rest</h3>
+           <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#888' }}>Spend Hit Dice to recover HP. Short-rest resources will be restored.</p>
+           
+           {/* Hit Dice Status */}
+           <div style={{ display: 'flex', gap: '16px', alignItems: 'center', marginBottom: '16px', padding: '12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid #333' }}>
+             <div style={{ flex: 1 }}>
+               <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', letterSpacing: '1px', marginBottom: '4px' }}>Hit Dice Available</div>
+               <div style={{ fontSize: '24px', fontFamily: 'Cinzel, serif', color: hitDiceAvailable > 0 ? '#cfaa5e' : '#666' }}>
+                 {hitDiceAvailable - spentHitDice} <span style={{ fontSize: '14px', color: '#666' }}>/ {char.hitDiceTotal} (d{hitDieSize})</span>
+               </div>
+             </div>
+             <div style={{ display: 'flex', gap: '8px' }}>
+               <button 
+                 onClick={handleRollHitDie}
+                 disabled={spentHitDice >= hitDiceAvailable}
+                 style={{ padding: '10px 16px', background: spentHitDice >= hitDiceAvailable ? '#1a1a1a' : '#332211', border: `1px solid ${spentHitDice >= hitDiceAvailable ? '#333' : '#cfaa5e'}`, color: spentHitDice >= hitDiceAvailable ? '#555' : '#cfaa5e', borderRadius: '6px', cursor: spentHitDice >= hitDiceAvailable ? 'not-allowed' : 'pointer', fontFamily: 'Cinzel, serif', fontWeight: 'bold', fontSize: '13px' }}
+               >
+                 🎲 Roll d{hitDieSize}
+               </button>
+               <button 
+                 onClick={handleAvgHitDie}
+                 disabled={spentHitDice >= hitDiceAvailable}
+                 style={{ padding: '10px 16px', background: spentHitDice >= hitDiceAvailable ? '#1a1a1a' : '#222', border: `1px solid ${spentHitDice >= hitDiceAvailable ? '#333' : '#666'}`, color: spentHitDice >= hitDiceAvailable ? '#555' : '#aaa', borderRadius: '6px', cursor: spentHitDice >= hitDiceAvailable ? 'not-allowed' : 'pointer', fontSize: '12px' }}
+               >
+                 Avg ({Math.max(1, avgHitDieRoll + conMod)})
+               </button>
+             </div>
+           </div>
+
+           {/* HP Recovery Preview */}
+           {spentHitDice > 0 && (
+             <div style={{ padding: '12px', background: 'rgba(50, 200, 50, 0.08)', border: '1px solid #3c5', borderRadius: '8px', marginBottom: '16px', textAlign: 'center' }}>
+               <div style={{ fontSize: '12px', color: '#8c8', marginBottom: '4px' }}>HP to Recover</div>
+               <div style={{ fontSize: '28px', fontFamily: 'Cinzel, serif', color: '#5f5', fontWeight: 'bold' }}>+{hpRolled}</div>
+               <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>From {spentHitDice} Hit {spentHitDice === 1 ? 'Die' : 'Dice'} (CON {conMod >= 0 ? '+' : ''}{conMod} per die)</div>
+             </div>
+           )}
+
+           {/* Resources that will recover */}
+           {shortRestResources.length > 0 && (
+             <div style={{ padding: '8px 12px', background: 'rgba(207,170,94,0.08)', border: '1px solid #443', borderRadius: '6px', marginBottom: '16px' }}>
+               <div style={{ fontSize: '10px', color: '#cfaa5e', textTransform: 'uppercase', marginBottom: '4px' }}>Resources Restoring</div>
+               <div style={{ fontSize: '12px', color: '#aaa' }}>{shortRestResources.join(' · ')}</div>
+             </div>
+           )}
+
+           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+             <button onClick={() => { setShowShortRest(false); setSpentHitDice(0); setHpRolled(0); }} style={{ padding: '10px 20px', background: 'transparent', color: '#cfaa5e', border: '1px solid #cfaa5e', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Cinzel, serif' }}>Cancel</button>
+             <button onClick={handleShortRestConfirm} style={{ padding: '10px 24px', background: '#cfaa5e', color: '#000', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Cinzel, serif', fontWeight: 'bold', boxShadow: '0 0 10px rgba(207,170,94,0.3)' }}>Rest by the Fire</button>
            </div>
         </div>
       )}
 
       {showLongRest && (
-        <div style={{ padding: '16px', background: 'rgba(10,30,50,0.8)', border: '1px solid #55aacc', borderRadius: '8px', marginBottom: '24px' }}>
-           <h3 style={{ margin: '0 0 8px 0', color: '#55aacc' }}>Long Rest Recovery</h3>
-           <p style={{ margin: '0 0 8px 0', fontSize: '12px', color: '#ccc' }}>This resets HP, spell slots, and daily features.</p>
-           <div style={{ display: 'flex', gap: '8px' }}>
-             <button onClick={handleLongRestConfirm} style={{ padding: '8px', background: '#55aacc', color: '#000', border: 'none', cursor: 'pointer' }}>Sleep</button>
-             <button onClick={() => setShowLongRest(false)} style={{ padding: '8px', background: 'transparent', color: '#55aacc', border: '1px solid #55aacc', cursor: 'pointer' }}>Cancel</button>
+        <div style={{ padding: '20px', background: 'linear-gradient(135deg, rgba(10,30,50,0.95), rgba(5,15,30,0.95))', border: '1px solid #55aacc', borderRadius: '12px', marginBottom: '24px', boxShadow: '0 0 20px rgba(85,170,204,0.15)' }}>
+           <h3 style={{ margin: '0 0 4px 0', color: '#55aacc', fontFamily: 'Cinzel, serif', fontSize: '18px' }}>🌙 Long Rest</h3>
+           <p style={{ margin: '0 0 16px 0', fontSize: '12px', color: '#888' }}>8 hours of sleep. Fully restores HP, spell slots, and all daily resources.</p>
+           
+           {/* Recovery Preview */}
+           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(140px, 1fr))', gap: '12px', marginBottom: '16px' }}>
+             <div style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid #333', textAlign: 'center' }}>
+               <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>HP Restored</div>
+               <div style={{ fontSize: '20px', fontFamily: 'Cinzel, serif', color: longRestHpGain > 0 ? '#5f5' : '#555' }}>+{longRestHpGain}</div>
+             </div>
+             <div style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid #333', textAlign: 'center' }}>
+               <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>Hit Dice Back</div>
+               <div style={{ fontSize: '20px', fontFamily: 'Cinzel, serif', color: longRestDiceRecovery > 0 ? '#cfaa5e' : '#555' }}>+{longRestDiceRecovery}</div>
+             </div>
+             <div style={{ padding: '12px', background: 'rgba(0,0,0,0.3)', borderRadius: '8px', border: '1px solid #333', textAlign: 'center' }}>
+               <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', marginBottom: '4px' }}>Resources</div>
+               <div style={{ fontSize: '20px', fontFamily: 'Cinzel, serif', color: longRestResources.length > 0 ? '#55aacc' : '#555' }}>{longRestResources.length}</div>
+             </div>
+           </div>
+
+           {/* Resources that will recover */}
+           {longRestResources.length > 0 && (
+             <div style={{ padding: '8px 12px', background: 'rgba(85,170,204,0.08)', border: '1px solid #234', borderRadius: '6px', marginBottom: '16px' }}>
+               <div style={{ fontSize: '10px', color: '#55aacc', textTransform: 'uppercase', marginBottom: '4px' }}>Restoring</div>
+               <div style={{ fontSize: '12px', color: '#aaa' }}>{longRestResources.join(' · ')}</div>
+             </div>
+           )}
+
+           {(char.deathSaves?.successes > 0 || char.deathSaves?.failures > 0) && (
+             <div style={{ padding: '8px 12px', background: 'rgba(200,100,100,0.08)', border: '1px solid #433', borderRadius: '6px', marginBottom: '16px', fontSize: '12px', color: '#c88' }}>
+               ✦ Death saves will be cleared
+             </div>
+           )}
+
+           <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end' }}>
+             <button onClick={() => setShowLongRest(false)} style={{ padding: '10px 20px', background: 'transparent', color: '#55aacc', border: '1px solid #55aacc', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Cinzel, serif' }}>Cancel</button>
+             <button onClick={handleLongRestConfirm} style={{ padding: '10px 24px', background: '#55aacc', color: '#000', border: 'none', borderRadius: '6px', cursor: 'pointer', fontFamily: 'Cinzel, serif', fontWeight: 'bold', boxShadow: '0 0 10px rgba(85,170,204,0.3)' }}>Sleep Under the Stars</button>
            </div>
         </div>
       )}

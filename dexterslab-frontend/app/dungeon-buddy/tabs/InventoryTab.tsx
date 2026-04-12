@@ -4,8 +4,9 @@ import { useState } from 'react';
 import { useCharacterStore } from '../lib/store';
 import styles from '../[id]/page.module.css';
 import { ITEM_DATABASE } from '../lib/data/items';
-import { InventoryItem, EquipSlot } from '../lib/types';
+import { InventoryItem, EquipSlot, ModifierEffect } from '../lib/types';
 import Tooltip from '../components/Tooltip';
+import ModifierBuilder from '../components/ModifierBuilder';
 
 const SLOTS: { id: EquipSlot, label: string }[] = [
   { id: 'head', label: 'Head' },
@@ -21,37 +22,57 @@ const SLOTS: { id: EquipSlot, label: string }[] = [
 ];
 
 export default function InventoryTab() {
-  const { char, equipItem, unequipSlot, updateField } = useCharacterStore();
+  const { char, equipItem, unequipSlot, updateField, addHomebrewItem } = useCharacterStore();
   const [selectedBackpackItem, setSelectedBackpackItem] = useState<InventoryItem | null>(null);
   const [isAdding, setIsAdding] = useState(false);
-  const [newItemMode, setNewItemMode] = useState<'srd' | 'custom'>('srd');
+  const [newItemMode, setNewItemMode] = useState<'srd' | 'custom' | 'homebrew'>('srd');
   const [srdSelection, setSrdSelection] = useState(Object.keys(ITEM_DATABASE)[0]);
   const [customDraft, setCustomDraft] = useState<Partial<InventoryItem>>({ name: '', type: 'gear', weight: 1 });
+  const [homebrewModifiers, setHomebrewModifiers] = useState<ModifierEffect[]>([]);
   const [slotPickerDest, setSlotPickerDest] = useState<EquipSlot | null>(null);
 
   if (!char) return null;
 
   const addItemToInventory = () => {
-    let itemToAdd: any;
-    if (newItemMode === 'srd') {
-      itemToAdd = { ...ITEM_DATABASE[srdSelection], id: `item_${Date.now()}`, qty: 1 };
+    if (newItemMode === 'homebrew') {
+      addHomebrewItem({
+        name: customDraft.name || 'Unnamed Item',
+        type: customDraft.type as any,
+        weight: customDraft.weight,
+        damage: customDraft.damage,
+        damageType: customDraft.damageType,
+        weaponCategory: customDraft.weaponCategory,
+        properties: customDraft.properties,
+        armorClass: customDraft.armorClass,
+        armorCategory: customDraft.armorCategory,
+        description: (customDraft as any).description || '',
+        modifiers: homebrewModifiers.length > 0 ? homebrewModifiers : undefined,
+        rarity: homebrewModifiers.length > 0 ? 'uncommon' : undefined,
+      });
+      setHomebrewModifiers([]);
     } else {
-      itemToAdd = { 
-         id: `custom_item_${Date.now()}`, 
-         name: customDraft.name || 'Unknown Item', 
-         type: customDraft.type as any, 
-         weight: customDraft.weight, 
-         qty: 1, 
-         damage: customDraft.damage,
-         damageType: customDraft.damageType,
-         weaponCategory: customDraft.weaponCategory,
-         properties: customDraft.properties,
-         armorClass: customDraft.armorClass,
-         armorCategory: customDraft.armorCategory
-      };
+      let itemToAdd: any;
+      if (newItemMode === 'srd') {
+        itemToAdd = { ...ITEM_DATABASE[srdSelection], id: `item_${Date.now()}`, qty: 1 };
+      } else {
+        itemToAdd = { 
+           id: `custom_item_${Date.now()}`, 
+           name: customDraft.name || 'Unknown Item', 
+           type: customDraft.type as any, 
+           weight: customDraft.weight, 
+           qty: 1, 
+           damage: customDraft.damage,
+           damageType: customDraft.damageType,
+           weaponCategory: customDraft.weaponCategory,
+           properties: customDraft.properties,
+           armorClass: customDraft.armorClass,
+           armorCategory: customDraft.armorCategory
+        };
+      }
+      updateField('inventory', [...(char.inventory || []), itemToAdd]);
     }
-    updateField('inventory', [...(char.inventory || []), itemToAdd]);
     setIsAdding(false);
+    setCustomDraft({ name: '', type: 'gear', weight: 1 });
   };
 
   const handleEquipToSlot = (slot: EquipSlot) => {
@@ -190,6 +211,10 @@ export default function InventoryTab() {
                  <input type="radio" checked={newItemMode === 'custom'} onChange={() => setNewItemMode('custom')} style={{ marginRight: '8px' }} />
                  Write Custom Item
                </label>
+               <label style={{ color: '#ccc', fontSize: '14px', cursor: 'pointer' }}>
+                 <input type="radio" checked={newItemMode === 'homebrew'} onChange={() => setNewItemMode('homebrew')} style={{ marginRight: '8px' }} />
+                 ✨ Forge Homebrew Item
+               </label>
             </div>
 
             {newItemMode === 'srd' ? (
@@ -214,6 +239,10 @@ export default function InventoryTab() {
                   </select>
                   <input type="number" placeholder="Weight (lbs)" value={customDraft.weight} onChange={e => setCustomDraft({...customDraft, weight: parseFloat(e.target.value)||0})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', width: '100px' }} />
                 </div>
+
+                {newItemMode === 'homebrew' && (
+                  <input placeholder="Description (flavor text)" value={(customDraft as any).description || ''} onChange={e => setCustomDraft({...customDraft, description: e.target.value} as any)} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
+                )}
                 
                 {customDraft.type === 'weapon' && (
                   <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
@@ -238,12 +267,20 @@ export default function InventoryTab() {
                     </select>
                   </div>
                 )}
+
+                {newItemMode === 'homebrew' && (
+                  <div style={{ marginTop: '8px' }}>
+                    <ModifierBuilder value={homebrewModifiers} onChange={setHomebrewModifiers} />
+                  </div>
+                )}
               </div>
             )}
 
             <div style={{ display: 'flex', gap: '8px' }}>
-              <button onClick={addItemToInventory} style={{ padding: '8px 16px', background: '#55aacc', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer' }}>Add to Backpack</button>
-              <button onClick={() => setIsAdding(false)} style={{ padding: '8px 16px', background: 'transparent', color: '#888', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
+              <button onClick={addItemToInventory} style={{ padding: '8px 16px', background: newItemMode === 'homebrew' ? 'linear-gradient(135deg, #cfaa5e, #b8842e)' : '#55aacc', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>
+                {newItemMode === 'homebrew' ? '✨ Forge Item' : 'Add to Backpack'}
+              </button>
+              <button onClick={() => { setIsAdding(false); setHomebrewModifiers([]); }} style={{ padding: '8px 16px', background: 'transparent', color: '#888', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
             </div>
           </div>
         )}

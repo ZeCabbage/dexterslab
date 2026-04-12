@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { LiveCharacter, EquipSlot, InventoryItem, ModifierEffect, ActiveModifierState, ActiveCombatToggle, StagedModifier } from './types';
+import { LiveCharacter, EquipSlot, InventoryItem, ModifierEffect, ActiveModifierState, ActiveCombatToggle, StagedModifier, CustomItem, CustomSpell, CustomFeature, HomebrewRegistry } from './types';
 import { getResourceScaling } from '../data/resource-scaling';
 import { THIRD_CASTER_SLOTS } from '../data/resource-scaling';
 
@@ -34,7 +34,7 @@ interface CharacterState {
   updateCurrency: (gold: number, silver: number, copper: number) => void;
   
   // Rests
-  shortRest: (hitDiceRoll: number) => void;
+  shortRest: (hitDiceSpent: number, hpRecovered: number) => void;
   longRest: () => void;
 
   // Logs
@@ -54,6 +54,14 @@ interface CharacterState {
   // ── Staged Modifier (Metamagic / Maneuver two-step staging) ──
   stageModifier: (modifier: StagedModifier) => void;
   clearStagedModifier: () => void;
+
+  // ── Universal Homebrew Engine ──
+  addHomebrewItem: (item: Partial<CustomItem>) => void;
+  addHomebrewSpell: (spell: Partial<CustomSpell>) => void;
+  addHomebrewFeature: (feature: Partial<CustomFeature>) => void;
+  removeHomebrewItem: (id: string) => void;
+  removeHomebrewSpell: (id: string) => void;
+  removeHomebrewFeature: (id: string) => void;
 }
 
 export const useCharacterStore = create<CharacterState>((set, get) => ({
@@ -256,54 +264,72 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     set({ char: { ...char, gold, silver, copper } });
   },
 
-  shortRest: (hitDiceRoll: number) => {
+  shortRest: (hitDiceSpent: number, hpRecovered: number) => {
     const { char } = get();
     if (!char) return;
 
     let newChar = { ...char };
+    const recoveredItems: string[] = [];
 
-    // Spend a Hit Die and Heal if requested
-    if (hitDiceRoll > 0 && newChar.hitDiceUsed < newChar.hitDiceTotal) {
-      newChar.hitDiceUsed += 1;
-      newChar.currentHp = Math.min(newChar.maxHp, newChar.currentHp + hitDiceRoll);
+    // 1. Spend Hit Dice and Heal
+    if (hitDiceSpent > 0 && hpRecovered > 0) {
+      const actualSpent = Math.min(hitDiceSpent, newChar.hitDiceTotal - newChar.hitDiceUsed);
+      newChar.hitDiceUsed = newChar.hitDiceUsed + actualSpent;
+      const prevHp = newChar.currentHp;
+      newChar.currentHp = Math.min(newChar.maxHp, newChar.currentHp + hpRecovered);
+      const actualHealed = newChar.currentHp - prevHp;
+      if (actualHealed > 0) recoveredItems.push(`Healed ${actualHealed} HP (spent ${actualSpent} Hit ${actualSpent === 1 ? 'Die' : 'Dice'})`);
     }
 
-    // Reset Short Rest features
+    // 2. Reset Short Rest resources
     if (newChar.resources) {
       const resetRes = { ...newChar.resources };
       for (const id in resetRes) {
-        if (resetRes[id].recharge === 'short') {
+        if (resetRes[id].recharge === 'short' && resetRes[id].used > 0) {
+          recoveredItems.push(`${resetRes[id].name}: ${resetRes[id].used} charge${resetRes[id].used !== 1 ? 's' : ''} restored`);
           resetRes[id] = { ...resetRes[id], used: 0 };
         }
       }
       newChar.resources = resetRes;
     }
 
-    // Reset short-rest activeModifiers (Metamagic/Maneuver one-shots)
+    // 3. Reset short-rest activeModifiers (Metamagic/Maneuver one-shots)
     if (newChar.activeModifiers) {
       newChar.activeModifiers = newChar.activeModifiers.map(m =>
         m.recharge === 'short' ? { ...m, isSpent: false } : m
       );
     }
 
-    // Deactivate all combat toggles on rest
+    // 4. Deactivate all combat toggles tied to short-rest resources
     if (newChar.activeCombatToggles) {
-      newChar.activeCombatToggles = newChar.activeCombatToggles.map(t => ({ ...t, isActive: false }));
+      newChar.activeCombatToggles = newChar.activeCombatToggles.map(t => {
+        if (t.isActive) {
+          recoveredItems.push(`${t.name} faded`);
+          return { ...t, isActive: false };
+        }
+        return t;
+      });
     }
 
-    // Clear staged modifier
-    newChar.stagedModifier = null;
+    // 5. Clear staged modifier
+    if (newChar.stagedModifier) {
+      recoveredItems.push(`Staged ${newChar.stagedModifier.name} cleared`);
+      newChar.stagedModifier = null;
+    }
 
-    // Log the event
+    // 6. Log the event with flavor text
+    const summary = recoveredItems.length > 0
+      ? recoveredItems.join('. ') + '.'
+      : 'No resources recovered.';
     newChar.logbook = [
       {
         id: 'log_' + Date.now(),
         timestamp: Date.now(),
         type: 'rest',
-        description: `Took a Short Rest. Healed for ${hitDiceRoll} HP. Spent 1 Hit Die.`,
+        description: `🏕️ Short Rest: ${char.name} took a moment by the campfire. ${summary}`,
         previousState: null
       },
-      ...Math.abs(newChar.logbook?.length ?? 0) ? newChar.logbook : []
+      ...(newChar.logbook || [])
     ];
 
     set({ char: newChar });
@@ -314,51 +340,68 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     if (!char) return;
 
     let newChar = { ...char };
+    const recoveredItems: string[] = [];
 
-    // Restore HP
+    // 1. Restore HP
+    const hpRecovered = newChar.maxHp - newChar.currentHp;
     newChar.currentHp = newChar.maxHp;
-    newChar.tempHp = 0;
+    if (hpRecovered > 0) recoveredItems.push(`Restored ${hpRecovered} HP to full`);
+    if (newChar.tempHp > 0) {
+      recoveredItems.push(`${newChar.tempHp} Temp HP cleared`);
+      newChar.tempHp = 0;
+    }
 
-    // Restore Half Hit Dice
+    // 2. Recover half Hit Dice (minimum 1)
     const halfDice = Math.max(1, Math.floor(newChar.hitDiceTotal / 2));
+    const diceRecovered = Math.min(newChar.hitDiceUsed, halfDice);
     newChar.hitDiceUsed = Math.max(0, newChar.hitDiceUsed - halfDice);
+    if (diceRecovered > 0) recoveredItems.push(`Recovered ${diceRecovered} Hit ${diceRecovered === 1 ? 'Die' : 'Dice'}`);
 
-    // Reset all non-none resources
+    // 3. Reset all non-none resources
     if (newChar.resources) {
       const resetRes = { ...newChar.resources };
       for (const id in resetRes) {
-        if (resetRes[id].recharge === 'long' || resetRes[id].recharge === 'short') {
+        if ((resetRes[id].recharge === 'long' || resetRes[id].recharge === 'short') && resetRes[id].used > 0) {
+          recoveredItems.push(`${resetRes[id].name} fully restored`);
           resetRes[id] = { ...resetRes[id], used: 0 };
         }
       }
       newChar.resources = resetRes;
     }
 
-    // Reset ALL activeModifiers on long rest
+    // 4. Reset ALL activeModifiers on long rest
     if (newChar.activeModifiers) {
       newChar.activeModifiers = newChar.activeModifiers.map(m => ({ ...m, isSpent: false }));
     }
 
-    // Deactivate all combat toggles on long rest
+    // 5. Deactivate ALL combat toggles
     if (newChar.activeCombatToggles) {
-      newChar.activeCombatToggles = newChar.activeCombatToggles.map(t => ({ ...t, isActive: false }));
+      newChar.activeCombatToggles = newChar.activeCombatToggles.map(t => {
+        if (t.isActive) recoveredItems.push(`${t.name} faded`);
+        return { ...t, isActive: false };
+      });
     }
 
-    // Clear staged modifier
-    newChar.stagedModifier = null;
+    // 6. Clear staged modifier and death saves
+    if (newChar.stagedModifier) newChar.stagedModifier = null;
+    if (newChar.deathSaves?.successes > 0 || newChar.deathSaves?.failures > 0) {
+      recoveredItems.push('Death saves cleared');
+      newChar.deathSaves = { successes: 0, failures: 0 };
+    }
 
-    // Clear death saves
-    newChar.deathSaves = { successes: 0, failures: 0 };
-
+    // 7. Log the event with flavor text
+    const summary = recoveredItems.length > 0
+      ? recoveredItems.join('. ') + '.'
+      : 'Already at full strength.';
     newChar.logbook = [
       {
         id: 'log_' + Date.now(),
         timestamp: Date.now(),
         type: 'rest',
-        description: `Took a Long Rest. Restored all HP and spell slots.`,
+        description: `🌙 Long Rest: ${char.name} settled into a deep slumber under the stars. ${summary}`,
         previousState: null
       },
-      ...Math.abs(newChar.logbook?.length ?? 0) ? newChar.logbook : []
+      ...(newChar.logbook || [])
     ];
 
     set({ char: newChar });
@@ -720,6 +763,142 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     const { char } = get();
     if (!char) return;
     set({ char: { ...char, stagedModifier: null } });
-  }
+  },
+
+  // ══════════════════════════════════════════════
+  // UNIVERSAL HOMEBREW ENGINE CRUD
+  // ══════════════════════════════════════════════
+
+  addHomebrewItem: (item: Partial<CustomItem>) => {
+    const { char } = get();
+    if (!char) return;
+    const hb: HomebrewRegistry = char.homebrew || { spells: [], items: [], features: [], subclasses: [] };
+    const newItem: CustomItem = {
+      id: item.id || `hb_item_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+      name: item.name || 'Unnamed Item',
+      qty: item.qty || 1,
+      weight: item.weight || 0,
+      attuned: item.attuned || false,
+      description: item.description || '',
+      type: item.type || 'gear',
+      slot: item.slot,
+      damage: item.damage,
+      damageType: item.damageType,
+      properties: item.properties,
+      weaponCategory: item.weaponCategory,
+      armorClass: item.armorClass,
+      armorCategory: item.armorCategory,
+      actionCost: item.actionCost,
+      modifiers: item.modifiers,
+      rarity: item.rarity,
+      requiresAttunement: item.requiresAttunement,
+      isHomebrew: true,
+      createdAt: Date.now(),
+    };
+    // Also push into inventory so it appears in the backpack
+    set({
+      char: {
+        ...char,
+        homebrew: { ...hb, items: [...hb.items, newItem] },
+        inventory: [...(char.inventory || []), newItem],
+      }
+    });
+  },
+
+  addHomebrewSpell: (spell: Partial<CustomSpell>) => {
+    const { char } = get();
+    if (!char) return;
+    const hb: HomebrewRegistry = char.homebrew || { spells: [], items: [], features: [], subclasses: [] };
+    const newSpell: CustomSpell = {
+      id: spell.id || `hb_spell_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+      name: spell.name || 'Unnamed Spell',
+      level: spell.level || 0,
+      school: spell.school || 'Evocation',
+      castingTime: spell.castingTime || '1 action',
+      range: spell.range || 'Self',
+      components: spell.components || 'V, S',
+      duration: spell.duration || 'Instantaneous',
+      description: spell.description || '',
+      damage: spell.damage,
+      damageType: spell.damageType,
+      actionCost: spell.actionCost || 'action',
+      classes: spell.classes || [char.class],
+      modifiers: spell.modifiers,
+      isHomebrew: true,
+      createdAt: Date.now(),
+    };
+    // Also add to knownSpells and customSpells so it shows in the Grimoire
+    set({
+      char: {
+        ...char,
+        homebrew: { ...hb, spells: [...hb.spells, newSpell] },
+        customSpells: [...(char.customSpells || []), newSpell],
+        knownSpells: [...(char.knownSpells || []), newSpell.id],
+      }
+    });
+  },
+
+  addHomebrewFeature: (feature: Partial<CustomFeature>) => {
+    const { char } = get();
+    if (!char) return;
+    const hb: HomebrewRegistry = char.homebrew || { spells: [], items: [], features: [], subclasses: [] };
+    const newFeature: CustomFeature = {
+      id: feature.id || `hb_feat_${Date.now()}_${Math.floor(Math.random() * 10000)}`,
+      name: feature.name || 'Unnamed Feature',
+      description: feature.description || '',
+      level: feature.level || char.level,
+      source: feature.source || 'Homebrew',
+      modifiers: feature.modifiers,
+      isActive: feature.isActive !== undefined ? feature.isActive : true,
+      isHomebrew: true,
+      createdAt: Date.now(),
+    };
+    set({
+      char: {
+        ...char,
+        homebrew: { ...hb, features: [...hb.features, newFeature] },
+      }
+    });
+  },
+
+  removeHomebrewItem: (id: string) => {
+    const { char } = get();
+    if (!char) return;
+    const hb = char.homebrew || { spells: [], items: [], features: [], subclasses: [] };
+    set({
+      char: {
+        ...char,
+        homebrew: { ...hb, items: hb.items.filter(i => i.id !== id) },
+        inventory: (char.inventory || []).filter(i => i.id !== id),
+      }
+    });
+  },
+
+  removeHomebrewSpell: (id: string) => {
+    const { char } = get();
+    if (!char) return;
+    const hb = char.homebrew || { spells: [], items: [], features: [], subclasses: [] };
+    set({
+      char: {
+        ...char,
+        homebrew: { ...hb, spells: hb.spells.filter(s => s.id !== id) },
+        customSpells: (char.customSpells || []).filter(s => s.id !== id),
+        knownSpells: (char.knownSpells || []).filter(s => s !== id),
+        preparedSpells: (char.preparedSpells || []).filter(s => s !== id),
+      }
+    });
+  },
+
+  removeHomebrewFeature: (id: string) => {
+    const { char } = get();
+    if (!char) return;
+    const hb = char.homebrew || { spells: [], items: [], features: [], subclasses: [] };
+    set({
+      char: {
+        ...char,
+        homebrew: { ...hb, features: hb.features.filter(f => f.id !== id) },
+      }
+    });
+  },
 }));
 

@@ -5,14 +5,15 @@ import { useCharacterStore } from '../lib/store';
 import { useSpells } from '../hooks/useSpells';
 import SpellCard from '../components/SpellCard';
 import SpellBrowser from '../components/SpellBrowser';
-import { SpellData, ActionCost } from '../lib/types';
+import { SpellData, ActionCost, ModifierEffect } from '../lib/types';
 import styles from '../[id]/page.module.css';
+import ModifierBuilder from '../components/ModifierBuilder';
 
 const SPELL_SCHOOLS = ['Abjuration', 'Conjuration', 'Divination', 'Enchantment', 'Evocation', 'Illusion', 'Necromancy', 'Transmutation'];
 const calcMod = (score: number) => Math.floor((score - 10) / 2);
 
 export default function SpellsTab() {
-  const { char, updateField, prepareSpell, unprepareSpell } = useCharacterStore();
+  const { char, updateField, prepareSpell, unprepareSpell, addHomebrewSpell, removeHomebrewSpell } = useCharacterStore();
   const [activeSubTab, setActiveSubTab] = useState<'mine' | 'grimoire'>('mine');
   
   // Custom spell form state
@@ -20,8 +21,9 @@ export default function SpellsTab() {
   const [customDraft, setCustomDraft] = useState<Partial<SpellData>>({
     name: '', level: 0, school: 'Evocation', castingTime: '1 action',
     range: '60 feet', components: 'V, S', duration: 'Instantaneous',
-    description: '', damage: '', actionCost: 'action'
+    description: '', damage: '', damageType: '', actionCost: 'action'
   });
+  const [spellModifiers, setSpellModifiers] = useState<ModifierEffect[]>([]);
 
   const knownSpellsData = useSpells(char?.knownSpells, char?.customSpells);
 
@@ -36,8 +38,7 @@ export default function SpellsTab() {
   const saveCustomSpell = () => {
     if (!customDraft.name || !customDraft.description) return;
     
-    const newCustomSpell: SpellData = {
-      id: `custom_spell_${Date.now()}`,
+    addHomebrewSpell({
       name: customDraft.name || 'Unknown Spell',
       level: customDraft.level || 0,
       school: customDraft.school || 'Evocation',
@@ -47,25 +48,30 @@ export default function SpellsTab() {
       duration: customDraft.duration || 'Instantaneous',
       description: customDraft.description || '',
       damage: customDraft.damage,
+      damageType: customDraft.damageType,
       actionCost: (customDraft.actionCost || 'action') as ActionCost,
-      classes: [char.class], // Inherently assigned to current character class for BG3 lock logic
-    };
-
-    updateField('customSpells', [...(char.customSpells || []), newCustomSpell]);
-    updateField('knownSpells', [...(char.knownSpells || []), newCustomSpell.id]);
+      classes: [char.class],
+      modifiers: spellModifiers.length > 0 ? spellModifiers : undefined,
+    });
     
     setIsAddingCustom(false);
+    setSpellModifiers([]);
     setCustomDraft({
       name: '', level: 0, school: 'Evocation', castingTime: '1 action',
       range: '60 feet', components: 'V, S', duration: 'Instantaneous',
-      description: '', damage: '', actionCost: 'action'
+      description: '', damage: '', damageType: '', actionCost: 'action'
     });
   };
 
   const removeCustomSpell = (id: string) => {
-    updateField('customSpells', (char.customSpells || []).filter(s => s.id !== id));
-    updateField('knownSpells', (char.knownSpells || []).filter(s => s !== id));
-    updateField('preparedSpells', (char.preparedSpells || []).filter(s => s !== id));
+    // Use homebrew-aware removal if it's a homebrew spell, else legacy
+    if (id.startsWith('hb_spell_')) {
+      removeHomebrewSpell(id);
+    } else {
+      updateField('customSpells', (char.customSpells || []).filter(s => s.id !== id));
+      updateField('knownSpells', (char.knownSpells || []).filter(s => s !== id));
+      updateField('preparedSpells', (char.preparedSpells || []).filter(s => s !== id));
+    }
   };
 
   return (
@@ -134,14 +140,22 @@ export default function SpellsTab() {
                 <input placeholder="Duration (e.g. 1 minute, Instantaneous)" value={customDraft.duration} onChange={e => setCustomDraft({...customDraft, duration: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
 
                 <input placeholder="Components (V, S, M)" value={customDraft.components} onChange={e => setCustomDraft({...customDraft, components: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
-                <input placeholder="Damage/Effect (e.g. 1d8 Fire) - Optional" value={customDraft.damage} onChange={e => setCustomDraft({...customDraft, damage: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
+                <input placeholder="Damage/Effect (e.g. 1d8) - Optional" value={customDraft.damage} onChange={e => setCustomDraft({...customDraft, damage: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
+                <select value={customDraft.damageType || ''} onChange={e => setCustomDraft({...customDraft, damageType: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }}>
+                  <option value="">Damage Type (optional)</option>
+                  {['acid','bludgeoning','cold','fire','force','lightning','necrotic','piercing','poison','psychic','radiant','slashing','thunder'].map(t => <option key={t} value={t}>{t}</option>)}
+                </select>
               </div>
 
               <textarea placeholder="Full Spell Description..." value={customDraft.description} onChange={e => setCustomDraft({...customDraft, description: e.target.value})} style={{ width: '100%', height: '100px', padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', marginBottom: '16px' }} />
 
+              <div style={{ marginBottom: '16px' }}>
+                <ModifierBuilder value={spellModifiers} onChange={setSpellModifiers} />
+              </div>
+
               <div style={{ display: 'flex', gap: '8px' }}>
-                <button onClick={saveCustomSpell} style={{ padding: '10px 20px', background: '#cfaa5e', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>Save to Grimoire</button>
-                <button onClick={() => setIsAddingCustom(false)} style={{ padding: '10px 20px', background: 'transparent', color: '#888', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
+                <button onClick={saveCustomSpell} style={{ padding: '10px 20px', background: 'linear-gradient(135deg, #cfaa5e, #b8842e)', color: '#000', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: 'bold' }}>✨ Forge Spell</button>
+                <button onClick={() => { setIsAddingCustom(false); setSpellModifiers([]); }} style={{ padding: '10px 20px', background: 'transparent', color: '#888', border: '1px solid #555', borderRadius: '4px', cursor: 'pointer' }}>Cancel</button>
               </div>
             </div>
           )}

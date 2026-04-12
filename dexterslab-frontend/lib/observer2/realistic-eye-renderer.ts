@@ -143,11 +143,10 @@ vec3 themeClassic(vec2 uv, vec2 ic, float pupilR, float sd) {
     col += vec3(1.0, 0.95, 0.9) * spec * 1.5 * cMask;
     col += vec3(0.8, 0.85, 1.0) * spec2 * 0.7 * cMask;
 
-    // 5. Wet specular — tear film across entire eyeball surface
-    vec3 nEyeSurface = calculateSphereNormal(uv, vec2(0.0), EYE_RADIUS);
+    // 5. Wet specular — tear film (reuse sclera normal for perf)
     vec3 wetLight = normalize(vec3(0.3, 0.7, 0.8));
-    float wetSpec = pow(max(0.0, dot(nEyeSurface, wetLight)), 120.0);
-    col += vec3(1.0) * wetSpec * 0.4;
+    float wetSpec = pow(max(0.0, dot(nSclera, wetLight)), 64.0);
+    col += vec3(1.0) * wetSpec * 0.5;
 
     return col;
 }

@@ -6,7 +6,8 @@ import { useCharacterStore } from '../lib/store';
 import { CLASSES, ClassData } from '../data/srd';
 import SpellBrowser from './SpellBrowser';
 import { getSubclassFeaturesAtLevel, getSubclassFeaturesUpToLevel, SUBCLASS_FEATURES } from '../data/subclass-features';
-import { METAMAGIC_OPTIONS, MANEUVER_OPTIONS, FIGHTING_STYLE_OPTIONS } from '../data/resource-scaling';
+import { METAMAGIC_OPTIONS, MANEUVER_OPTIONS, FIGHTING_STYLE_OPTIONS, WARLOCK_PACT_SLOTS } from '../data/resource-scaling';
+import { ASI_LEVELS } from '../data/srd';
 
 interface Props {
   onClose: () => void;
@@ -27,7 +28,9 @@ export default function LevelUpWizard({ onClose }: Props) {
   const targetClassLevel = (char?.classes?.[targetClass] || TargetClassLevelFallback) + 1;
 
   const conMod = Math.floor(((char?.stats?.con || 10) - 10) / 2);
-  const hitDie = tClassData?.hitDie || 8;
+  // Custom class resilience: fall back to character's stored hitDie if class isn't in SRD
+  // char.hitDie is typed as string in LiveCharacter, so parse to ensure numeric arithmetic
+  const hitDie = tClassData?.hitDie || (typeof char?.hitDie === 'string' ? parseInt(char.hitDie) || 8 : char?.hitDie) || 8;
   const avgHp = Math.ceil(hitDie / 2) + 1;
   
   // State: HP
@@ -40,8 +43,9 @@ export default function LevelUpWizard({ onClose }: Props) {
   const [isOracleForging, setIsOracleForging] = useState(false);
   const [oracleTheme, setOracleTheme] = useState('');
 
-  // State: ASI / Feat
-  const needsAsi = tClassData?.asiLevels?.includes(targetClassLevel);
+  // State: ASI / Feat — Custom class fallback uses standard 5E ASI levels
+  const effectiveAsiLevels = tClassData?.asiLevels || ASI_LEVELS.default;
+  const needsAsi = effectiveAsiLevels.includes(targetClassLevel);
   const [asiMode, setAsiMode] = useState<'asi'|'feat'>('asi');
   const [asiAlloc, setAsiAlloc] = useState({str:0, dex:0, con:0, int:0, wis:0, cha:0});
   const [customFeat, setCustomFeat] = useState({ name: '', description: '' });
@@ -137,11 +141,17 @@ export default function LevelUpWizard({ onClose }: Props) {
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
-      setSubclassChoice(data.subclassName || 'Oracle Path');
+       setSubclassChoice(data.subclassName || 'Oracle Path');
       if (data.features && data.features.length > 0) {
         setCustomFeatures([
            ...customFeatures, 
-           ...data.features.map((f:any) => ({ name: f.name, description: f.description }))
+           ...data.features.map((f:any) => ({
+             name: f.name,
+             description: f.description,
+             modifiers: f.modifiers || [],
+             level: targetClassLevel,
+             source: data.subclassName || 'Oracle Path',
+           }))
         ]);
       }
     } catch (err: any) {
@@ -220,8 +230,21 @@ export default function LevelUpWizard({ onClose }: Props) {
       }
     }
 
-    // Unified Slot Math
-    if (tClassData?.spellSlots && tClassData.spellSlots[targetClassLevel]) {
+    // ── Warlock Pact Magic: bypass standard spell slot delta math ──
+    if (targetClass === 'Warlock' || targetClass === 'warlock') {
+      const pact = WARLOCK_PACT_SLOTS[targetClassLevel];
+      if (pact) {
+        payload.overrideSpellSlots = {
+          pact_magic: {
+            name: `Pact Slots (Lv.${pact.level})`,
+            max: pact.slots,
+            used: char.resources?.['pact_magic']?.used || 0,
+            recharge: 'short',
+          }
+        };
+      }
+    } else if (tClassData?.spellSlots && tClassData.spellSlots[targetClassLevel]) {
+      // Standard caster spell slot delta math
       const currentSlotsArr = tClassData.spellSlots[targetClassLevel] as number[];
       const previousSlotsArr = (targetClassLevel > 1 && tClassData.spellSlots[targetClassLevel-1]) ? (tClassData.spellSlots[targetClassLevel-1] as number[]) : [];
       
@@ -237,7 +260,7 @@ export default function LevelUpWizard({ onClose }: Props) {
             name: `Level ${sLevel} Spell Slots`,
             max: existingMax + delta,
             used: char.resources?.[key]?.used || 0,
-            recharge: targetClass.toLowerCase() === 'warlock' ? 'short' : 'long'
+            recharge: 'long'
           };
         }
       });
