@@ -265,6 +265,9 @@ export default function ObserverEyeV2() {
     }, []);
 
     useEffect(() => {
+        // App activation is automatic: when DisplayConnector connects to
+        // /ws/observer2, the AppManager's wsAutoActivate triggers onActivateDisplay.
+        // No REST call needed.
         const cleanup = startApp();
         return cleanup;
     }, [startApp]);

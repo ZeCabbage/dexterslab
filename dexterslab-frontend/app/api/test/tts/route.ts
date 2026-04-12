@@ -11,11 +11,10 @@ export async function GET(request: Request) {
     
     // Call the PC backend to trigger the speech dispatch
     const res = await fetch(`${backendUrl}/api/test/tts?text=${encodeURIComponent(text)}`);
-    if (res.ok) {
-      return NextResponse.json({ success: true, text });
-    } else {
-      return NextResponse.json({ success: false, error: 'Backend failed to process TTS' }, { status: 500 });
-    }
+    const data = await res.json();
+    
+    // Propagate the backend's status code and response
+    return NextResponse.json(data, { status: res.status });
   } catch (error) {
     console.error('TTS Test proxy failed:', error);
     return NextResponse.json({ success: false, error: 'Could not reach backend' }, { status: 500 });

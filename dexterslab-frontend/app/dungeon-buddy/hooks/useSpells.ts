@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { SPELL_DATABASE } from '../lib/data/spells';
-import { SpellData } from '../lib/types';
+import { SpellData, CustomSpell } from '../lib/types';
 
 /**
  * Returns full rich spell payload objects safely mapped from live Zustand string IDs.
@@ -15,8 +15,8 @@ export function useSpells(spellIds: string[] | undefined, customSpells: SpellDat
   }, [spellIds, customSpells]);
 }
 
-export function useAllSpells(customSpells: SpellData[] = []): SpellData[] {
+export function useAllSpells(customSpells: SpellData[] = [], homebrewSpells: CustomSpell[] = []): SpellData[] {
   return useMemo(() => {
-    return [...Object.values(SPELL_DATABASE), ...customSpells];
-  }, [customSpells]);
+    return [...Object.values(SPELL_DATABASE), ...customSpells, ...homebrewSpells];
+  }, [customSpells, homebrewSpells]);
 }

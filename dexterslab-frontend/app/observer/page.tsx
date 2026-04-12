@@ -13,7 +13,7 @@
  *  - Shutdown with confirmation
  */
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import styles from './page.module.css';
@@ -35,6 +35,13 @@ interface HubStatus {
   };
 }
 
+interface AppInfo {
+  id: string;
+  name: string;
+  frontendRoute: string;
+  icon: string;
+}
+
 interface LogEntry {
   time: string;
   msg: string;
@@ -46,18 +53,18 @@ interface TranscriptEntry {
   timestamp: number;
 }
 
-// ═══ Sub-Projects ═══
-interface SubProject {
-  name: string;
-  route: string;
-  icon: string;
-  voiceCmd: string;
-}
+// ═══ Voice command prefixes for app launching ═══
+const VOICE_PREFIX_HINT = '"Launch [app name]"';
 
-const SUB_PROJECTS: SubProject[] = [
-  { name: 'EYE V2', route: '/observer/eye-v2', icon: '◉', voiceCmd: '"open eye v2"' },
-  { name: 'RULES LAWYER', route: '/observer/rules-lawyer', icon: '§', voiceCmd: '"launch rules lawyer"' },
-  { name: 'OFFLINE EYE', route: '/offline-observer.html', icon: '⏣', voiceCmd: '"launch offline eye"' },
+// ═══ Hub Apps (static fallback — backend augments dynamically) ═══
+// Only apps specifically designed for the Observer Hub
+const HUB_APP_IDS = new Set(['observer-eye', 'rules-lawyer', 'record-clerk', 'offline-observer', 'deadswitch']);
+const HUB_APPS: AppInfo[] = [
+  { id: 'observer-eye', name: 'Observer V2', frontendRoute: '/observer/eye-v2', icon: '◉' },
+  { id: 'rules-lawyer', name: 'Rules Lawyer', frontendRoute: '/observer/rules-lawyer', icon: '§' },
+  { id: 'record-clerk', name: 'Dandelion Records', frontendRoute: '/record-clerk', icon: '⊚' },
+  { id: 'offline-observer', name: 'Offline Observer', frontendRoute: '/offline-observer.html', icon: '⏣' },
+  { id: 'deadswitch', name: 'Deadswitch', frontendRoute: '/observer/deadswitch', icon: '☢' },
 ];
 
 export default function ObserverHub() {
@@ -81,7 +88,8 @@ export default function ObserverHub() {
   const [cameraUrl, setCameraUrl] = useState<string | null>(null);
   const [transcriptLog, setTranscriptLog] = useState<TranscriptEntry[]>([]);
   const [soundStatus, setSoundStatus] = useState<'idle' | 'sending' | 'sent' | 'failed'>('idle');
-  const seenTimestamps = useRef(new Set<number>());
+  const [appList, setAppList] = useState<AppInfo[]>(HUB_APPS);
+  const [activeApp, setActiveApp] = useState<string | null>(null);
 
   // ── Helpers ──
   const addLog = useCallback((msg: string, type: LogEntry['type'] = 'info') => {
@@ -133,6 +141,40 @@ export default function ObserverHub() {
     return () => clearInterval(id);
   }, []);
 
+  // ── Poll available apps ──
+  useEffect(() => {
+    const poll = async () => {
+      try {
+        const res = await fetch('/api/hub/apps');
+        if (res.ok) {
+          const data = await res.json();
+          const backendApps: AppInfo[] = (data.apps || []).filter((a: AppInfo) => HUB_APP_IDS.has(a.id));
+          if (backendApps.length > 0) {
+            // Merge: use static names (user-preferred) over backend names
+            const hubMap = new Map(HUB_APPS.map(a => [a.id, a]));
+            const merged = backendApps.map(a => ({
+              ...a,
+              name: hubMap.get(a.id)?.name || a.name,
+              icon: hubMap.get(a.id)?.icon || a.icon,
+            }));
+            const ids = new Set(merged.map(a => a.id));
+            const extras = HUB_APPS.filter(a => !ids.has(a.id));
+            setAppList([...merged, ...extras]);
+          } else {
+            setAppList(HUB_APPS);
+          }
+          setActiveApp(data.activeApp || null);
+        }
+      } catch {
+        // Offline — use static list
+        if (appList.length === 0) setAppList(HUB_APPS);
+      }
+    };
+    poll();
+    const id = setInterval(poll, 5000);
+    return () => clearInterval(id);
+  }, []);
+
   // ── Poll camera snapshot (low-res JPEG from Pi → backend → here) ──
   useEffect(() => {
     let active = true;
@@ -159,21 +201,21 @@ export default function ObserverHub() {
     return () => { active = false; };
   }, []);
 
-  // ── Poll STT transcripts (accumulate, don't replace) ──
+  // ── Poll STT transcripts ──
   useEffect(() => {
+    // Reset dedup tracking on every mount (handles HMR/Fast Refresh)
+    const seen = new Set<number>();
+
     const poll = async () => {
       try {
         const res = await fetch('/api/hub/transcripts');
         if (res.ok) {
           const data: TranscriptEntry[] = await res.json();
-          setTranscriptLog(prev => {
-            const newEntries = data.filter(d => !seenTimestamps.current.has(d.timestamp));
-            if (newEntries.length === 0) return prev;
-            for (const e of newEntries) seenTimestamps.current.add(e.timestamp);
-            // Keep last 30 entries max
-            const merged = [...prev, ...newEntries];
-            return merged.slice(-30);
-          });
+          if (!data || data.length === 0) return;
+          const fresh = data.filter(d => !seen.has(d.timestamp));
+          if (fresh.length === 0) return;
+          for (const e of fresh) seen.add(e.timestamp);
+          setTranscriptLog(prev => [...prev, ...fresh].slice(-30));
         }
       } catch { /* offline */ }
     };
@@ -225,6 +267,7 @@ export default function ObserverHub() {
       if (data.success) {
         setSoundStatus('sent');
       } else {
+        console.error('[TTS] Failed:', data.error, data.hint || '');
         setSoundStatus('failed');
       }
     } catch {
@@ -428,54 +471,96 @@ export default function ObserverHub() {
             </div>
           </div>
 
-          {/* WiFi Panel */}
-          <div className={`${styles.panel} ${status.wifi.connected ? styles.panelActive : styles.panelInactive}`}>
-             <div className={styles.panelHeader}>╔══ NETWORK ══╗</div>
-             <div className={styles.panelValue} style={{ color: sigColor }}>
-               SIG {signalBars(status.wifi.signal)} {status.wifi.signal}%
+          {/* Apps Panel */}
+          <div className={`${styles.panel} ${styles.panelActive}`}>
+             <div className={styles.panelHeader}>╔══ APPS ══╗</div>
+             <div className={styles.panelValue} style={{ color: 'var(--color-cyan)' }}>
+               {appList.length} AVAILABLE
+               {activeApp ? <span style={{ fontSize: '0.75em', color: 'var(--color-green)', marginLeft: '6px' }}>● {activeApp}</span> : null}
              </div>
-             <div className={styles.panelDetail}>
-               <div className={styles.logLine} style={{ color: 'var(--color-text)' }}>SSID: {status.wifi.ssid}</div>
-               <div className={styles.logLine} style={{ color: 'var(--color-text)' }}>IP: {status.wifi.ip}</div>
-               <div style={{ color: status.wifi.connected ? 'var(--color-green)' : 'var(--color-red)' }}>
-                 {status.wifi.connected ? 'CONNECTED' : 'DISCONNECTED'}
+             <div className={styles.panelDetail} style={{ overflowY: 'auto' }}>
+               {appList.length > 0 ? (
+                 appList.map(app => (
+                   <button
+                     key={app.id}
+                     onClick={async () => {
+                        // Offline apps need REST to start the Pi daemon before navigating
+                        const OFFLINE_APPS = new Set(['offline-observer', 'deadswitch']);
+
+                        if (OFFLINE_APPS.has(app.id)) {
+                          setActionPending(`Starting ${app.name}...`);
+                          try {
+                            const res = await fetch('/api/hub/action', {
+                              method: 'POST',
+                              headers: { 'Content-Type': 'application/json' },
+                              body: JSON.stringify({ action: 'start_offline', app: app.id }),
+                            });
+                            const data = await res.json();
+                            if (data.navigate) {
+                              router.push(data.navigate);
+                            } else {
+                              router.push(app.frontendRoute);
+                            }
+                          } catch {
+                            router.push(app.frontendRoute);
+                          }
+                          setActionPending('');
+                        } else {
+                          // Online apps: just navigate — WS connection auto-activates the app
+                          router.push(app.frontendRoute);
+                        }
+                      }}
+                     className={styles.appListItem}
+                     style={{
+                       color: activeApp === app.id ? 'var(--color-green)' : 'var(--color-amber)',
+                       fontWeight: activeApp === app.id ? 'bold' : 'normal',
+                     }}
+                   >
+                     <span className={styles.appListIcon}>{app.icon}</span>
+                     <span className={styles.appListName}>{app.name.toUpperCase()}</span>
+                     <span className={styles.appListVoice}>🎤</span>
+                   </button>
+                 ))
+               ) : (
+                 <div style={{ color: '#555' }}>Loading apps...</div>
+               )}
+               <div style={{ fontSize: 'clamp(6px, 0.9vmin, 8px)', color: '#555', marginTop: '4px', textAlign: 'center' }}>
+                 Say {VOICE_PREFIX_HINT} to open
                </div>
              </div>
            </div>
         </div>
 
-        {/* ── Sub-Project Tiles ── */}
-        <div className={styles.buttonsRow}>
-          {SUB_PROJECTS.map(proj => (
+        {/* ── Bottom Status Bar (WiFi + Utilities) ── */}
+        <div className={styles.bottomBar}>
+          <div className={styles.bottomBarLeft}>
+            <span style={{ color: sigColor }}>
+              {signalBars(status.wifi.signal)} {status.wifi.signal}%
+            </span>
+            <span style={{ color: '#666' }}>│</span>
+            <span style={{ color: status.wifi.connected ? 'var(--color-green)' : 'var(--color-red)', fontSize: '0.85em' }}>
+              {status.wifi.ssid}
+            </span>
+            <span style={{ color: '#444', fontSize: '0.8em' }}>
+              {status.wifi.ip !== '---' ? ` · ${status.wifi.ip}` : ''}
+            </span>
+          </div>
+          <div className={styles.bottomBarRight}>
             <button
-              key={proj.route}
-              onClick={() => router.push(proj.route)}
-              className={`${styles.actionBtn} ${styles.projectBtn}`}
+              onClick={() => doAction('kill', 'KILL — stopping all')}
+              disabled={!!actionPending}
+              className={`${styles.utilBtn} ${styles.killBtn}`}
             >
-              {proj.icon} {proj.name}
+              ■ KILL
             </button>
-          ))}
-          <button
-            onClick={() => doAction('kill', 'KILL — stopping all')}
-            disabled={!!actionPending}
-            className={`${styles.actionBtn} ${styles.killBtn}`}
-          >
-            ■ KILL
-          </button>
-          <button
-            onClick={() => doAction('wifi_scan', 'WiFi scan')}
-            disabled={!!actionPending}
-            className={`${styles.actionBtn} ${styles.wifiBtn}`}
-          >
-            ◉ WIFI
-          </button>
-          <button
-            onClick={() => doAction('git_pull', 'Pulling latest code')}
-            disabled={!!actionPending || syncing}
-            className={`${styles.actionBtn} ${styles.syncBtn} ${syncing ? styles.syncBtnActive : ''}`}
-          >
-            {syncing ? '⟳ SYNCING...' : '⟳ SYNC'}
-          </button>
+            <button
+              onClick={() => doAction('git_pull', 'Pulling latest code')}
+              disabled={!!actionPending || syncing}
+              className={`${styles.utilBtn} ${styles.syncBtn} ${syncing ? styles.syncBtnActive : ''}`}
+            >
+              {syncing ? '⟳' : '⟳ SYNC'}
+            </button>
+          </div>
         </div>
 
         {/* ── Shutdown ── */}
@@ -502,7 +587,7 @@ export default function ObserverHub() {
 
         {/* ── Voice Hint ── */}
         <div className={styles.voiceHint}>
-          VOICE: &quot;Launch Rules Lawyer&quot; • &quot;Kill Application&quot; • &quot;Sync Code&quot; • &quot;Go Home&quot;
+          VOICE: &quot;Launch [app]&quot; • &quot;Close Application&quot; • &quot;Go Home&quot;
         </div>
         </div>
       </div>

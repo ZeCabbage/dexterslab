@@ -1,6 +1,5 @@
 import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
-import crypto from 'crypto';
 
 interface FailedLog {
   count: number;
@@ -45,14 +44,11 @@ export async function POST(request: NextRequest) {
 
   let isMatch = false;
   if (token.length > 0 && token.length === secretToken.length) {
-    try {
-      isMatch = crypto.timingSafeEqual(
-        Buffer.from(token),
-        Buffer.from(secretToken)
-      );
-    } catch (e) {
-      isMatch = false;
+    let result = 0;
+    for (let i = 0; i < token.length; i++) {
+      result |= token.charCodeAt(i) ^ secretToken.charCodeAt(i);
     }
+    isMatch = result === 0;
   }
 
   if (isMatch) {

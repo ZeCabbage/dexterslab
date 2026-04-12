@@ -200,6 +200,8 @@ export class EntityTracker {
       
       const parsed = JSON.parse(row.profile || '{}');
       
+      const classification = this.classifyPattern(entityId, row, parsed);
+      
       return {
         entity_id: row.id,
         label: row.label,
@@ -210,8 +212,8 @@ export class EntityTracker {
         interaction_rate: parsed.interaction_rate || 0,
         first_seen: row.first_seen,
         last_seen: row.last_seen,
-        pattern_type: this.classifyPattern(entityId, row, parsed).type,
-        classificationReason: this.classifyPattern(entityId, row, parsed).reason
+        pattern_type: classification.type,
+        classificationReason: classification.reason
       };
     } catch(e) {
       return null;

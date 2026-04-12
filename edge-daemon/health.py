@@ -34,6 +34,11 @@ class _HealthHandler(BaseHTTPRequestHandler):
             self.send_response(404)
             self.end_headers()
 
+class _ReusableHTTPServer(HTTPServer):
+    """HTTPServer that allows immediate port rebind after a crash."""
+    allow_reuse_address = True
+    allow_reuse_port = True
+
 class HealthServer:
     def __init__(self, config: Config, video_streamer, audio_streamer, tts_receiver):
         self.config = config
@@ -48,7 +53,31 @@ class HealthServer:
         if self._running:
             return
         self._running = True
-        self._httpd = HTTPServer(('0.0.0.0', self.config.health_port), _HealthHandler)
+
+        # Retry binding up to 5 times (handles port held by zombie process)
+        for attempt in range(5):
+            try:
+                self._httpd = _ReusableHTTPServer(
+                    ('0.0.0.0', self.config.health_port), _HealthHandler
+                )
+                break
+            except OSError as e:
+                if attempt < 4:
+                    logger.warning(f"[HealthServer] Port {self.config.health_port} busy (attempt {attempt+1}/5), retrying in 3s...")
+                    import time
+                    time.sleep(3)
+                    # Try to force-release the port
+                    try:
+                        import subprocess
+                        subprocess.run(['fuser', '-k', f'{self.config.health_port}/tcp'],
+                                     capture_output=True, timeout=3)
+                    except Exception:
+                        pass
+                else:
+                    logger.error(f"[HealthServer] Could not bind port {self.config.health_port} after 5 attempts: {e}")
+                    self._running = False
+                    return  # Don't crash the daemon — run without health endpoint
+
         # Attach references to the server so handler can access them
         self._httpd.video_streamer = self.video_streamer
         self._httpd.audio_streamer = self.audio_streamer

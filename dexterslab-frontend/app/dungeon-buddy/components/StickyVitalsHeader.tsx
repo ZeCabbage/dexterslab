@@ -1,8 +1,9 @@
 'use client';
 
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { useCharacterStore } from '../lib/store';
 import { calculateAC } from '../lib/ac';
+import { resolveModifiers } from '../lib/resolve-modifiers';
 import LevelUpWizard from './LevelUpWizard';
 import styles from '../[id]/page.module.css';
 
@@ -12,8 +13,11 @@ export default function StickyVitalsHeader() {
 
   if (!char) return null;
 
+  // Resolve modifiers for AC integration (Directive 2)
+  const resolved = useMemo(() => resolveModifiers(char), [char]);
+
   // Basic derivation
-  const speed = char.speed || 30;
+  const speed = (char.speed || 30) + resolved.bonusSpeed;
   const init = Math.floor(((char.stats?.dex || 10) - 10) / 2);
   const hpPercent = Math.min(100, Math.max(0, (char.currentHp / (char.maxHp || 1)) * 100));
   const profBonus = Math.ceil((char.level || 1) / 4) + 1;
@@ -76,7 +80,7 @@ export default function StickyVitalsHeader() {
         {/* AC Block */}
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', background: '#1a1a1a', padding: '8px 16px', borderRadius: '8px', border: '1px solid #333', justifyContent: 'center' }}>
           <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', letterSpacing: '1px' }}>Armor</div>
-          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#cfaa5e' }}>{calculateAC(char)}</div>
+          <div style={{ fontSize: '28px', fontWeight: 'bold', color: '#cfaa5e' }}>{calculateAC(char, resolved)}</div>
         </div>
 
         {/* Small Stats */}

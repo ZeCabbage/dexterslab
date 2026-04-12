@@ -41,6 +41,7 @@ export default function RulesLawyerPage() {
     theme: CharacterTheme;
   }>({ active: false, game: '', theme: DEFAULT_THEME });
 
+  const [confirmingGame, setConfirmingGame] = useState<string | null>(null);
   const [gameInput, setGameInput] = useState('');
   const [mood, setMood] = useState<CharacterMood>('idle');
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -63,6 +64,64 @@ export default function RulesLawyerPage() {
     setMessages(prev => [...prev, { id: msgIdRef.current, type, text, ruleRef }]);
   }, []);
 
+  // ── WebSocket Listener for Vocal Flow ──
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const isLocal = window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1';
+    const wsUrl = isLocal
+      ? 'ws://localhost:8888/ws/ruleslawyer'
+      : /^192\.168\.|^10\.|^100\.|^172\.(1[6-9]|2\d|3[01])\./.test(window.location.hostname)
+        ? `ws://${window.location.hostname}:8888/ws/ruleslawyer`
+        : 'wss://dexterslab-api.cclottaaworld.com/ws/ruleslawyer';
+        
+    let ws: WebSocket;
+    let reconnectTimeout: NodeJS.Timeout;
+    
+    function connect() {
+      ws = new WebSocket(wsUrl);
+      ws.onmessage = (e) => {
+        try {
+          const msg = JSON.parse(e.data);
+          
+          if (msg.type === 'start_response') {
+            const { data, userText } = msg;
+            const theme: CharacterTheme = data.persona || DEFAULT_THEME;
+            setGameSession({ active: true, game: data.game || userText, theme });
+            setMood(data.mood || 'smug');
+            addMessage('greeting', data.greeting || `Ah, ${data.game}! Let's do this.`);
+            setIsStarting(false);
+            setConfirmingGame(null);
+          } else if (msg.type === 'stt_confirm') {
+            setConfirmingGame(msg.text);
+          } else if (msg.type === 'stt_retry') {
+            setConfirmingGame(null);
+          } else if (msg.type === 'ask_response') {
+            const { data, userText } = msg;
+            setIsLoading(false);
+            addMessage('user', userText);
+            setMood(data.mood || 'confident');
+            addMessage('bot', data.answer, data.rule_reference);
+            setTimeout(() => setMood('idle'), 5000);
+          } else if (msg.type === 'end_response') {
+            setGameSession({ active: false, game: '', theme: DEFAULT_THEME });
+            setMessages([]);
+            setMood('idle');
+            setTip(null);
+          }
+        } catch (err) {}
+      };
+      ws.onclose = () => {
+        reconnectTimeout = setTimeout(connect, 3000); // auto reconnect
+      };
+    }
+    
+    connect();
+    return () => {
+      clearTimeout(reconnectTimeout);
+      if (ws) ws.close();
+    };
+  }, [addMessage]);
+
   // ── Start game session ──
   const startGame = async (gameName: string) => {
     if (!gameName.trim() || isStarting) return;
@@ -83,6 +142,7 @@ export default function RulesLawyerPage() {
         setGameSession({ active: true, game: data.game || gameName, theme });
         setMood(data.mood || 'smug');
         addMessage('greeting', data.greeting || `Ah, ${gameName}! Let's do this.`);
+        setConfirmingGame(null);
         // Start ambient tip timer
         startTipTimer();
       } else {
@@ -131,7 +191,7 @@ export default function RulesLawyerPage() {
   };
 
   // ── Ambient tip timer ──
-  const startTipTimer = () => {
+  const startTipTimer = useCallback(() => {
     if (tipTimerRef.current) clearInterval(tipTimerRef.current);
     tipTimerRef.current = setInterval(async () => {
       try {
@@ -151,7 +211,7 @@ export default function RulesLawyerPage() {
         }
       } catch {}
     }, 45000); // Every 45 seconds
-  };
+  }, []);
 
   // ── Cleanup timers ──
   useEffect(() => {
@@ -171,9 +231,21 @@ export default function RulesLawyerPage() {
       });
     } catch {}
     setGameSession({ active: false, game: '', theme: DEFAULT_THEME });
+    setConfirmingGame(null);
     setMessages([]);
     setMood('idle');
     setTip(null);
+  };
+
+  const cancelConfirmation = async () => {
+    setConfirmingGame(null);
+    try {
+      await fetch('/api/rules-lawyer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'cancel_start' }),
+      });
+    } catch {}
   };
 
 
@@ -204,36 +276,71 @@ export default function RulesLawyerPage() {
             <h1 className={styles.selectTitle}>RULES LAWYER</h1>
             <p className={styles.selectSubtitle}>What are we playing today?</p>
 
-            <form
-              className={styles.gameInputRow}
-              onSubmit={(e) => {
-                e.preventDefault();
-                startGame(gameInput);
-              }}
-            >
-              <input
-                id="game-input"
-                type="text"
-                className={styles.gameInput}
-                placeholder="Type a game name..."
-                value={gameInput}
-                onChange={(e) => setGameInput(e.target.value)}
-                autoFocus
-                autoComplete="off"
-                disabled={isStarting}
-              />
-              <button
-                type="submit"
-                className={styles.goBtn}
-                disabled={!gameInput.trim() || isStarting}
+            {confirmingGame ? (
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '16px' }}>
+                <p style={{
+                  background: 'rgba(0, 255, 224, 0.1)',
+                  padding: '12px 24px',
+                  border: '1px solid var(--color-cyan)',
+                  color: '#fff',
+                  fontFamily: 'var(--font-mono)',
+                  fontSize: 'clamp(16px, 2vmin, 20px)',
+                  textAlign: 'center'
+                }}>
+                  I heard: <strong style={{ color: 'var(--color-cyan)' }}>"{confirmingGame}"</strong>
+                </p>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                  <button
+                    onClick={() => startGame(confirmingGame)}
+                    className={styles.goBtn}
+                    disabled={isStarting}
+                  >
+                    {isStarting ? 'LOADING...' : 'CORRECT'}
+                  </button>
+                  <button
+                    onClick={cancelConfirmation}
+                    className={styles.goBtn}
+                    style={{ borderColor: 'var(--color-red)', color: 'var(--color-red)' }}
+                    disabled={isStarting}
+                  >
+                    TRY AGAIN
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <form
+                className={styles.gameInputRow}
+                onSubmit={(e) => {
+                  e.preventDefault();
+                  startGame(gameInput);
+                }}
               >
-                {isStarting ? 'LOADING...' : 'LET\'S GO'}
-              </button>
-            </form>
+                <input
+                  id="game-input"
+                  type="text"
+                  className={styles.gameInput}
+                  placeholder="Type a game name..."
+                  value={gameInput}
+                  onChange={(e) => setGameInput(e.target.value)}
+                  autoFocus
+                  autoComplete="off"
+                  disabled={isStarting}
+                />
+                <button
+                  type="submit"
+                  className={styles.goBtn}
+                  disabled={!gameInput.trim() || isStarting}
+                >
+                  {isStarting ? 'LOADING...' : "LET'S GO"}
+                </button>
+              </form>
+            )}
 
-            <p className={styles.voiceHintSmall}>
-              or just say the game name aloud
-            </p>
+            {!confirmingGame && (
+              <p className={styles.voiceHintSmall}>
+                or just say the game name aloud
+              </p>
+            )}
           </div>
         </div>
       </div>

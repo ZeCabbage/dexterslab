@@ -60,6 +60,12 @@ export default class ObserverEyeApp {
 
         this.engine.handleOracleQuestion(text).then((result) => {
           if (result && result.response) {
+            // Don't speak generic fallback responses — they cause speaker→mic feedback loops
+            const MUTE_RESPONSES = ['[NOTED, COMRADE.]', '[NOTED. CONTINUE]', '[ACKNOWLEDGED]', '[STAND BY]', '[PROCESSING]', '[FILE UPDATED]'];
+            if (MUTE_RESPONSES.includes(result.response)) {
+              console.log(`[ObserverEye] Suppressing TTS for generic response: ${result.response}`);
+              return;
+            }
             this.platform.hardwareBroker.speak(ObserverEyeApp.manifest.id, result.response);
           }
         }).catch(() => {});
@@ -113,6 +119,13 @@ export default class ObserverEyeApp {
             } else if (msg.type === 'oracle') {
               this.engine.handleOracleQuestion(msg.text).then(result => {
                 ws.send(JSON.stringify({ type: 'oracle_response', ...result }));
+                // Also speak the response on Pi speaker (like STT flow does)
+                if (result && result.response) {
+                  const MUTE_RESPONSES = ['[NOTED, COMRADE.]', '[NOTED. CONTINUE]', '[ACKNOWLEDGED]', '[STAND BY]', '[PROCESSING]', '[FILE UPDATED]'];
+                  if (!MUTE_RESPONSES.includes(result.response)) {
+                    this.platform.hardwareBroker.speak(ObserverEyeApp.manifest.id, result.response);
+                  }
+                }
               }).catch(() => {});
             } else if (msg.type === 'voice_partial') {
               for (const client of this.wsClients) {
@@ -126,12 +139,16 @@ export default class ObserverEyeApp {
         
         ws.on('close', () => {
           this.wsClients.delete(ws);
+          console.log(`👁 [ObserverEye] Client disconnected (remaining: ${this.wsClients.size})`);
         });
         
         ws.on('error', () => {
           this.wsClients.delete(ws);
         });
       });
+      
+      // Auto-activate/deactivate based on display client connections
+      this.platform.appManager.wsAutoActivate(ObserverEyeApp.manifest.id, wss);
       
       this.wsHandler = wss;
     }

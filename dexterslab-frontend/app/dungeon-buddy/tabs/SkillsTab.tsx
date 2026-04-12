@@ -2,6 +2,7 @@
 
 import { useCharacterStore } from '../lib/store';
 import styles from '../[id]/page.module.css';
+import D20Icon from '../components/D20Icon';
 import { CLASSES, BACKGROUNDS } from '../data/srd';
 
 const SKILL_MAP: { name: string; ability: string; key: string; }[] = [
@@ -28,11 +29,20 @@ const SKILL_MAP: { name: string; ability: string; key: string; }[] = [
 const calcMod = (score: number) => Math.floor((score - 10) / 2);
 
 export default function SkillsTab() {
-  const { char, updateField } = useCharacterStore();
+  const { char, updateField, addLog } = useCharacterStore();
 
   if (!char) return null;
 
   const profBonus = Math.ceil((char.level || 1) / 4) + 1;
+
+  const handleRoll = (name: string, bonus: number) => {
+    const roll = Math.floor(Math.random() * 20) + 1;
+    const total = roll + bonus;
+    const sign = bonus >= 0 ? '+' : '';
+    const desc = `Rolled ${name}: ${roll} (1d20) ${sign} ${bonus} = ${total}`;
+    alert(desc);
+    addLog('roll', desc);
+  };
 
   // Enforce D&D Class / Background limits for maximum skills
   const charClass = CLASSES.find(c => c.name === char.class);
@@ -70,6 +80,7 @@ export default function SkillsTab() {
               <span className={styles.skillMod}>{total >= 0 ? '+' : ''}{total}</span>
               <span className={styles.skillName}>
                 {skill.name} <span style={{ color: '#666', fontSize: '0.85em', marginLeft: '4px' }}>({skill.ability.toUpperCase()})</span>
+                <button className={styles.rollBtn} onClick={() => handleRoll(skill.name, total)} title={`Roll ${skill.name}`}><D20Icon /></button>
               </span>
             </div>
           );

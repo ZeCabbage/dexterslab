@@ -1,0 +1,345 @@
+{
+  "sorcerer": [
+    {
+      "id": "draconic_bloodline",
+      "name": "Draconic Bloodline",
+      "description": "Your innate magic comes from draconic power that was mingled with your blood or that of your ancestors. You might trace your lineage to a powerful sorcerer who made a bargain with a dragon, or even directly to a dragon itself. This heritage grants you draconic resistances, tough scales, and a fiery command over elemental magic.",
+      "features": [
+        {
+          "level": 1,
+          "name": "Draconic Ancestry",
+          "description": "You choose one type of dragon as your ancestor. The damage type associated with each dragon is used by other features, and you can speak, read, and write Draconic."
+        },
+        {
+          "level": 1,
+          "name": "Dragon Resilience",
+          "description": "As part of your draconic heritage, your skin is covered by a thin sheen of draconic scales. When you aren't wearing armor, your AC equals 13 + your Dexterity modifier. You also gain hit points equal to 1 + your sorcerer level."
+        },
+        {
+          "level": 6,
+          "name": "Elemental Affinity",
+          "description": "When you cast a spell that deals damage of the type associated with your Draconic Ancestry, you can add your Charisma modifier to one damage roll of that spell. At the same time, you can spend 1 sorcery point to gain resistance to that damage type for 1 hour."
+        },
+        {
+          "level": 14,
+          "name": "Dragon Wings",
+          "description": "You gain the ability to sprout a pair of dragon wings from your back, gaining a flying speed equal to your current walking speed. You can create these wings as a bonus action and dismiss them as a bonus action."
+        },
+        {
+          "level": 18,
+          "name": "Draconic Presence",
+          "description": "You can use your action to unleash the frightful presence of your draconic ancestor. Each creature of your choice within 120 feet of you that is aware of you must succeed on a Wisdom saving throw or become frightened for 1 minute."
+        }
+      ]
+    },
+    {
+      "id": "wild_magic",
+      "name": "Wild Magic",
+      "description": "The power of chaos courses through your veins, making your magic unpredictable and thrilling. You tap into the raw, untamed forces of magic itself, sometimes with spectacular results, sometimes with utterly bizarre and unexpected side effects. Every spell cast is a roll of the dice, bringing both immense power and delightful pandemonium to the battlefield.",
+      "features": [
+        {
+          "level": 1,
+          "name": "Wild Magic Surge",
+          "description": "Whenever you cast a sorcerer spell of 1st level or higher, the DM can have you roll on the Wild Magic Surge table immediately after. This can result in anything from a shower of flowers to a fireball erupting around you."
+        },
+        {
+          "level": 1,
+          "name": "Tides of Chaos",
+          "description": "You can gain advantage on one attack roll, ability check, or saving throw. Once you do so, you must finish a long rest before you can use it again, unless the DM has you roll on the Wild Magic Surge table first."
+        },
+        {
+          "level": 6,
+          "name": "Bend Luck",
+          "description": "When another creature you can see within 30 feet of you makes an attack roll, an ability check, or a saving throw, you can use your reaction and spend 2 sorcery points to roll 1d4 and apply the number rolled as a bonus or penalty to the creature's roll."
+        },
+        {
+          "level": 14,
+          "name": "Controlled Chaos",
+          "description": "Whenever you roll on the Wild Magic Surge table, you can roll twice and choose which of the two rolls to use."
+        },
+        {
+          "level": 18,
+          "name": "Spell Bombardment",
+          "description": "When you cast a sorcerer spell of 1st level or higher, if you roll the highest possible number on any of the spell’s damage dice, choose one of those dice, roll it again and add that roll to the damage. You can do this only once per turn."
+        }
+      ]
+    },
+    {
+      "id": "divine_soul",
+      "name": "Divine Soul",
+      "description": "Your innate magic stems from a divine source, granting you a connection to the gods or other potent celestials. Perhaps a divine ancestor blessed your lineage, you were touched by a deity, or you are destined for an important cosmic purpose. This grants you access to both arcane sorcery and the healing and protective powers of the divine.",
+      "features": [
+        {
+          "level": 1,
+          "name": "Divine Magic",
+          "description": "You learn one spell of your choice from the cleric spell list. You also gain Cure Wounds as a known spell, which doesn't count against your number of sorcerer spells known. When you choose a sorcerer spell, you can choose it from the cleric spell list or the sorcerer spell list."
+        },
+        {
+          "level": 1,
+          "name": "Favored by the Gods",
+          "description": "If you fail a saving throw or miss with an attack roll, you can use your reaction to roll 2d4 and add it to the total, potentially changing the outcome. You can use this a number of times equal to your Charisma modifier (minimum of once) per long rest."
+        },
+        {
+          "level": 6,
+          "name": "Empowered Healing",
+          "description": "When you or an ally you can see within 30 feet of you rolls damage or hit points for a spell that restores hit points, you can spend 1 sorcery point to reroll up to three of the dice. You must use the new rolls."
+        },
+        {
+          "level": 14,
+          "name": "Otherworldly Wings",
+          "description": "You can use a bonus action to manifest a pair of spectral, feathered wings from your shoulder blades, gaining a flying speed of 30 feet. These wings last until you're incapacitated, you dismiss them as a bonus action, or you die."
+        },
+        {
+          "level": 18,
+          "name": "Unearthly Recovery",
+          "description": "You can use a bonus action to regain half your maximum hit points. Once you use this feature, you can't use it again until you finish a long rest."
+        }
+      ]
+    },
+    {
+      "id": "shadow_magic",
+      "name": "Shadow Magic",
+      "description": "Your innate magic is born from the Shadowfell, drawing power from darkness itself. You might have been touched by a shadow dragon, survived a harrowing journey through the Plane of Shadow, or simply possess a lineage steeped in grim, primordial magic. This grants you the ability to manipulate shadows, instill fear, and even glimpse into the realm of the dead.",
+      "features": [
+        {
+          "level": 1,
+          "name": "Eyes of the Dark",
+          "description": "You have darkvision with a range of 120 feet. If you already have darkvision, its range increases by 60 feet. As an action, you can spend 2 sorcery points to magically create a sphere of magical darkness with a 15-foot radius that lasts for 10 minutes. It functions as the Darkness spell, but you can see through it."
+        },
+        {
+          "level": 1,
+          "name": "Strength of the Grave",
+          "description": "When damage reduces you to 0 hit points, you can make a Charisma saving throw (DC 5 + the damage taken). On a success, you drop to 1 hit point instead. You can't use this feature if the damage is radiant or from a critical hit."
+        },
+        {
+          "level": 6,
+          "name": "Hound of Ill Omen",
+          "description": "As a bonus action, you can spend 3 sorcery points to summon a shadowy hound. The hound appears in an unoccupied space of your choice within 30 feet of you, acts on your turn, and targets a creature you designate. The target has disadvantage on saving throws against your spells while the hound is within 5 feet of it. The hound vanishes after 5 minutes, or when its target drops to 0 hit points, or when you die."
+        },
+        {
+          "level": 14,
+          "name": "Shadow Walk",
+          "description": "When you are in dim light or darkness, as a bonus action, you can magically teleport up to 120 feet to an unoccupied space you can see that is also in dim light or darkness."
+        },
+        {
+          "level": 18,
+          "name": "Umbral Form",
+          "description": "As an action, you can spend 6 sorcery points to transform into a shadowy form for 1 minute. In this form, you have resistance to all damage except force and radiant damage, can move through other creatures and objects as if they were difficult terrain, and gain a flying speed equal to your walking speed."
+        }
+      ]
+    }
+  ],
+  "warlock": [
+    {
+      "id": "the_fiend",
+      "name": "The Fiend",
+      "description": "You have made a pact with a powerful denizen of the Lower Planes—a demon lord, an archdevil, or some other diabolical entity. Your patron grants you access to dark, destructive power, fueling your spells with hellfire and shadow. Embrace the raw might and cunning granted by your infernal master, but always be wary of the price of such a deal.",
+      "features": [
+        {
+          "level": 1,
+          "name": "Dark One's Blessing",
+          "description": "When you reduce a hostile creature to 0 hit points, you gain temporary hit points equal to your Charisma modifier + your warlock level, reflecting a surge of demonic vitality."
+        },
+        {
+          "level": 6,
+          "name": "Dark One's Own Luck",
+          "description": "When you make an ability check or a saving throw, you can use this feature to add 1d10 to your roll. This infernal luck can turn failure into success once per short or long rest."
+        },
+        {
+          "level": 10,
+          "name": "Fiendish Resilience",
+          "description": "You can choose one damage type when you finish a short or long rest. You gain resistance to that damage type, a boon from your patron's tough hide or magical protection, until you choose a different type."
+        },
+        {
+          "level": 14,
+          "name": "Hurl Through Hell",
+          "description": "When you hit a creature with an attack, you can instantly transport that creature to the Lower Planes until the end of your next turn. It takes psychic damage and then reappears, shaken and vulnerable, back in its original space."
+        }
+      ]
+    },
+    {
+      "id": "the_great_old_one",
+      "name": "The Great Old One",
+      "description": "Your patron is a mysterious entity whose motivations are incomprehensible and whose power is vast beyond mortal reckoning. Perhaps a creature from the Far Realm, an elder evil slumbering in the void, or an ancient alien intellect, this patron grants you whispers of cosmic truth and the ability to touch the minds of others. You wield power that warps reality and unravels sanity, a tiny fragment of an unspeakable terror.",
+      "features": [
+        {
+          "level": 1,
+          "name": "Awakened Mind",
+          "description": "You can telepathically speak to any creature you can see within 30 feet of you, allowing silent communication directly into their thoughts, regardless of language barriers."
+        },
+        {
+          "level": 6,
+          "name": "Entropic Ward",
+          "description": "When a creature makes an attack roll against you, you can use your reaction to impose disadvantage on that roll. If the attack misses, your next attack roll against the creature has advantage, a subtle shift in fate."
+        },
+        {
+          "level": 10,
+          "name": "Thought Shield",
+          "description": "Your mind is shielded by your patron's alien influence. You are immune to having your thoughts read and to psychic damage, and any creature that deals psychic damage to you takes the same damage."
+        },
+        {
+          "level": 14,
+          "name": "Create Thrall",
+          "description": "You can charm a humanoid, twisting its mind to serve you. This effect is permanent until you use this feature again or dismiss it, binding them to your cosmic will."
+        }
+      ]
+    },
+    {
+      "id": "the_archfey",
+      "name": "The Archfey",
+      "description": "You have sworn allegiance to one of the ancient, mercurial lords of the Feywild—a powerful archfey whose whims shape the very fabric of nature and illusion. Your magic flows from the vibrant, unpredictable energies of the fae realm, allowing you to charm, beguile, and mislead your foes. Embrace the playful cruelty and enchanting allure of your patron, weaving illusions and whispers of the wild into your every spell.",
+      "features": [
+        {
+          "level": 1,
+          "name": "Fey Presence",
+          "description": "As an action, you can cause any creatures in a 10-foot cube originating from you to either be charmed or frightened by you until the end of your next turn, reflecting your patron's enchanting or terrifying aura."
+        },
+        {
+          "level": 6,
+          "name": "Misty Escape",
+          "description": "When you take damage, you can use your reaction to turn invisible and teleport up to 60 feet to an unoccupied space you can see. You remain invisible until the start of your next turn or until you attack or cast a spell, fading away like a whisper in the wind."
+        },
+        {
+          "level": 10,
+          "name": "Beguiling Defenses",
+          "description": "Your patron's magic helps you turn mental assaults back on your foes. You are immune to being charmed, and when another creature attempts to charm you, you can use your reaction to turn the charm back on that creature."
+        },
+        {
+          "level": 14,
+          "name": "Dark Delirium",
+          "description": "As an action, you can magically force a creature to perceive its surroundings as an illusory, nightmarish landscape for 1 minute. The creature is incapacitated and takes psychic damage if it takes damage from another source, trapped in a fae nightmare."
+        }
+      ]
+    }
+  ],
+  "wizard": [
+    {
+      "id": "school_of_abjuration",
+      "name": "School of Abjuration",
+      "description": "Masters of protective magic, Abjurers specialize in wards, counterspells, and banishment, creating impenetrable defenses against all manner of threats. They stand as bulwarks against harm, shielding allies and repelling foes with their intricate magical barriers.",
+      "features": [
+        {
+          "level": 2,
+          "name": "Abjuration Savant",
+          "description": "The gold and time you must spend to copy an abjuration spell into your spellbook is halved."
+        },
+        {
+          "level": 2,
+          "name": "Arcane Ward",
+          "description": "You can weave magic around yourself for protection. When you cast an abjuration spell of 1st level or higher, you can create a magical ward. It has hit points equal to twice your wizard level + your Intelligence modifier, and when you take damage, the ward takes the damage instead. If the ward drops to 0 hit points, you take any remaining damage. The ward regains 2 hit points whenever you cast an abjuration spell of 1st level or higher."
+        },
+        {
+          "level": 6,
+          "name": "Projected Ward",
+          "description": "When a creature you can see within 30 feet of you takes damage, you can use your reaction to interpose your Arcane Ward between the attacker and the target. The ward takes the damage instead of the target."
+        },
+        {
+          "level": 10,
+          "name": "Improved Abjuration",
+          "description": "When you cast an abjuration spell that requires you to make an ability check as part of casting that spell (as in counterspell and dispel magic), you add your proficiency bonus to that check."
+        },
+        {
+          "level": 14,
+          "name": "Spell Resistance",
+          "description": "You have advantage on saving throws against spells and other magical effects. Additionally, you have resistance to the damage from spells."
+        }
+      ]
+    },
+    {
+      "id": "school_of_evocation",
+      "name": "School of Evocation",
+      "description": "Evokers are spellcasters who channel raw magical energy into explosive and potent effects, specializing in creating devastating blasts of elemental force. They manipulate fire, ice, lightning, and more, shaping destructive power with surgical precision to obliterate their enemies.",
+      "features": [
+        {
+          "level": 2,
+          "name": "Evocation Savant",
+          "description": "The gold and time you must spend to copy an evocation spell into your spellbook is halved."
+        },
+        {
+          "level": 2,
+          "name": "Sculpt Spells",
+          "description": "When you cast an evocation spell that affects other creatures that you can see, you can choose a number of them equal to 1 + the spell's level. The chosen creatures automatically succeed on their saving throws against the spell and take no damage if they would normally take half damage on a successful save."
+        },
+        {
+          "level": 6,
+          "name": "Potent Cantrip",
+          "description": "Your damaging cantrips affect even creatures that avoid the brunt of the effect. When a creature succeeds on a saving throw against your cantrip, the creature takes half the cantrip's damage (if any) but suffers no additional effect from the cantrip."
+        },
+        {
+          "level": 10,
+          "name": "Empowered Evocation",
+          "description": "When you cast an evocation spell, you can add your Intelligence modifier to one damage roll of that spell."
+        },
+        {
+          "level": 14,
+          "name": "Overchannel",
+          "description": "When you cast a wizard spell of 5th level or lower that deals damage, you can choose to maximize the damage. You can use this feature once, regaining use after a long rest. If you overchannel a spell of 1st through 3rd level, you take 2d12 necrotic damage per spell level after using this feature again before a long rest."
+        }
+      ]
+    },
+    {
+      "id": "school_of_conjuration",
+      "name": "School of Conjuration",
+      "description": "Conjurers command the magic of creation and transportation, pulling objects and creatures from distant planes or teleporting across vast distances in an instant. They can manifest allies, summon useful items, or escape danger with unparalleled agility, bending space and time to their will.",
+      "features": [
+        {
+          "level": 2,
+          "name": "Conjuration Savant",
+          "description": "The gold and time you must spend to copy a conjuration spell into your spellbook is halved."
+        },
+        {
+          "level": 2,
+          "name": "Minor Conjuration",
+          "description": "You can use your action to conjure an inanimate object in your hand or on the ground within 10 feet of you. The object can be no larger than 3 feet on a side and weigh no more than 10 pounds, and its form must be that of a nonmagical object that you have seen. The object vanishes after 1 hour, or when you use this feature again, or if it takes or deals any damage."
+        },
+        {
+          "level": 6,
+          "name": "Benign Transposition",
+          "description": "As an action, you can teleport up to 30 feet to an unoccupied space that you can see. Alternatively, you can choose a willing creature you can see within 30 feet of you and an unoccupied space within 30 feet of you. If both are within range, you magically swap places with that creature. Once you use this feature, you can't use it again until you finish a short or long rest, or until you cast a conjuration spell of 1st level or higher."
+        },
+        {
+          "level": 10,
+          "name": "Focused Conjuration",
+          "description": "While you are concentrating on a conjuration spell, your concentration can't be broken as a result of taking damage."
+        },
+        {
+          "level": 14,
+          "name": "Durable Summons",
+          "description": "Any creature that you summon or create with a conjuration spell has 30 temporary hit points."
+        }
+      ]
+    },
+    {
+      "id": "school_of_divination",
+      "name": "School of Divination",
+      "description": "Diviners delve into the tapestry of fate, seeking knowledge of the past, present, and future to unravel mysteries and gain insight. They perceive hidden truths, glimpse possibilities, and subtly alter destiny's course, providing invaluable guidance and foresight to their companions.",
+      "features": [
+        {
+          "level": 2,
+          "name": "Divination Savant",
+          "description": "The gold and time you must spend to copy a divination spell into your spellbook is halved."
+        },
+        {
+          "level": 2,
+          "name": "Portent",
+          "description": "When you finish a long rest, roll two d20s and record the numbers rolled. You can replace any attack roll, saving throw, or ability check made by you or a creature you can see with one of these foretelling rolls. You must choose to do so before the roll, and you can only use each foretelling roll once."
+        },
+        {
+          "level": 6,
+          "name": "Expert Divination",
+          "description": "When you cast a divination spell of 2nd level or higher using a spell slot, you regain one expended spell slot. The slot you regain must be of a lower level than the spell you cast and can't be higher than 5th level."
+        },
+        {
+          "level": 10,
+          "name": "The Third Eye",
+          "description": "You can use your action to gain one of the following benefits, which lasts until you are incapacitated or you use this feature again: darkvision out to 120 feet, ethereal sight, greater comprehension of languages, or the ability to see invisibility."
+        },
+        {
+          "level": 14,
+          "name": "Greater Portent",
+          "description": "The number of d20s you roll for your Portent feature increases to three, rather than two."
+        }
+      ]
+    }
+  ]
+}

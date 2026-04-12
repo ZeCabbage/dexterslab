@@ -10,12 +10,21 @@ import styles from '../[id]/page.module.css';
 interface SpellBrowserProps {
   onClose?: () => void;
   inline?: boolean;
+  draftMode?: boolean;
+  draftedSpells?: string[];
+  onSpellDraft?: (spellId: string) => void;
+  contextChar?: any; // LiveCharacter shape for drafts
 }
 
-export default function SpellBrowser({ onClose, inline = false }: SpellBrowserProps) {
-  const { char, learnSpell, unlearnSpell } = useCharacterStore();
-  const allSpells = useAllSpells(char?.customSpells || []);
+export default function SpellBrowser({ onClose, inline = false, draftMode = false, draftedSpells = [], onSpellDraft, contextChar }: SpellBrowserProps) {
+  const store = useCharacterStore();
+  const char = contextChar || store.char;
+  
+  const allSpells = useAllSpells(char?.customSpells || [], char?.homebrew?.spells || []);
   const currentlyKnown = useSpells(char?.knownSpells, char?.customSpells);
+  
+  // Mix in drafted spells for lock calculation if in draft mode
+  const effectiveKnown = draftMode ? [...(char?.knownSpells||[]), ...draftedSpells] : char?.knownSpells;
   
   const [search, setSearch] = useState('');
   const [levelFilter, setLevelFilter] = useState<string>('all');
@@ -29,7 +38,7 @@ export default function SpellBrowser({ onClose, inline = false }: SpellBrowserPr
     
     // Strict Mode filter (hide spells we fundamentally cannot learn)
     if (strictMode) {
-      const isKnown = char?.knownSpells?.includes(spell.id) || false;
+      const isKnown = effectiveKnown?.includes(spell.id) || false;
       if (!isKnown) {
         const lockData = evaluateSpellLock(char, spell, currentlyKnown);
         // Only completely hide spells if they are fundamentally illegal for the class/level
@@ -111,7 +120,7 @@ export default function SpellBrowser({ onClose, inline = false }: SpellBrowserPr
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(min(100%, 350px), 1fr))', gap: '24px' }}>
             {filteredSpells.length === 0 && <p style={{ color: '#666' }}>No spells match your current parameters.</p>}
             {filteredSpells.map(spell => {
-              const isKnown = char.knownSpells?.includes(spell.id) || false;
+              const isKnown = effectiveKnown?.includes(spell.id) || false;
               // Even in strict mode, we calculate lockData visually to display generic locks (like quantity caps)
               let lockData: { locked: boolean; reason?: string } = { locked: false };
               if (!isKnown) {
@@ -124,7 +133,13 @@ export default function SpellBrowser({ onClose, inline = false }: SpellBrowserPr
                   spell={spell}
                   isKnown={isKnown}
                   isPrepared={false} // Preparing is done on the combat dashboard
-                  onLearnToggle={() => isKnown ? unlearnSpell(spell.id) : learnSpell(spell.id)}
+                  onLearnToggle={() => {
+                     if (draftMode && onSpellDraft) {
+                       onSpellDraft(spell.id);
+                     } else {
+                       isKnown ? store.unlearnSpell(spell.id) : store.learnSpell(spell.id);
+                     }
+                  }}
                   lockReason={lockData.locked ? lockData.reason : undefined}
                 />
               );

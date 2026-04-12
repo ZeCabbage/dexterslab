@@ -64,11 +64,21 @@ export class STTEngine extends EventEmitter {
   }
 
   _handleVoskResult(result) {
+    // Handle rejected transcripts (below confidence threshold)
+    if (result.rejected) {
+      console.log(`[STT] ✗ Rejected (conf=${result.confidence}): "${result.rejected}"`);
+      return; // Don't emit — this is garbage
+    }
+
     if (result.partial) {
       this.partials.push(result.partial);
     }
     if (result.text && result.text.trim()) {
       const text = result.text.trim();
+      const conf = result.confidence !== undefined ? result.confidence : null;
+      if (conf !== null) {
+        console.log(`[STT] ← (conf=${conf})`);
+      }
       this.emit('transcript', text);
     }
   }

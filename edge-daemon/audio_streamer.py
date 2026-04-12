@@ -49,40 +49,105 @@ class AudioStreamer:
     def stop(self):
         self._running = False
         if self._capture_thread and self._capture_thread.is_alive():
-            self._capture_thread.join(timeout=2)
+            self._capture_thread.join(timeout=3)
         if self._ws_thread and self._ws_thread.is_alive():
-            self._ws_thread.join(timeout=2)
-        self._pyaudio.terminate()
+            self._ws_thread.join(timeout=3)
+        # Force-terminate PyAudio to release ALSA device handle
+        try:
+            self._pyaudio.terminate()
+        except Exception:
+            pass
+        self._pyaudio = None
+        logger.info("[AudioStreamer] Stopped and released audio device")
 
     def is_running(self) -> bool:
         return self._running and self._capture_thread is not None and self._capture_thread.is_alive() and self._ws_thread is not None and self._ws_thread.is_alive()
 
+    def _find_device_index(self):
+        """Find the pyaudio device index matching the configured ALSA card."""
+        target_card = self.config.audio_input_card
+        if target_card < 0:
+            logger.info("[AudioStreamer] No specific mic card configured, using system default")
+            return None  # Use default
+
+        info = self._pyaudio.get_host_api_info_by_index(0)
+        num_devices = info.get('deviceCount', 0)
+
+        for i in range(num_devices):
+            dev_info = self._pyaudio.get_device_info_by_host_api_device_index(0, i)
+            if dev_info.get('maxInputChannels', 0) > 0:
+                name = dev_info.get('name', '')
+                # PyAudio ALSA device names contain "hw:N,D" pattern
+                if f'hw:{target_card}' in name or f'card {target_card}' in name.lower():
+                    logger.info(f"[AudioStreamer] Matched mic card {target_card} -> device index {i} ({name})")
+                    return i
+                # Also check by structural index for USB devices
+                if dev_info.get('structuralUniqueId', '') and str(target_card) in str(dev_info):
+                    logger.info(f"[AudioStreamer] Matched mic card {target_card} -> device index {i} ({name}) [structural]")
+                    return i
+
+        logger.warning(f"[AudioStreamer] Could not find device for ALSA card {target_card}, using default")
+        return None
+
     def _capture_loop(self):
         frames_per_buffer = int(self.config.audio_sample_rate * (self.config.audio_chunk_ms / 1000.0))
-        stream = self._pyaudio.open(
-            format=pyaudio.paInt16,
-            channels=self.config.audio_channels,
-            rate=self.config.audio_sample_rate,
-            input=True,
-            frames_per_buffer=frames_per_buffer
-        )
 
-        logger.info("[AudioStreamer] Capture active")
-        try:
-            while self._running:
-                data = stream.read(frames_per_buffer, exception_on_overflow=False)
+        while self._running:
+            retries = 0
+            max_retries = 5
+
+            while self._running and retries <= max_retries:
                 try:
-                    self._queue.put_nowait(data)
-                except queue.Full:
+                    device_index = self._find_device_index()
+                    open_kwargs = dict(
+                        format=pyaudio.paInt16,
+                        channels=self.config.audio_channels,
+                        rate=self.config.audio_sample_rate,
+                        input=True,
+                        frames_per_buffer=frames_per_buffer
+                    )
+                    if device_index is not None:
+                        open_kwargs['input_device_index'] = device_index
+
+                    stream = self._pyaudio.open(**open_kwargs)
+                    logger.info(f"[AudioStreamer] Capture active (device_index={device_index}, retry={retries})")
+                    retries = 0  # Reset on successful open
+
                     try:
-                        self._queue.get_nowait()
-                    except queue.Empty:
-                        pass
-                    self._queue.put_nowait(data)
-                    logger.warning("[AudioStreamer] WARNING: Queue full, dropping frame. Check network connection.")
-        finally:
-            stream.stop_stream()
-            stream.close()
+                        while self._running:
+                            data = stream.read(frames_per_buffer, exception_on_overflow=False)
+                            try:
+                                self._queue.put_nowait(data)
+                            except queue.Full:
+                                try:
+                                    self._queue.get_nowait()
+                                except queue.Empty:
+                                    pass
+                                self._queue.put_nowait(data)
+                                logger.warning("[AudioStreamer] WARNING: Queue full, dropping frame. Check network connection.")
+                    finally:
+                        stream.stop_stream()
+                        stream.close()
+
+                except Exception as e:
+                    retries += 1
+                    if retries > max_retries:
+                        logger.error(f"[AudioStreamer] Failed after {max_retries} retries: {e}. Re-creating PyAudio...")
+                        break  # Break inner loop to re-create PyAudio
+                    wait_time = min(5 * retries, 15)
+                    logger.warning(f"[AudioStreamer] Mic open failed ({e}), retrying in {wait_time}s ({retries}/{max_retries})")
+                    time.sleep(wait_time)
+
+            # If we're still running but exhausted retries, re-create PyAudio
+            # This forces ALSA device re-enumeration (handles USB replug, driver resets)
+            if self._running:
+                logger.info("[AudioStreamer] Re-initializing PyAudio for fresh device enumeration...")
+                try:
+                    self._pyaudio.terminate()
+                except Exception:
+                    pass
+                time.sleep(10)  # Wait for device to stabilize
+                self._pyaudio = pyaudio.PyAudio()
 
     def _ws_loop(self):
         loop = asyncio.new_event_loop()

@@ -218,7 +218,7 @@ ${text}
             }
         });
 
-        const rawJsonText = (response.text || "").trim();
+        const rawJsonText = (response.text || "").trim().replace(/^```json/i, '').replace(/```$/i, '').trim();
         let payload = {};
         
         try {
@@ -243,7 +243,7 @@ ${text}
 
       } catch (err) {
         console.error('[Dungeon Buddy Scribe] Summarization Error:', err);
-        res.status(500).json({ error: `Oracle Failure: ${err.message}` });
+        res.status(422).json({ error: `Oracle Failure: ${err.message}` });
       }
     });
 
@@ -256,7 +256,9 @@ ${text}
       }
 
       try {
-        let systemPrompt = `You are the Oracle of character creation for a D&D 5E game.
+        let systemPrompt = `You are the Oracle, a deeply creative and wildly inspired Dungeon Master creating unique characters for a dark fantasy D&D 5E game.
+You must actively avoid generating repetitive tropes (like Gnome Charlatans, standard Human Fighters, or edge-lord Rogue Assassins) unless heavily requested. Instead, generate thoughtful, profoundly unique characters with rich narrative personalities, compelling quirks, and traits that perfectly align with their imagery. Force yourself to pick diverse race and class combinations you haven't used recently.
+
 You must return a valid JSON object strictly matching this schema:
 {
   "name": "A creative, thematic name for the character",
@@ -283,13 +285,14 @@ You must return a valid JSON object strictly matching this schema:
       "id": "A lower-case unique ID like 'spell_fire_punch'",
       "name": "Spell Name",
       "level": "Number (0 for cantrip, 1 for 1st level)",
-      "school": "Magic school (Evocation, Necromancy, etc)",
+      "school": "REQUIRED. One of: Abjuration, Conjuration, Divination, Enchantment, Evocation, Illusion, Necromancy, Transmutation",
       "castingTime": "1 Action / 1 Bonus Action",
       "range": "60 ft. / Touch",
       "components": "V, S, M",
       "duration": "Instantaneous / 1 Minute",
       "description": "Full homebrew spell description fitting the theme.",
-      "damage": "e.g. 1d8 / 2d6",
+      "damage": "e.g. 1d8 / 2d6 (REQUIRED if the spell deals damage, empty string if not)",
+      "damageType": "REQUIRED if damage is present. One of: acid, bludgeoning, cold, fire, force, lightning, necrotic, piercing, poison, psychic, radiant, slashing, thunder",
       "actionCost": "one of: 'action', 'bonus_action', 'reaction', 'special', 'none'"
     }
   ],
@@ -301,41 +304,64 @@ You must return a valid JSON object strictly matching this schema:
       "type": "one of: 'weapon', 'armor', 'gear', 'tool'",
       "slot": "null OR one of: 'mainHand', 'offHand', 'chest', 'head', 'cloak', 'gloves', 'boots', 'ring1', 'amulet'",
       "description": "Flavorful description of the item.",
-      "damage": "E.g. 1d6 (for weapons only)",
+      "damage": "E.g. 1d6 (for weapons only, REQUIRED for weapons)",
+      "damageType": "REQUIRED for weapons. One of: bludgeoning, piercing, slashing",
+      "weaponCategory": "REQUIRED for weapons. One of: 'simple', 'martial'",
+      "properties": "REQUIRED for weapons. Array of strings e.g. ['finesse', 'light'] or ['versatile (1d10)', 'heavy', 'two-handed']. Use empty array [] if no properties.",
       "armorClass": "Number (for armor only, e.g. 12)",
       "armorCategory": "null OR one of: 'light', 'medium', 'heavy', 'shield'",
-      "actionCost": "E.g. 'action' for most weapons"
+      "actionCost": "E.g. 'action' for most weapons",
+      "modifiers": "OPTIONAL array of modifier objects for magic items. Use this to create items with mechanical effects. Each modifier is one of the types described in MODIFIER TYPES below. Only include for special/magic items, not mundane equipment."
     }
   ]
 }
+
+MODIFIER TYPES (for customEquipment.modifiers, use ONLY these exact structures):
+  { "type": "modify_ac", "bonus": number }  — e.g. Ring of Protection: +1 AC
+  { "type": "grant_resistance", "damageType": "fire" }  — e.g. Ring of Fire Resistance
+  { "type": "grant_speed", "bonus": number }  — e.g. Boots of Speed: +10
+  { "type": "add_damage_ability", "target": "__melee__", "ability": "str" }  — adds ability mod to damage
 
 CRITICAL RULES:
 1. You MUST pick "raceId", "classId", and "backgroundId" ONLY from the provided allowed lists below.
 2. If "raceId" has subraces in the allowed list, you MUST pick a valid "subraceId" from that specific race's subrace list. If it has no subraces, use null.
 3. The "baseScores" MUST perfectly adhere to D&D 5e Point Buy rules: exactly 27 points must be spent. (Costs: 8=0, 9=1, 10=2, 11=3, 12=4, 13=5, 14=7, 15=9). Do not overspend or underspend. Do NOT add racial bonuses to these base scores.
 4. The "skills" array must contain EXACTLY the number of skill choices allowed by the chosen class (usually 2, sometimes 3 or 4 like Rogue/Bard). You can only choose skills from the chosen Class's allowed skill list. DO NOT include skills already provided by the chosen Background.
-5. "customSpells": If the chosen Class is a spellcaster, invent 2 or 3 completely custom, wildly creative homebrew spells (Level 0 Cantrips or Level 1 Spells ONLY) that strictly fit the user's narrative theme. Make sure they are balanced for D&D 5E rules. If the chosen class is a martial (Fighter, Barbarian, Rogue, Monk) without spellcasting provided, leave the "customSpells" array EMPTY.
-6. "customEquipment": Invent 3 to 5 deeply thematic starting items for this character. Include at least one weapon (type: "weapon", slot: "mainHand") and one set of armor or clothing (type: "armor", slot: "chest") tailored to the theme. Give weapons balanced 5E damage (e.g. 1d8) and armor balanced AC (e.g. 11 to 14).
+5. "customSpells": If the chosen Class is a spellcaster, invent 2 or 3 completely custom, wildly creative homebrew spells (Level 0 Cantrips or Level 1 Spells ONLY) that strictly fit the user's narrative theme. EVERY spell with damage MUST include "damageType" and "school". If the chosen class is a martial (Fighter, Barbarian, Rogue, Monk) without spellcasting provided, leave the "customSpells" array EMPTY.
+6. "customEquipment": Invent 3 to 5 deeply thematic starting items for this character. Include at least one weapon (type: "weapon", slot: "mainHand") and one set of armor or clothing (type: "armor", slot: "chest") tailored to the theme. Weapons MUST include "damage", "damageType", "weaponCategory", and "properties". Give weapons balanced 5E damage (e.g. 1d8) and armor balanced AC (e.g. 11 to 14). You may include ONE magic item with a "modifiers" array if thematically appropriate.
+7. JSON SYNTAX: You MUST NOT use literal newlines or line breaks inside your JSON strings. Keep descriptions, portrait prompts, and text fields on a single continuous line, or use explicit "\\n" characters if a newline is absolutely required.
 `;
 
         if (mode === 'chaos') {
-          systemPrompt += `\nThe user requested PURE CHAOS. Ignore their description if any, and invent a fully randomized but thematically brilliant character concept.`;
+          systemPrompt += `\nThe user requested PURE CHAOS. Discard any generic tropes. Invent a wildly unpredictable, deeply compelling, and highly atmospheric character concept. Surprise me with an obscure race/class combination that has a brilliant narrative hook.`;
         } else {
-          systemPrompt += `\nThe user requested a character matching this description (if vague, extrapolate intuitively): "${description || 'A generic adventurer'}"`;
+          systemPrompt += `\nThe user requested a character matching this description (if vague, extrapolate intuitively with maximum creativity): "${description || 'A unique and deeply flavorful adventurer'}"`;
         }
 
         systemPrompt += `\n\nALLOWED CONSTRAINTS (YOU MUST NOT DEVIATE FROM THESE):\n`;
         systemPrompt += JSON.stringify(constraints, null, 2);
 
-        const response = await genai.models.generateContent({
-            model: 'gemini-2.5-flash',
-            contents: systemPrompt,
-            config: {
-               responseMimeType: "application/json"
-            }
-        });
+        let response;
+        let retries = 2;
+        while (retries >= 0) {
+          try {
+             response = await genai.models.generateContent({
+                 model: 'gemini-2.5-flash',
+                 contents: systemPrompt,
+                 config: {
+                    responseMimeType: "application/json"
+                 }
+             });
+             break;
+          } catch (apiErr) {
+             if (retries === 0) throw apiErr;
+             console.warn('[Dungeon Buddy Oracle] Gemini API error, retrying in 2s...', apiErr.message);
+             await new Promise(r => setTimeout(r, 2000));
+             retries--;
+          }
+        }
 
-        const rawJsonText = (response.text || "").trim();
+        const rawJsonText = (response.text || "").trim().replace(/^```json/i, '').replace(/```$/i, '').trim();
         let payload = {};
         
         try {
@@ -349,7 +375,158 @@ CRITICAL RULES:
 
       } catch (err) {
         console.error('[Dungeon Buddy Oracle] Forge Error:', err);
-        res.status(500).json({ error: `Oracle Failure: ${err.message}` });
+        // Using 422 Unprocessable instead of 500 stringently avoids NextJS converting the rewrite to a hard HTML 500 proxy crash.
+        res.status(422).json({ error: `Oracle Connectivity Issue: The AI model may be overloaded. Detailed Error: ${err.message}` });
+      }
+    });
+
+    router.post('/oracle/forge-subclass', express.json(), async (req, res) => {
+      const { description, charClass, nextLevel } = req.body;
+      
+      const genai = this.platform.aiProvider?.getGenAI();
+      if (!genai) {
+        return res.status(500).json({ error: 'AI Provider not available' });
+      }
+
+      try {
+        let systemPrompt = `You are a deeply creative Dungeon Master generating a unique and wildly inspired homebrew Subclass for a D&D 5E ${charClass}. The character is currently ascending to level ${nextLevel}.
+Based on the following theme or description (if vague, extrapolate intuitively with maximum creativity): "${description || 'A unique and dark-fantasy thematic path'}"
+
+You must return a valid JSON object strictly matching this schema:
+{
+  "subclassName": "A thematic, evocative name for this subclass",
+  "features": [
+    {
+       "name": "Feature Name",
+       "description": "Full rule-compliant description of exactly how the feature works in 5e combat/exploration.",
+       "level": number (The level they unlock this. Include EXACTLY ONE feature unlocked at level ${nextLevel}. Then include 2 to 3 future scaling features at appropriate higher levels for this class),
+       "modifiers": "REQUIRED. Array of mechanical modifier objects. EVERY feature MUST include at least one modifier from the MODIFIER TYPES list below. This is how the feature integrates into the combat engine."
+    }
+  ]
+}
+
+MODIFIER TYPES (you MUST use ONLY these exact JSON structures in the modifiers array):
+
+  Combat Damage:
+  { "type": "add_conditional_damage", "target": "melee", "dice": "1d6", "damageType": "fire", "condition": "Once per turn on a hit" }
+  — target: "melee" | "spell" | "all"
+  — damageType: acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|psychic|radiant|slashing|thunder
+
+  Defense:
+  { "type": "modify_ac", "bonus": 1 }  — Flat AC bonus (e.g. +1 from natural armor)
+  { "type": "set_ac_formula", "formula": "13+dex" }  — Custom unarmored AC formula (e.g. "10+dex+con", "13+dex")
+  { "type": "grant_resistance", "damageType": "fire" }  — Resistance to a damage type
+  { "type": "grant_immunity", "conditionType": "frightened" }  — Condition immunity
+
+  Resources:
+  { "type": "add_resource", "resourceId": "unique_snake_case_id", "name": "Resource Name", "max": 3, "recharge": "short", "die": null }
+  — recharge: "short" | "long". die: null or "1d6", "1d8", etc. for dice-based resources
+
+  Proficiencies:
+  { "type": "grant_proficiency", "category": "armor", "value": "Medium" }  — category: "armor" | "weapon"
+  { "type": "grant_proficiency", "category": "weapon", "value": "Martial" }
+  { "type": "grant_skill", "target": "perception" }  — Exact skill ID
+
+  Movement:
+  { "type": "grant_speed", "bonus": 10 }  — Bonus to walking speed in feet
+
+  Spells:
+  { "type": "grant_spells_always_prepared", "spells": ["shield_of_faith", "bless"] }  — Spell IDs
+  { "type": "grant_cantrip", "cantrip": "fire_bolt" }  — Cantrip ID
+
+  Combat Scaling:
+  { "type": "grant_extra_attack", "count": 1 }  — Extra Attack (count=1 means 2 attacks total)
+  { "type": "expand_crit_range", "minRoll": 19 }  — Crit on 19-20
+
+  Post-Hit (Smite pattern):
+  { "type": "post_hit_modifier", "name": "Eldritch Smite", "costType": "spell_slot", "baseDice": "1d8", "dicePerLevel": "1d8", "damageType": "force" }
+
+CRITICAL RULES:
+1. JSON SYNTAX: You MUST NOT use literal newlines or line breaks inside your JSON strings. Keep descriptions on a single continuous line, or use explicit "\\n" characters if a newline is absolutely required.
+2. BALANCE: Keep the mechanics balanced for standard 5E D&D play.
+3. EVERY feature MUST have a non-empty "modifiers" array. If a feature is purely narrative with no combat effect, use { "type": "grant_skill", "target": "insight" } or a small resource grant as a fallback. NEVER leave modifiers as an empty array.
+4. For features that grant a limited-use ability, ALWAYS include an "add_resource" modifier to create the tracked resource.`;
+
+        const response = await genai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: systemPrompt,
+            config: {
+               responseMimeType: "application/json"
+            }
+        });
+
+        const rawJsonText = (response.text || "").trim().replace(/^```json/i, '').replace(/```$/i, '').trim();
+        let payload = {};
+        
+        try {
+           payload = JSON.parse(rawJsonText);
+        } catch(e) {
+           console.error('[Dungeon Buddy Oracle] LLM returned invalid JSON:', rawJsonText);
+           throw new Error("Oracle failed to forge a coherent structure");
+        }
+
+        res.status(200).json(payload);
+
+      } catch (err) {
+        console.error('[Dungeon Buddy Oracle] Forge Error:', err);
+        res.status(422).json({ error: `Oracle Subclass Failure: ${err.message}` });
+      }
+    });
+
+    router.post('/oracle/forge-subclass-features', express.json(), async (req, res) => {
+      const { charClass, subclassName, nextLevel } = req.body;
+      
+      const genai = this.platform.aiProvider?.getGenAI();
+      if (!genai) {
+        return res.status(500).json({ error: 'AI Provider not available' });
+      }
+
+      try {
+        let systemPrompt = `You are a strict D&D 5E rules engine. 
+The user is leveling up a ${charClass} specifically in the "${subclassName}" subclass, and they have just reached Level ${nextLevel}.
+Identify if the official 5E D&D "${subclassName}" subclass (from Player's Handbook, Tasha's, Xanathar's, etc.) grants any new canonical mechanical features EXACTLY at Level ${nextLevel}.
+If yes, return the exact mechanical features granted at this level.
+If this level is NOT a milestone where they learn a new subclass feature, return an empty array for features.
+
+You must return a valid JSON object strictly matching this schema:
+{
+  "features": [
+    {
+       "name": "Feature Name",
+       "description": "Full rule-compliant description of how the feature works mechanically.",
+       "level": ${nextLevel}
+    }
+  ]
+}
+
+CRITICAL RULES:
+1. JSON SYNTAX: You MUST NOT use literal newlines or line breaks inside your JSON strings. Keep descriptions on a single continuous line, or use explicit "\\n" characters if a newline is absolutely required.
+2. DO NOT HALLUCINATE: If level ${nextLevel} grants NO subclass features for the ${charClass}, return "features": []!
+3. SPELLS: If the subclass grants a list of "Always Prepared" subclass spells at this level, summarize them in ONE feature called "${subclassName} Spells".`;
+
+        const response = await genai.models.generateContent({
+            model: 'gemini-2.5-flash',
+            contents: systemPrompt,
+            config: {
+               responseMimeType: "application/json"
+            }
+        });
+
+        const rawJsonText = (response.text || "").trim().replace(/^```json/i, '').replace(/```$/i, '').trim();
+        let payload = {};
+        
+        try {
+           payload = JSON.parse(rawJsonText);
+        } catch(e) {
+           console.error('[Dungeon Buddy Oracle] LLM returned invalid JSON:', rawJsonText);
+           throw new Error("Oracle failed to properly format the subclass features.");
+        }
+
+        res.status(200).json(payload);
+
+      } catch (err) {
+        console.error('[Dungeon Buddy Oracle] Forge Features Error:', err);
+        res.status(422).json({ error: `Oracle Features Failure: ${err.message}` });
       }
     });
 

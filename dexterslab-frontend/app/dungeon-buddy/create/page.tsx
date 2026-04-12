@@ -15,10 +15,12 @@ import { STARTING_EQUIPMENT_DB } from '../data/starting-equipment';
 import { ITEM_DATABASE } from '../lib/data/items';
 import { useCharacterStore } from '../lib/store';
 import Tooltip from '../components/Tooltip';
+import SpellBrowser from '../components/SpellBrowser';
 
 const STEPS = [
   { label: 'Race', key: 'race' },
   { label: 'Class', key: 'class' },
+  { label: 'Spells', key: 'spells' },
   { label: 'Abilities', key: 'abilities' },
   { label: 'Background', key: 'background' },
   { label: 'Skills', key: 'skills' },
@@ -38,6 +40,7 @@ export default function CharacterCreationWizard() {
   const [selectedRace, setSelectedRace] = useState<RaceData | null>(null);
   const [selectedSubrace, setSelectedSubrace] = useState<SubraceData | null>(null);
   const [selectedClass, setSelectedClass] = useState<ClassData | null>(null);
+  const [selectedSubclassChoice, setSelectedSubclassChoice] = useState<string>('');
   const [selectedBackground, setSelectedBackground] = useState<BackgroundData | null>(null);
   const [abilityMethod, setAbilityMethod] = useState<AbilityMethod>('point_buy');
   const [baseScores, setBaseScores] = useState<Record<AbilityName, number>>({
@@ -49,6 +52,7 @@ export default function CharacterCreationWizard() {
   const [selectedSkills, setSelectedSkills] = useState<SkillName[]>([]);
   const [selectedEquipmentPack, setSelectedEquipmentPack] = useState<number>(0);
   const [characterName, setCharacterName] = useState('');
+  const [draftedSpells, setDraftedSpells] = useState<string[]>([]);
   
   // Oracle Extended State Buffer
   const [oraclePersonalityTraits, setOracleTraits] = useState('');
@@ -57,6 +61,9 @@ export default function CharacterCreationWizard() {
   const [oracleFlaws, setOracleFlaws] = useState('');
   const [oracleCustomSpells, setOracleCustomSpells] = useState<any[]>([]);
   const [oracleCustomEquipment, setOracleCustomEquipment] = useState<any[]>([]);
+
+  // Oracle-generated flag (shows review banner + inline edit buttons on Finalize)
+  const [oracleGenerated, setOracleGenerated] = useState(false);
 
   // Portrait state
   const [portraitDescription, setPortraitDescription] = useState('');
@@ -110,17 +117,23 @@ export default function CharacterCreationWizard() {
   const canProceed = () => {
     switch (step) {
       case 0: return !!selectedRace && (!selectedRace.subraces?.length || !!selectedSubrace);
-      case 1: return !!selectedClass;
-      case 2: {
+      case 1: 
+        if (!selectedClass) return false;
+        if (selectedClass.subclassLevel === 1 && !selectedSubclassChoice) return false;
+        return true;
+      case 2: 
+        if (!selectedClass?.spellcaster) return true;
+        return true; // we don't strictly gate on full spell cap for flexibility
+      case 3: {
         if (abilityMethod === 'point_buy') return pointsLeft >= 0;
         if (abilityMethod === 'standard_array') return usedArrayValues.length === 6;
         return true;
       }
-      case 3: return !!selectedBackground;
-      case 4: return selectedSkills.length === maxSkillChoices;
-      case 5: return true; // Equipment just defaults to first option
-      case 6: return true; // portrait is optional
-      case 7: return characterName.trim().length > 0;
+      case 4: return !!selectedBackground;
+      case 5: return selectedSkills.length === maxSkillChoices;
+      case 6: return true; // Equipment just defaults to first option
+      case 7: return true; // portrait is optional
+      case 8: return characterName.trim().length > 0;
       default: return true;
     }
   };
@@ -168,7 +181,14 @@ export default function CharacterCreationWizard() {
         body: JSON.stringify({ description: oracleQuery, mode, constraints })
       });
 
-      if (!res.ok) throw new Error("Forge connection failed.");
+      if (!res.ok) {
+        try {
+          const errData = await res.json();
+          throw new Error(errData.error || "Forge connection failed.");
+        } catch {
+          throw new Error("Backend connection failed structure.");
+        }
+      }
       const data = await res.json();
       if (data.error) throw new Error(data.error);
 
@@ -179,13 +199,46 @@ export default function CharacterCreationWizard() {
         if (data.subraceId) setSelectedSubrace(fRace.subraces?.find(s => s.id === data.subraceId) || null);
       }
       const fClass = CLASSES.find(c => c.id === data.classId);
-      if (fClass) setSelectedClass(fClass);
-      
+      if (fClass) {
+        setSelectedClass(fClass);
+        if (fClass.subclassLevel === 1 && fClass.subclasses && fClass.subclasses.length > 0) {
+           setSelectedSubclassChoice(fClass.subclasses[0].name);
+        }
+      }
       const fBg = BACKGROUNDS.find(b => b.id === data.backgroundId);
       if (fBg) setSelectedBackground(fBg);
 
+      // ── POINT BUY VALIDATION (Directive 3b) ──
+      // Verify the LLM's base scores actually spend exactly 27 points.
+      // If not, silently fall back to Standard Array mapped by class primary ability.
       setAbilityMethod('point_buy');
-      if (data.baseScores) setBaseScores(data.baseScores);
+      if (data.baseScores) {
+        const pbCosts: Record<number, number> = { 8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9 };
+        const scores = data.baseScores as Record<string, number>;
+        let totalCost = 0;
+        let valid = true;
+        for (const val of Object.values(scores)) {
+          if (val < 8 || val > 15 || pbCosts[val] === undefined) { valid = false; break; }
+          totalCost += pbCosts[val];
+        }
+        if (valid && totalCost === 27) {
+          setBaseScores(scores as Record<AbilityName, number>);
+        } else {
+          // Fallback: Apply Standard Array, prioritizing class primary abilities
+          console.warn('[Oracle] Point buy validation failed (cost=' + totalCost + '). Applying Standard Array fallback.');
+          const primaryAbilities = fClass?.primaryAbility || ['str'];
+          const allAbilities: AbilityName[] = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+          const sortedAbilities = [
+            ...allAbilities.filter(a => primaryAbilities.includes(a)),
+            ...allAbilities.filter(a => !primaryAbilities.includes(a))
+          ];
+          const stdArray = [15, 14, 13, 12, 10, 8];
+          const fallback: Record<AbilityName, number> = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
+          sortedAbilities.forEach((ability, i) => { fallback[ability] = stdArray[i]; });
+          setBaseScores(fallback);
+        }
+      }
+
       if (data.skills) setSelectedSkills(data.skills);
 
       if (data.name) setCharacterName(data.name);
@@ -205,6 +258,7 @@ export default function CharacterCreationWizard() {
            duration: cs.duration || "Instantaneous",
            description: cs.description || "",
            damage: cs.damage || "",
+           damageType: cs.damageType || "",
            actionCost: cs.actionCost || "action",
            classes: [data.classId] // Bind it to their class
         })));
@@ -215,7 +269,6 @@ export default function CharacterCreationWizard() {
            name: ce.name || "Unknown Item",
            qty: ce.qty || 1,
            weight: ce.weight || 0,
-           equipped: !!ce.slot,
            attuned: false,
            slot: ce.slot || null,
            type: ce.type || 'gear',
@@ -223,16 +276,29 @@ export default function CharacterCreationWizard() {
            armorClass: ce.armorClass,
            armorCategory: ce.armorCategory,
            damage: ce.damage,
+           damageType: ce.damageType,
+           properties: Array.isArray(ce.properties) ? ce.properties : undefined,
+           weaponCategory: ce.weaponCategory,
            actionCost: ce.actionCost || (ce.type === 'weapon' ? 'action' : null),
+           modifiers: Array.isArray(ce.modifiers) ? ce.modifiers : undefined,
         })));
       }
 
+      setOracleGenerated(true);
+
+      // ── PORTRAIT GENERATION WITH ERROR HANDLING (Directive 3c) ──
       if (data.portraitPrompt) {
         setPortraitDescription(data.portraitPrompt);
-        await generatePortrait(data.portraitPrompt, fRace, fClass); // Auto-Generate
+        try {
+          await generatePortrait(data.portraitPrompt, fRace, fClass);
+        } catch (portraitErr: any) {
+          console.error('[Oracle] Portrait generation failed:', portraitErr);
+          // Non-blocking toast notification — don't break the flow
+          setTimeout(() => alert('⚠ Portrait generation failed. You can retry on Step 7 (Portrait).'), 100);
+        }
       }
 
-      setStep(7); // Jump straight to Finalize screen!
+      setStep(8); // Jump straight to Finalize screen!
     } catch (e: any) {
       console.error(e);
       alert('The Oracle failed to conjure a valid character: ' + e.message);
@@ -240,6 +306,7 @@ export default function CharacterCreationWizard() {
       setOracleLoading(false);
     }
   };
+
 
   const randomizePointBuy = () => {
     const currentBase: Record<AbilityName, number> = { str: 8, dex: 8, con: 8, int: 8, wis: 8, cha: 8 };
@@ -350,13 +417,18 @@ export default function CharacterCreationWizard() {
         name: dbItem.name || 'Unknown Item',
         qty: dbItem.qty || 1,
         weight: dbItem.weight || 0,
-        equipped: !!dbItem.slot,
         attuned: false,
         slot: dbItem.slot || null,
         type: dbItem.type || 'gear',
-        description: '',
+        description: dbItem.description || '',
+        // ── Armor fields ──
         armorClass: dbItem.armorClass,
         armorCategory: dbItem.armorCategory,
+        // ── Weapon fields (critical for CombatTab damage & proficiency) ──
+        damage: dbItem.damage,
+        damageType: dbItem.damageType,
+        properties: dbItem.properties ? [...dbItem.properties] : undefined,
+        weaponCategory: dbItem.weaponCategory,
         actionCost: dbItem.actionCost,
       };
     }).filter(Boolean);
@@ -382,18 +454,39 @@ export default function CharacterCreationWizard() {
     }
 
     const initialResources: Record<string, any> = {};
-    if (selectedClass.spellcaster) {
-      if (selectedClass.id === 'warlock') {
-        initialResources['spell_slot_1'] = { name: '1st Level Pact Slots', max: 1, used: 0, recharge: 'short' };
-      } else if (!['paladin', 'ranger'].includes(selectedClass.id)) {
-        initialResources['spell_slot_1'] = { name: '1st Level Slots', max: 2, used: 0, recharge: 'long' };
-      }
+    if (selectedClass.spellcaster && selectedClass.spellSlots) {
+       const slotsForLevel = selectedClass.spellSlots[1]; // Level 1 slots
+       if (slotsForLevel) {
+          Object.entries(slotsForLevel).forEach(([levelKey, maxSlots]) => {
+             const numericLevel = levelKey.replace('spell_slot_', '');
+             if ((maxSlots as number) > 0) {
+               initialResources[levelKey] = {
+                 name: `${numericLevel}${numericLevel === '1' ? 'st' : numericLevel === '2' ? 'nd' : numericLevel === '3' ? 'rd' : 'th'} Level Slots`,
+                 max: maxSlots,
+                 used: 0,
+                 recharge: selectedClass.id === 'warlock' ? 'short' : 'long'
+               };
+             }
+          });
+       }
+    }
+
+    const subclasses: Record<string, string> = {};
+    let subclassFeatures: any[] = [];
+    if (selectedSubclassChoice) {
+       subclasses[selectedClass.name] = selectedSubclassChoice;
+       const scData = selectedClass.subclasses?.find((sc:any) => sc.name === selectedSubclassChoice);
+       if (scData && scData.features) {
+         subclassFeatures = scData.features.filter((f:any) => f.level === 1);
+       }
     }
 
     const newChar = {
       name: characterName,
       race: selectedRace.name + (selectedSubrace ? ` (${selectedSubrace.name})` : ''),
       class: selectedClass.name,
+      subclass: selectedSubclassChoice || null,
+      subclasses,
       background: selectedBackground.name,
       level: 1,
       maxHp: startingHp,
@@ -412,16 +505,16 @@ export default function CharacterCreationWizard() {
       spellcaster: selectedClass.spellcaster,
       spellcastingAbility: selectedClass.spellcastingAbility || null,
       resources: initialResources,
-      cantrips: [],
-      knownSpells: oracleCustomSpells.map(s => s.id),
-      preparedSpells: oracleCustomSpells.map(s => s.id),
+      cantrips: [], // We merge all drafted spells into known/prepared. The Grimoire tab inherently filters by level 0.
+      knownSpells: [...oracleCustomSpells.map(s => s.id), ...draftedSpells],
+      preparedSpells: [...oracleCustomSpells.map(s => s.id), ...draftedSpells],
       customSpells: oracleCustomSpells.length > 0 ? oracleCustomSpells : [],
       traits: [...(selectedRace.traits || []), ...(selectedSubrace?.traits || [])],
       languages: selectedRace.languages,
       inventory: startingInventory,
       equipped,
       equipment: selectedBackground.equipment, // Legacy
-      features: selectedClass.features.filter(f => f.level <= 1),
+      features: [...selectedClass.features.filter((f:any) => f.level <= 1), ...subclassFeatures],
       portrait: portraitData || null,
       notes: '', quests: '', people: '', places: '', feats: [],
       personalityTraits: oraclePersonalityTraits,
@@ -531,7 +624,7 @@ export default function CharacterCreationWizard() {
           <div
             key={cls.id}
             className={`${styles.optionCard} ${selectedClass?.id === cls.id ? styles.selected : ''}`}
-            onClick={() => { setSelectedClass(cls); setSelectedSkills([]); }}
+            onClick={() => { setSelectedClass(cls); setSelectedSkills([]); setSelectedSubclassChoice(''); }}
           >
             <h3 className={styles.optionName}>{cls.name}</h3>
             <p className={styles.optionMeta}>
@@ -541,8 +634,107 @@ export default function CharacterCreationWizard() {
           </div>
         ))}
       </div>
+
+      {selectedClass && selectedClass.subclassLevel === 1 && (
+        <div style={{ marginTop: '32px', animation: 'fadeIn 0.3s' }}>
+          <h2 className={styles.sectionTitle}>Choose Your {selectedClass.subclassLabel || 'Subclass'}</h2>
+          <p className={styles.sectionSubtitle}>As a {selectedClass.name}, you must commit to a path immediately.</p>
+          <div style={{ maxWidth: '400px', marginBottom: '24px' }}>
+            <select 
+               value={selectedSubclassChoice} 
+               onChange={e => setSelectedSubclassChoice(e.target.value)}
+               className={styles.oracleInput}
+               style={{ width: '100%', padding: '12px', background: '#111', border: '1px solid #cfaa5e' }}
+            >
+              <option value="">-- Choose Path --</option>
+              {selectedClass.subclasses?.map((sc:any) => (
+                <option key={sc.id} value={sc.name}>{sc.name}</option>
+              ))}
+            </select>
+          </div>
+
+          {selectedSubclassChoice && (
+            <div style={{ padding: '16px', background: 'rgba(207, 170, 94, 0.1)', border: '1px solid #cfaa5e', borderRadius: '8px' }}>
+               {(() => {
+                 const scData = selectedClass.subclasses?.find((s:any) => s.name === selectedSubclassChoice);
+                 if (!scData) return null;
+                 const lvl1Features = scData.features?.filter((f:any) => f.level === 1) || [];
+                 return (
+                   <>
+                     <h4 style={{ margin: '0 0 8px 0', color: '#cfaa5e', fontFamily: 'Cinzel, serif', fontSize: '18px' }}>{scData.name} Overview</h4>
+                     <p style={{ margin: '0 0 16px 0', fontSize: '13px', color: '#ccc', fontStyle: 'italic', lineHeight: 1.5 }}>{scData.description}</p>
+                     
+                     <h5 style={{ margin: '0 0 12px 0', color: '#55aacc', textTransform: 'uppercase', fontSize: '11px', letterSpacing: '1px' }}>Features Granted Now</h5>
+                     {lvl1Features.length > 0 ? (
+                       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                         {lvl1Features.map((f:any) => (
+                           <div key={f.name} style={{ background: 'rgba(0,0,0,0.3)', padding: '10px', borderRadius: '4px', borderLeft: '2px solid #55aacc' }}>
+                             <strong style={{ display: 'block', color: '#e0e0e0', fontSize: '13px', marginBottom: '4px' }}>{f.name}</strong>
+                             <span style={{ color: '#aaa', fontSize: '12px', lineHeight: 1.4, display: 'block' }}>{f.description}</span>
+                           </div>
+                         ))}
+                       </div>
+                     ) : (
+                       <p style={{ fontSize: '12px', color: '#888', fontStyle: 'italic', margin: 0 }}>This path grants standard proficiencies or spell access.</p>
+                     )}
+                   </>
+                 );
+               })()}
+            </div>
+          )}
+        </div>
+      )}
     </>
   );
+
+  const renderSpellsStep = () => {
+    if (!selectedClass?.spellcaster) {
+       return (
+         <div style={{ textAlign: 'center', padding: '64px 20px' }}>
+           <h2 style={{ color: '#aaa', fontFamily: 'Cinzel', marginBottom: '16px' }}>Martial Path</h2>
+           <p style={{ color: '#888' }}>As a {selectedClass?.name || 'warrior'}, you do not command arcane forces. Your might lies in steel and determination.</p>
+           <button className={styles.btnNext} onClick={() => setStep(step + 1)} style={{ marginTop: '24px' }}>Proceed to Abilities →</button>
+         </div>
+       );
+    }
+    
+    // Preparation spellcasters (Cleric, Druid, Paladin) don't lock their spells in stone (except cantrips)
+    // but building an initial grimoire helps.
+    const isPrep = ['cleric', 'druid', 'paladin'].includes(selectedClass.id.toLowerCase());
+    
+    const mockCharState: any = {
+      level: 1,
+      class: selectedClass.name,
+      subclass: selectedSubclassChoice || null,
+      spellcaster: true,
+      knownSpells: draftedSpells
+    };
+
+    return (
+      <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+         <h2 className={styles.sectionTitle}>Draft Your Initial Grimoire</h2>
+         <p className={styles.sectionSubtitle}>Select the specific magical invocations your character possesses at Level 1.</p>
+         {isPrep && <p style={{ fontSize: '12px', color: '#cfaa5e' }}>Note: As a {selectedClass.name}, you prepare spells daily. Selection here acts as a starting convenience.</p>}
+         {selectedClass.subclasses && selectedSubclassChoice && (
+            <div style={{ padding: '12px', background: 'rgba(200, 150, 50, 0.1)', border: '1px solid rgba(200, 150, 50, 0.3)', borderRadius: '4px', marginTop: '12px', fontSize: '12px', color: '#ccc' }}>
+              <strong>Subclass Magic:</strong> If your <em>{selectedSubclassChoice}</em> subclass grants cross-class spells (e.g. Fiend Warlocks gaining <em>Command</em>), uncheck <strong>"Show Valid Leveling Magic Only"</strong> to find and draft them.
+            </div>
+         )}
+         <div style={{ flex: 1, minHeight: '400px', borderTop: '1px dashed #333', marginTop: '16px', paddingTop: '16px' }}>
+            <SpellBrowser 
+               inline={true} 
+               draftMode={true} 
+               draftedSpells={draftedSpells}
+               contextChar={mockCharState} 
+               onSpellDraft={(id) => {
+                 if (draftedSpells.includes(id)) setDraftedSpells(draftedSpells.filter(s => s !== id));
+                 else setDraftedSpells([...draftedSpells, id]);
+               }} 
+            />
+         </div>
+      </div>
+    );
+  };
 
   const renderAbilitiesStep = () => (
     <>
@@ -728,8 +920,46 @@ export default function CharacterCreationWizard() {
     const conMod = calculateModifier(finalScores.con);
     const startingHp = selectedClass ? calculateStartingHp(selectedClass, conMod) : 0;
 
+    const editBtnStyle: React.CSSProperties = {
+      padding: '3px 10px', borderRadius: '3px', fontSize: '10px', fontWeight: 'bold',
+      background: 'transparent', border: '1px solid rgba(207,170,94,0.5)', color: '#cfaa5e',
+      cursor: 'pointer', fontFamily: 'Cinzel, serif', letterSpacing: '0.5px',
+      transition: 'all 0.2s', textTransform: 'uppercase'
+    };
+
+    const SectionHeader = ({ label, stepIdx }: { label: string; stepIdx: number }) => (
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <div className={styles.summaryLabel}>{label}</div>
+        <button
+          style={editBtnStyle}
+          onClick={() => setStep(stepIdx)}
+          onMouseEnter={e => { (e.target as any).style.background = 'rgba(207,170,94,0.15)'; }}
+          onMouseLeave={e => { (e.target as any).style.background = 'transparent'; }}
+        >✎ Edit</button>
+      </div>
+    );
+
     return (
       <>
+        {oracleGenerated && (
+          <div style={{
+            padding: '14px 18px', marginBottom: '24px', borderRadius: '8px',
+            background: 'linear-gradient(135deg, rgba(207,170,94,0.08), rgba(85,170,204,0.08))',
+            border: '1px solid rgba(207,170,94,0.3)', display: 'flex', alignItems: 'center', gap: '12px'
+          }}>
+            <span style={{ fontSize: '24px' }}>✨</span>
+            <div>
+              <div style={{ color: '#cfaa5e', fontFamily: 'Cinzel, serif', fontSize: '14px', fontWeight: 'bold', marginBottom: '4px' }}>
+                Oracle-Forged Character
+              </div>
+              <div style={{ color: '#aaa', fontSize: '12px', lineHeight: '1.5' }}>
+                Review your character below. Click <strong style={{ color: '#cfaa5e' }}>✎ Edit</strong> next to any section, 
+                or use the step bar at the top, to refine details before forging.
+              </div>
+            </div>
+          </div>
+        )}
+
         <h2 className={styles.sectionTitle}>Name Your Hero</h2>
         <p className={styles.sectionSubtitle}>Every legend begins with a name. What shall yours be?</p>
         <input
@@ -744,15 +974,17 @@ export default function CharacterCreationWizard() {
           <h2 className={styles.sectionTitle}>Character Summary</h2>
           <div className={styles.summaryGrid}>
             <div className={styles.summaryItem}>
-              <div className={styles.summaryLabel}>Race</div>
+              <SectionHeader label="Race" stepIdx={0} />
               <div className={styles.summaryValue}>{selectedRace?.name}{selectedSubrace ? ` (${selectedSubrace.name})` : ''}</div>
             </div>
             <div className={styles.summaryItem}>
-              <div className={styles.summaryLabel}>Class</div>
-              <div className={styles.summaryValue}>{selectedClass?.name}</div>
+              <SectionHeader label="Class" stepIdx={1} />
+              <div className={styles.summaryValue}>
+                {selectedClass?.name}{selectedSubclassChoice && ` (${selectedSubclassChoice})`}
+              </div>
             </div>
             <div className={styles.summaryItem}>
-              <div className={styles.summaryLabel}>Background</div>
+              <SectionHeader label="Background" stepIdx={4} />
               <div className={styles.summaryValue}>{selectedBackground?.name}</div>
             </div>
             <div className={styles.summaryItem}>
@@ -764,13 +996,13 @@ export default function CharacterCreationWizard() {
               <div className={styles.summaryValue}>{10 + calculateModifier(finalScores.dex)}</div>
             </div>
             <div className={styles.summaryItem}>
-              <div className={styles.summaryLabel}>Speed</div>
+              <SectionHeader label="Speed" stepIdx={0} />
               <div className={styles.summaryValue}>{selectedRace?.speed} ft.</div>
             </div>
           </div>
           <div style={{ marginTop: '16px' }}>
             <div className={styles.summaryItem}>
-              <div className={styles.summaryLabel}>Ability Scores</div>
+              <SectionHeader label="Ability Scores" stepIdx={3} />
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
                 {ABILITY_NAMES.map(({ key, label }) => (
                   <span key={key} className={styles.bonusBadge}>
@@ -780,13 +1012,42 @@ export default function CharacterCreationWizard() {
               </div>
             </div>
           </div>
+          <div style={{ marginTop: '16px' }}>
+            <div className={styles.summaryItem}>
+              <SectionHeader label="Skills" stepIdx={5} />
+              <div className={styles.summaryValueSmall}>
+                {[...lockedSkills, ...selectedSkills].map(s => SKILL_LABELS[s] || s).join(', ') || 'None selected'}
+              </div>
+            </div>
+          </div>
+          {(draftedSpells.length > 0 || oracleCustomSpells.length > 0) && (
+            <div style={{ marginTop: '16px' }}>
+              <div className={styles.summaryItem}>
+                <SectionHeader label="Initial Grimoire" stepIdx={2} />
+                <div className={styles.summaryValueSmall}>
+                  {draftedSpells.length} standard spells prepared, {oracleCustomSpells.length} custom spells forged.
+                </div>
+              </div>
+            </div>
+          )}
+          <div style={{ marginTop: '16px' }}>
+            <div className={styles.summaryItem}>
+              <SectionHeader label="Equipment" stepIdx={6} />
+              <div className={styles.summaryValueSmall}>
+                {Object.values(draftGearSelections).flat().length > 0
+                  ? `${Object.values(draftGearSelections).flat().length} items selected`
+                  : 'Default equipment'}
+                {oracleCustomEquipment.length > 0 && `, + ${oracleCustomEquipment.length} Oracle items`}
+              </div>
+            </div>
+          </div>
           {portraitData && (
             <div style={{ marginTop: '16px', display: 'flex', gap: '16px', alignItems: 'start' }}>
               <div style={{ width: '120px', height: '120px', borderRadius: '4px', overflow: 'hidden', border: '1px solid var(--border-dim)', flexShrink: 0 }}>
                 <img src={`data:image/png;base64,${portraitData}`} alt="Portrait" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               </div>
               <div className={styles.summaryItem} style={{ flex: 1 }}>
-                <div className={styles.summaryLabel}>Portrait</div>
+                <SectionHeader label="Portrait" stepIdx={7} />
                 <div className={styles.summaryValueSmall}>Generated from your description</div>
               </div>
             </div>
@@ -983,7 +1244,7 @@ export default function CharacterCreationWizard() {
   };
 
   const stepRenderers = [
-    renderRaceStep, renderClassStep, renderAbilitiesStep,
+    renderRaceStep, renderClassStep, renderSpellsStep, renderAbilitiesStep,
     renderBackgroundStep, renderSkillsStep, renderEquipmentStep, renderPortraitStep, renderFinalizeStep,
   ];
 
@@ -1009,19 +1270,27 @@ export default function CharacterCreationWizard() {
       </div>
 
       <div className={styles.stepsBar}>
-        {STEPS.map((s, i) => (
-          <div key={s.key} style={{ display: 'flex', alignItems: 'center' }}>
-            <div className={styles.stepItem} onClick={() => i < step && setStep(i)}>
-              <div className={styles.stepNumber} style={getStepNumStyle(i)}>
-                {i < step ? '✓' : i + 1}
+        {STEPS.map((s, i) => {
+          // Allow clicking any visited step, or any step when on Finalize (Oracle-generated)
+          const isClickable = i < step || (step === STEPS.length - 1 && i !== step);
+          return (
+            <div key={s.key} style={{ display: 'flex', alignItems: 'center' }}>
+              <div
+                className={styles.stepItem}
+                onClick={() => isClickable && setStep(i)}
+                style={{ cursor: isClickable ? 'pointer' : 'default' }}
+              >
+                <div className={styles.stepNumber} style={getStepNumStyle(i)}>
+                  {i < step ? '✓' : i + 1}
+                </div>
+                <div className={styles.stepLabel} style={getStepLabelStyle(i)}>{s.label}</div>
               </div>
-              <div className={styles.stepLabel} style={getStepLabelStyle(i)}>{s.label}</div>
+              {i < STEPS.length - 1 && (
+                <div className={styles.stepConnector} style={i < step ? { background: 'var(--ice-dim)' } : {}} />
+              )}
             </div>
-            {i < STEPS.length - 1 && (
-              <div className={styles.stepConnector} style={i < step ? { background: 'var(--ice-dim)' } : {}} />
-            )}
-          </div>
-        ))}
+          );
+        })}
       </div>
 
       <div className={styles.mainContent}>
@@ -1041,7 +1310,16 @@ export default function CharacterCreationWizard() {
           {step === 6 && 'Portrait is optional — skip or generate'}
         </div>
         {step < STEPS.length - 1 ? (
-          <button className={styles.btnNext} onClick={() => setStep(step + 1)} disabled={!canProceed()}>Next →</button>
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {oracleGenerated && (
+              <button
+                className={styles.btnNext}
+                onClick={() => setStep(STEPS.length - 1)}
+                style={{ background: 'transparent', border: '1px solid var(--border-gold)', color: 'var(--gold)' }}
+              >Review Summary →</button>
+            )}
+            <button className={styles.btnNext} onClick={() => setStep(step + 1)} disabled={!canProceed()}>Next →</button>
+          </div>
         ) : (
           <button className={styles.btnCreate} onClick={handleCreate} disabled={!canProceed()}>⚔ Forge Hero</button>
         )}

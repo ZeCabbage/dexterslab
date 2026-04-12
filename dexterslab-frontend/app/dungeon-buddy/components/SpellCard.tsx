@@ -2,6 +2,10 @@
 
 import React from 'react';
 import { SpellData } from '../lib/types';
+import styles from '../[id]/page.module.css';
+import { useCharacterStore } from '../lib/store';
+import D20Icon from './D20Icon';
+import { getSpellDamage, getSpellRange } from '../lib/compute-stats';
 
 interface SpellCardProps {
   spell: SpellData;
@@ -14,6 +18,10 @@ interface SpellCardProps {
 
 export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle, onLearnToggle, lockReason }: SpellCardProps) {
   const [isExpanded, setIsExpanded] = React.useState(false);
+  // Optional chaining fallback because SpellCard might be used during draft mode
+  const rawCharState = useCharacterStore.getState().char; 
+  const computedDmg = getSpellDamage(rawCharState, spell);
+  const computedRange = getSpellRange(rawCharState, spell);
 
   return (
     <div style={{
@@ -34,6 +42,11 @@ export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle,
           <span style={{ fontSize: '12px', color: '#888', fontStyle: 'italic' }}>
             {spell.level === 0 ? 'Cantrip' : `Level ${spell.level}`} {spell.school}
           </span>
+          {spell.level > 0 && (
+            <span style={{ marginLeft: '8px', background: '#aa4444', color: '#fff', fontSize: '10px', padding: '2px 4px', borderRadius: '4px', fontWeight: 'bold', display: 'inline-block' }}>
+              Costs Level {spell.level} Slot
+            </span>
+          )}
         </div>
         
         <div style={{ display: 'flex', gap: '8px' }}>
@@ -49,6 +62,31 @@ export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle,
               }}
             >
               {isPrepared ? 'PREPARED' : 'Prepare'}
+            </button>
+          )}
+
+          {isPrepared && (
+            <button
+               onClick={(e) => {
+                 e.stopPropagation();
+                 if (spell.level > 0) {
+                    useCharacterStore.getState().expendResource(`spell_slot_${spell.level}`);
+                 }
+                 useCharacterStore.getState().addLog('spell', `Casted ${spell.name}!`);
+                 alert(`Casting ${spell.name}! ${spell.level > 0 ? "Spell Slot deducted." : "Cantrip logic."}`);
+               }}
+               style={{
+                 background: '#4aa',
+                 color: '#000',
+                 border: 'none',
+                 padding: '4px 12px',
+                 borderRadius: '4px',
+                 fontSize: '11px',
+                 fontWeight: 'bold',
+                 cursor: 'pointer'
+               }}
+            >
+              CAST
             </button>
           )}
 
@@ -74,7 +112,7 @@ export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle,
         <div style={{ animation: 'fadeIn 0.2s', marginTop: '12px', paddingTop: '12px', borderTop: '1px solid #333' }}>
           <div style={{ display: 'flex', gap: '16px', marginBottom: '12px', paddingBottom: '8px' }}>
             <div style={{ fontSize: '11px', color: '#aaa' }}><strong>Time:</strong> {spell.castingTime}</div>
-            <div style={{ fontSize: '11px', color: '#aaa' }}><strong>Range:</strong> {spell.range}</div>
+            <div style={{ fontSize: '11px', color: '#aaa' }}><strong>Range:</strong> {computedRange}</div>
             <div style={{ fontSize: '11px', color: '#aaa' }}><strong>Duration:</strong> {spell.duration}</div>
           </div>
 
@@ -82,9 +120,26 @@ export default function SpellCard({ spell, isKnown, isPrepared, onPrepareToggle,
             {spell.description}
           </p>
 
-          {spell.damage && (
-            <div style={{ background: 'rgba(255, 50, 50, 0.1)', border: '1px solid rgba(255,50,50,0.3)', padding: '6px', borderRadius: '4px', textAlign: 'center', fontSize: '12px', color: '#ff6666' }}>
-              <strong>{spell.damage}</strong>
+          {computedDmg && (
+            <div style={{ background: 'rgba(255, 50, 50, 0.1)', border: '1px solid rgba(255,50,50,0.3)', padding: '6px', borderRadius: '4px', textAlign: 'center', fontSize: '12px', color: '#ff6666', display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '8px' }}>
+              <strong>DMG {computedDmg}</strong>
+              <button 
+                className={styles.rollBtn} 
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const split = spell.damage!.toLowerCase().split('d');
+                  const count = parseInt(split[0]) || 1;
+                  const sides = parseInt(split[1]) || 20;
+                  let rollSum = 0;
+                  for(let i=0; i<count; i++) rollSum += Math.floor(Math.random() * sides) + 1;
+                  const message = `Rolled ${spell.name} Damage: ${rollSum} (${computedDmg})`;
+                  alert(message);
+                  useCharacterStore.getState().addLog('roll', message);
+                }}
+                title="Roll Damage"
+              >
+                <D20Icon />
+              </button>
             </div>
           )}
         </div>

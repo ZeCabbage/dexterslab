@@ -16,21 +16,21 @@
  */
 
 // ── Config ──
-const MAX_OFFSET = 120;             // max eye displacement in px — balanced: visible but centered
+const MAX_OFFSET = 160;             // max eye displacement in px — wider range for visible tracking
 const DWELL_MIN = 2.0;              // min seconds on primary target
 const DWELL_MAX = 4.5;              // max seconds on primary target
 const GLANCE_DURATION = 0.5;        // quick glance duration
 const GLANCE_CHANCE = 0.35;         // probability of glancing at secondary
-const TRACKING_SMOOTH = 0.16;       // smooth factor while locked — natural pan speed
-const TRANSITION_SMOOTH = 0.08;     // smooth factor during transitions
+const TRACKING_SMOOTH = 0.18;       // smooth factor while locked — responsive pan speed
+const TRANSITION_SMOOTH = 0.12;     // smooth factor during transitions — snappier target switches
 const RECOGNITION_DILATION = 1.5;   // dilation burst for new entity
-const STARTLE_DILATION = 1.7;       // dilation burst for sudden motion
-const STARTLE_MOTION_THRESHOLD = 0.15; // total motion jump to trigger startle
+const STARTLE_DILATION = 1.8;       // dilation burst for sudden motion
+const STARTLE_MOTION_THRESHOLD = 0.12; // total motion jump to trigger startle (more sensitive)
 
 // Microsaccade config
 const SACCADE_INTERVAL_MIN = 200;   // ms between microsaccades
 const SACCADE_INTERVAL_MAX = 500;
-const SACCADE_AMPLITUDE = 2.5;      // pixels — reduced for smoother look
+const SACCADE_AMPLITUDE = 4.0;      // pixels — visible micro-movements for lifelike feel
 
 // Pupil breathing rhythm
 const PUPIL_BREATH_SPEED = 0.12;    // Hz — slower, more organic
@@ -256,11 +256,18 @@ export class BehaviorModel {
 
         this.targetDilation = baseDilation + breathOffset;
 
-        // ── Smooth interpolation ──
-        const smooth = this.isGlancing ? TRANSITION_SMOOTH : TRACKING_SMOOTH;
-        this.currentX += (this.targetX - this.currentX) * smooth;
-        this.currentY += (this.targetY - this.currentY) * smooth;
-        this.currentDilation += (this.targetDilation - this.currentDilation) * 0.15;  // faster dilation response
+        // ── Distance-adaptive smooth interpolation ──
+        // Big movements snap fast (alert), small movements glide (natural)
+        const dx = this.targetX - this.currentX;
+        const dy = this.targetY - this.currentY;
+        const dist = Math.sqrt(dx * dx + dy * dy);
+        const baseSmooth = this.isGlancing ? TRANSITION_SMOOTH : TRACKING_SMOOTH;
+        // Scale: large displacements (>40px) get up to 2.5x the smooth factor
+        const distBoost = Math.min(2.5, 1.0 + (dist / 50) * 1.5);
+        const smooth = Math.min(0.45, baseSmooth * distBoost);
+        this.currentX += dx * smooth;
+        this.currentY += dy * smooth;
+        this.currentDilation += (this.targetDilation - this.currentDilation) * 0.18;  // responsive dilation
 
         // Expire emotion
         if (now > this.emotionEndTime && this.emotion !== 'neutral') {

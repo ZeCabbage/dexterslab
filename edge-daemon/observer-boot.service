@@ -1,0 +1,48 @@
+[Unit]
+Description=DextersLab Observer Edge Boot Protocol
+After=network-online.target sound.target cloudflared.service
+Wants=network-online.target sound.target
+# Give cloudflared a head start
+After=cloudflared.service
+
+[Service]
+Type=simple
+# EDGE_USER: Change this to match your Pi's service user
+User=deploy
+Group=deploy
+
+# Working directory is the edge-daemon code
+WorkingDirectory=/home/deploy/dexterslab-edge
+
+# Layer 0 pre-check: run hardware discovery before starting
+ExecStartPre=/bin/bash /home/deploy/dexterslab-edge/hw-discover.sh
+
+# Main boot protocol (includes daemon start + watchdog)
+ExecStart=/bin/bash /home/deploy/dexterslab-edge/boot-protocol.sh
+
+# Clean shutdown: kill all children (ffmpeg, pyaudio, etc.)
+ExecStopPost=/bin/bash /home/deploy/dexterslab-edge/clean-shutdown.sh
+
+# Restart policy
+Restart=on-failure
+RestartSec=15
+
+# Allow 90s for full boot sequence (hw discovery + network wait + daemon start)
+TimeoutStartSec=90
+
+# CRITICAL: Kill entire process group on stop (reaps ffmpeg, pyaudio children)
+KillMode=control-group
+KillSignal=SIGTERM
+TimeoutStopSec=15
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+Environment=HOME=/home/deploy
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=observer-boot
+
+[Install]
+WantedBy=multi-user.target

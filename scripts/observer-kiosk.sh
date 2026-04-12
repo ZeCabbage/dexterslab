@@ -5,32 +5,72 @@
 #  for the 5" circular display on Raspberry Pi.
 #
 #  Connects to the PC frontend via Cloudflare Tunnel.
+#
+#  Boot Gate Order:
+#    1. Wait for local edge daemon to be healthy
+#    2. Wait for PC backend to be reachable
+#    3. Launch Chromium
+#    4. Fallback to offline mode if both fail
 # ═══════════════════════════════════════════
 
 # ── Config ──
 LOG_TAG="[OBSERVER-KIOSK]"
 OBSERVER_URL="https://dexterslab.cclottaaworld.com/observer"
-MAX_WAIT=90  # seconds to wait for the server
+EDGE_HEALTH_URL="http://localhost:8891/health"
+MAX_EDGE_WAIT=20    # seconds to wait for local edge daemon (should already be up)
+MAX_SERVER_WAIT=45  # seconds to wait for PC backend
+OFFLINE_SCRIPT="$HOME/Desktop/dexterslab/scripts/launch-offline-observer.sh"
 
 echo "$LOG_TAG Starting kiosk launcher..."
 echo "$LOG_TAG Target: $OBSERVER_URL"
 
-# ── Wait for Cloudflare / server to be reachable ──
-echo "$LOG_TAG Waiting for server at $OBSERVER_URL..."
+# ── Gate 1: Wait for Local Edge Daemon ──
+echo "$LOG_TAG [Gate 1] Waiting for edge daemon at $EDGE_HEALTH_URL..."
 elapsed=0
-while ! curl -s -o /dev/null -w '' "$OBSERVER_URL" 2>/dev/null; do
+edge_ready=false
+while [ "$elapsed" -lt "$MAX_EDGE_WAIT" ]; do
+  RESPONSE=$(curl -s --max-time 3 "$EDGE_HEALTH_URL" 2>/dev/null)
+  if echo "$RESPONSE" | grep -q '"status"'; then
+    echo "$LOG_TAG [Gate 1] ✓ Edge daemon is healthy!"
+    echo "$LOG_TAG   Response: $RESPONSE"
+    edge_ready=true
+    break
+  fi
   sleep 2
   elapsed=$((elapsed + 2))
-  if [ "$elapsed" -ge "$MAX_WAIT" ]; then
-    echo "$LOG_TAG ✕ Timed out waiting for server after ${MAX_WAIT}s"
-    echo "$LOG_TAG ⚠ Auto-launching OFFLINE OBSERVER fallback..."
-    bash "$HOME/Desktop/dexterslab/scripts/launch-offline-observer.sh"
-    exit 0
-  fi
-  echo "$LOG_TAG   waiting... (${elapsed}s / ${MAX_WAIT}s)"
+  echo "$LOG_TAG [Gate 1]   waiting... (${elapsed}s / ${MAX_EDGE_WAIT}s)"
 done
 
-echo "$LOG_TAG ✓ Server is ready!"
+if [ "$edge_ready" = false ]; then
+  echo "$LOG_TAG [Gate 1] ⚠ Edge daemon not ready after ${MAX_EDGE_WAIT}s"
+  echo "$LOG_TAG   Continuing to check server anyway..."
+fi
+
+# ── Gate 2: Wait for PC Backend (via Cloudflare) ──
+echo "$LOG_TAG [Gate 2] Waiting for server at $OBSERVER_URL..."
+elapsed=0
+server_ready=false
+while [ "$elapsed" -lt "$MAX_SERVER_WAIT" ]; do
+  if curl -s -o /dev/null -w '' "$OBSERVER_URL" 2>/dev/null; then
+    echo "$LOG_TAG [Gate 2] ✓ Server is ready!"
+    server_ready=true
+    break
+  fi
+  sleep 2
+  elapsed=$((elapsed + 2))
+  echo "$LOG_TAG [Gate 2]   waiting... (${elapsed}s / ${MAX_SERVER_WAIT}s)"
+done
+
+if [ "$server_ready" = false ]; then
+  echo "$LOG_TAG [Gate 2] ✕ Timed out waiting for server after ${MAX_SERVER_WAIT}s"
+  echo "$LOG_TAG ⚠ Auto-launching OFFLINE OBSERVER fallback..."
+  if [ -f "$OFFLINE_SCRIPT" ]; then
+    bash "$OFFLINE_SCRIPT"
+  else
+    echo "$LOG_TAG ✕ Offline script not found at $OFFLINE_SCRIPT"
+  fi
+  exit 0
+fi
 
 # ── Hide the mouse cursor ──
 if command -v unclutter &>/dev/null; then

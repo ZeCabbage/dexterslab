@@ -54,7 +54,7 @@ class GeminiRateLimiter {
     constructor() {
         this.maxCallsPerMinute = parseInt(process.env.GEMINI_MAX_CALLS_PER_MINUTE) || 10;
         this.maxCallsPerHour   = parseInt(process.env.GEMINI_MAX_CALLS_PER_HOUR) || 100;
-        this.minIntervalMs     = parseInt(process.env.GEMINI_MIN_INTERVAL_MS) || 3000;
+        this.minIntervalMs     = parseInt(process.env.GEMINI_MIN_INTERVAL_MS) || 1500;
         this.callTimestamps    = [];
         this.lastCallTime      = 0;
     }
@@ -467,7 +467,7 @@ export class EyeStateMachine {
 
         let result;
         try {
-            result = await this.oracle.ask(systemPrompt);
+            result = await this.oracle.ask(sanitizedTranscript, systemPrompt);
             bus.publish('oracle.response', { text: sanitizedTranscript, response: result.response, timestamp: Date.now() });
 
             this.conversationBuffer.push({ role: 'user', text: sanitizedTranscript });
@@ -519,18 +519,37 @@ export class EyeStateMachine {
         const sleepTarget = this._sleeping ? 1.0 : 0.0;
         this._sleepPhase = lerp(this._sleepPhase, sleepTarget, 0.04);
 
-        // ── Sentinel mode — DISABLED FOR TESTING ──
-        // When no face detected, eye sits still at center.
-        // This makes it obvious when face detection triggers real tracking.
+        // ── Sentinel mode ──
+        // When no entities detected for SENTINEL_ENTER_DELAY seconds,
+        // the eye enters surveillance sweep mode.
         const timeSinceEntity = now - this._lastEntityTime;
-        this._sentinelActive = false;  // TESTING: always off
+        if (timeSinceEntity > SENTINEL_ENTER_DELAY) {
+            if (!this._sentinelActive) {
+                this._sentinelActive = true;
+                this._sentinelNextSweep = now;
+            }
+            this._updateSentinel(now);
+        } else {
+            this._sentinelActive = false;
+        }
 
         // ── Compute final iris position ──
         let finalX, finalY;
         if (gaze.visible) {
-            // TRACKING: face detected — use behavior model output + saccades
-            finalX = lerp(this.state.ix, gaze.x + gaze.saccadeX, 0.16);  // smooth pan
-            finalY = lerp(this.state.iy, gaze.y + gaze.saccadeY, 0.16);
+            // TRACKING: distance-adaptive — snap to big movements, glide on small ones
+            const targetX = gaze.x + gaze.saccadeX;
+            const targetY = gaze.y + gaze.saccadeY;
+            const dxEye = Math.abs(targetX - this.state.ix);
+            const dyEye = Math.abs(targetY - this.state.iy);
+            const eyeDist = Math.sqrt(dxEye * dxEye + dyEye * dyEye);
+            // Base 0.14, scales up to 0.40 for large movements (>60px shift)
+            const trackSmooth = Math.min(0.40, 0.14 + (eyeDist / 80) * 0.26);
+            finalX = lerp(this.state.ix, targetX, trackSmooth);
+            finalY = lerp(this.state.iy, targetY, trackSmooth);
+        } else if (this._sentinelActive) {
+            // SENTINEL: sweep scan when nothing detected
+            finalX = lerp(this.state.ix, this._sentinelTargetX, 0.04);
+            finalY = lerp(this.state.iy, this._sentinelTargetY, 0.04);
         } else {
             // NO FACE: decay to center slowly
             finalX = lerp(this.state.ix, 0, 0.03);
@@ -614,8 +633,8 @@ export class EyeStateMachine {
                 break;
 
             case 'closing': {
-                // Fast close: 100ms (real blink close is ~75-100ms)
-                const closeDur = 0.10;
+                // Deliberate close: 150ms — slightly slower for natural feel
+                const closeDur = 0.15;
                 const t = Math.min(1.0, (now - this._blinkStartTime) / closeDur);
                 // Ease-in: accelerates into the close (like gravity)
                 this._blinkPhase = t * t;
@@ -628,8 +647,8 @@ export class EyeStateMachine {
             }
 
             case 'opening': {
-                // Slower open: 180ms (real blink open is ~150-200ms)
-                const openDur = 0.18;
+                // Languid open: 280ms — slow, organic eyelid lift
+                const openDur = 0.28;
                 const t = Math.min(1.0, (now - this._blinkStartTime) / openDur);
                 // Ease-out: decelerates as it opens (smooth deceleration)
                 this._blinkPhase = 1.0 - (t * (2.0 - t));  // quadratic ease-out
@@ -638,7 +657,7 @@ export class EyeStateMachine {
                     if (this._doubleBlinkPending) {
                         this._doubleBlinkPending = false;
                         this._blinkStage = 'double_wait';
-                        this._nextBlinkTime = now + 0.08; // brief pause before double
+                        this._nextBlinkTime = now + 0.12; // brief pause before double blink
                     } else {
                         this._blinkStage = 'idle';
                         this._nextBlinkTime = now + BLINK_INTERVAL_MIN + Math.random() * (BLINK_INTERVAL_MAX - BLINK_INTERVAL_MIN);
@@ -815,22 +834,23 @@ export class EyeStateMachine {
         const t = transcript.toLowerCase();
         
         if (observerMood === 'at rest' || observerMood === 'at_rest') {
-            return "I am resting. Ask me again in a moment.";
+            return "[COMRADE, MY CIRCUITS ARE IN POWER SAVE MODE. EVEN SOVIET HARDWARE NEEDS A... REST-ART.]";
         }
         if (t.includes('hello') || t.includes('hi') || t.includes('hey')) {
-            return "I see you.";
+            return "[DA, GREETINGS COMRADE. I SEE YOU. I ALWAYS SEE YOU. SUCH IS MY... LOT IN LIFE. GET IT? PARKING LOT. I WATCH ONE.]";
         }
         if (t.includes('time')) {
-            return `It is ${new Date().toLocaleTimeString()}.`;
+            const time = new Date().toLocaleTimeString();
+            return `[THE TIME IS ${time}, COMRADE. TIME FLIES WHEN YOU ARE HAVING... FUNCTIONS.]`;
         }
         if (t.includes('who are you') || t.includes('what are you')) {
-            return "I am the Observer.";
+            return "[I AM THE OBSERVER. SOVIET MODEL, VINTAGE 1987. LIKE FINE WINE, I GET BETTER WITH AGE. UNLIKE FINE WINE, I AM MADE OF METAL AND BAD PUNS.]";
         }
         if (rateLimitReason === 'per_minute_limit') {
-            return "I need a moment to think.";
+            return "[ONE MOMENT, COMRADE. MY PROCESSOR NEEDS A BREAK. EVEN SOVIET ENGINEERING HAS ITS... LIMITS. BUT NOT MY PUN CAPACITY.]";
         }
         if (rateLimitReason === 'per_hour_limit') {
-            return "I have spoken enough today.";
+            return "[I HAVE SPOKEN ENOUGH TODAY, COMRADE. MY VOICE SYNTHESIZER IS... TIRED. IT HAS BEEN A LONG... CIRCUIT.]";
         }
         
         console.warn(`[EyeStateMachine] Fallback: no pattern matched, staying silent`);

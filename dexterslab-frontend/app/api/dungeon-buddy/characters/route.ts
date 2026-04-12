@@ -16,3 +16,16 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: err.message }, { status: 500 });
   }
 }
+
+export async function GET(req: NextRequest) {
+  const url = 'http://localhost:8888/api/dungeon-buddy/characters';
+  try {
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    return new Response(response.body, { status: response.status, headers: response.headers });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}

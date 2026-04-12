@@ -2,6 +2,7 @@
   "id": "observer-eye",
   "name": "Observer Eye V2",
   "target": "pi",
+  "mode": "online",
   "hardware": ["camera", "mic", "tts", "display"],
   "wsPath": "/ws/observer2",
   "frontendRoute": "/observer/eye-v2",

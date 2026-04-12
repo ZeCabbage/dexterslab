@@ -33,6 +33,7 @@ import ObserverEyeApp from './apps/observer-eye/index.js';
 import RulesLawyerApp from './apps/rules-lawyer/index.js';
 import RecordClerkApp from './apps/record-clerk/index.js';
 import DungeonBuddyApp from './apps/dungeon-buddy/index.js';
+import DeadswitchApp from './apps/deadswitch/index.js';
 
 const execAsync = promisify(exec);
 
@@ -91,6 +92,7 @@ observerApp.getWsHandler(); // Initialize its WS routes
 
 const rulesLawyerApp = appManager.registerApp(RulesLawyerApp, platform);
 restRouter.registerAppRoutes('rules-lawyer', rulesLawyerApp.getRoutes());
+rulesLawyerApp.getWsHandler(); // Initialize its WS routes
 
 const recordClerkApp = appManager.registerApp(RecordClerkApp, platform);
 recordClerkApp.getWsHandler();
@@ -98,7 +100,20 @@ recordClerkApp.getWsHandler();
 const dungeonBuddyApp = appManager.registerApp(DungeonBuddyApp, platform);
 restRouter.registerAppRoutes('dungeon-buddy', dungeonBuddyApp.getRoutes());
 
-// No app is forced active on boot. Start in Hub mode.
+const deadswitchApp = appManager.registerApp(DeadswitchApp, platform);
+restRouter.registerAppRoutes('deadswitch', deadswitchApp.getRoutes());
+deadswitchApp.getWsHandler();
+
+// ── App Activation Architecture ──
+// Hub is the default landing page — no app auto-activated on boot.
+// ONLINE apps (Observer Eye, Rules Lawyer, Record Clerk):
+//   → Auto-activate when their display WS client connects (wsAutoActivate)
+//   → Auto-deactivate when the last display WS client disconnects
+//   → No REST calls needed — the WS connection IS the activation trigger
+//
+// OFFLINE apps (Deadswitch, Offline Observer):
+//   → Activated via REST (/api/hub/action) to SSH into the Pi and start the daemon
+//   → These run locally on the Pi without PC backend connection
 
 // ═══════════════════════════════════════════
 //  REST API
@@ -107,6 +122,44 @@ restRouter.registerAppRoutes('dungeon-buddy', dungeonBuddyApp.getRoutes());
 // ── Health Check ──
 app.get('/api/health', (_req, res) => {
   res.json({ status: 'ok', platform: PLATFORM, uptime: process.uptime() });
+});
+
+// ── Boot Check (comprehensive readiness probe) ──
+app.get('/api/boot-check', (_req, res) => {
+  const hwStatus = hardwareBroker.getPlatformStatus();
+  const checks = {
+    status: 'ok',
+    timestamp: new Date().toISOString(),
+    uptime_seconds: Math.floor(process.uptime()),
+    platform: PLATFORM,
+    layers: {
+      backend: { status: 'ok', port: PORT },
+      hardware: {
+        pi_audio_connected: hwStatus.pi_audio_connected,
+        pi_tts_connected: hwStatus.pi_tts_connected,
+        video_stream_active: hwStatus.video_stream_active,
+        video_fps: hwStatus.video_fps,
+        status: (hwStatus.pi_audio_connected && hwStatus.pi_tts_connected && hwStatus.video_stream_active) ? 'ok' : 'waiting_for_pi'
+      },
+      memory: {
+        queue_depth: memoryEngine.writeQueue.length,
+        total_flushed: memoryEngine.totalFlushed,
+        status: 'ok'
+      },
+      apps: {
+        registered: appManager.getAllApps().map(a => a.manifest.id),
+        active_display: appManager.activeDisplayApp || 'none',
+        status: 'ok'
+      }
+    }
+  };
+
+  // Overall status: degraded if Pi not connected, ok otherwise
+  if (checks.layers.hardware.status !== 'ok') {
+    checks.status = 'degraded';
+  }
+
+  res.json(checks);
 });
 
 app.get('/health', (_req, res) => {
@@ -157,11 +210,42 @@ app.get('/api/audio/latest-transcript', (_req, res) => {
 app.get('/api/test/tts', (req, res) => {
   const { text } = req.query;
   if (!text) return res.status(400).json({ error: 'Missing text query parameter' });
-  if (app.locals.ttsCommander) {
-    app.locals.ttsCommander.speak(text);
-    res.json({ success: true, text });
+
+  // Check if Pi TTS receiver is connected
+  const ttsConnected = hardwareBroker.ttsCommander.isConnected();
+  console.log(`[TTS-Test] Sending "${text}" — Pi TTS connected: ${ttsConnected}`);
+
+  if (!ttsConnected) {
+    return res.status(503).json({
+      success: false,
+      error: 'Pi TTS receiver not connected',
+      hint: 'Check if edge daemon is running and /ws/tts WebSocket is connected'
+    });
+  }
+
+  // Use HardwareBroker to respect TTS claims
+  // For test purposes, force-claim TTS temporarily if no app holds it
+  const currentClaim = hardwareBroker.ttsClaims;
+  let claimId = currentClaim || '_test_';
+  if (!currentClaim) {
+    hardwareBroker.claimTTS('_test_');
+  }
+
+  const sent = hardwareBroker.speak(claimId, text);
+
+  // Release test claim
+  if (!currentClaim) {
+    hardwareBroker.releaseTTS('_test_');
+  }
+
+  if (sent) {
+    res.json({ success: true, text, ttsConnected });
   } else {
-    res.status(500).json({ error: 'TTS Commander not available' });
+    res.status(500).json({
+      success: false,
+      error: `TTS claimed by "${currentClaim}" — test blocked`,
+      ttsConnected
+    });
   }
 });
 
@@ -299,13 +383,8 @@ app.post('/api/action', async (req, res) => {
   console.log(`[${timestamp}] ACTION: ${action}`);
 
   switch (action) {
-    case 'start_v2':
-      subProjectState.activeProject = 'v2';
-      subProjectState.log.push({ time: timestamp, action: 'start_v2', status: 'ok' });
-      appManager.activateDisplayApp('observer-eye').catch(console.error);
-      console.log('  → Observer V2 launch requested');
-      res.json({ success: true, message: 'Observer V2 launched', navigate: '/observer/eye-v2' });
-      break;
+    // ── Online app activation is handled by WS-AutoActivate ──
+    // No start_v2 or launch_project needed — WS connection triggers onActivateDisplay.
 
     case 'kill':
       subProjectState.activeProject = null;
@@ -314,16 +393,6 @@ app.post('/api/action', async (req, res) => {
       console.log('  → All sub-projects killed');
       res.json({ success: true, message: 'All processes stopped' });
       break;
-
-    case 'launch_project': {
-      const { project } = req.body;
-      subProjectState.activeProject = project;
-      subProjectState.log.push({ time: timestamp, action: `launch_${project}`, status: 'ok' });
-      appManager.activateDisplayApp(project).catch(e => { /* Ignore missing app */ });
-      console.log(`  → Sub-project "${project}" launched`);
-      res.json({ success: true, message: `Project ${project} launched` });
-      break;
-    }
 
     case 'return_hub':
       subProjectState.activeProject = null;
@@ -417,6 +486,65 @@ app.post('/api/action', async (req, res) => {
         }
       }
       break;
+
+    case 'start_offline': {
+      // Start offline observer daemon on Pi (kills video ffmpeg to free camera)
+      console.log('  → Starting offline observer on Pi...');
+      try {
+        // 1. Kill video ffmpeg on Pi to free camera
+        await execAsync('ssh pi-deploy "pkill -f ffmpeg; sleep 1"', { timeout: 15000 }).catch(() => {});
+        
+        // 2. Kill any existing offline daemon
+        await execAsync('ssh pi-deploy "pkill -f \'main.py --offline\'"', { timeout: 5000 }).catch(() => {});
+        await new Promise(r => setTimeout(r, 1000));
+        
+        // 3. Start offline daemon in background
+        const startCmd = 'ssh pi-deploy "cd ~/dexterslab-edge && nohup ./venv/bin/python main.py --offline > /tmp/offline-daemon.log 2>&1 &"';
+        await execAsync(startCmd, { timeout: 15000 });
+        
+        // 4. Wait for it to be ready
+        await new Promise(r => setTimeout(r, 3000));
+        
+        subProjectState.activeProject = 'offline-observer';
+        subProjectState.log.push({ time: timestamp, action: 'start_offline', status: 'ok' });
+        console.log('  → Offline observer daemon started');
+        res.json({ 
+          success: true, 
+          message: 'Offline Observer started',
+          navigate: '/offline-observer.html'
+        });
+      } catch (err) {
+        console.error('  → Failed to start offline observer:', err.message);
+        res.json({ 
+          success: false, 
+          message: `Failed to start offline observer: ${err.message}`
+        });
+      }
+      break;
+    }
+
+    case 'stop_offline': {
+      // Stop offline observer daemon on Pi and restart video stream
+      console.log('  → Stopping offline observer on Pi...');
+      try {
+        // Kill offline daemon
+        await execAsync('ssh pi-deploy "pkill -f \'main.py --offline\'"', { timeout: 10000 }).catch(() => {});
+        
+        // The online daemon's video streamer should auto-reconnect and restart ffmpeg
+        subProjectState.activeProject = null;
+        subProjectState.log.push({ time: timestamp, action: 'stop_offline', status: 'ok' });
+        console.log('  → Offline observer stopped');
+        res.json({ 
+          success: true, 
+          message: 'Offline Observer stopped',
+          navigate: '/observer'
+        });
+      } catch (err) {
+        console.error('  → Failed to stop offline observer:', err.message);
+        res.json({ success: false, message: `Stop failed: ${err.message}` });
+      }
+      break;
+    }
 
     default:
       res.status(400).json({ error: `Unknown action: ${action}` });

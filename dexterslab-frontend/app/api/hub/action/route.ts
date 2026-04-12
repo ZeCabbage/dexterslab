@@ -302,6 +302,78 @@ export async function POST(request: Request) {
         });
       }
 
+      case 'start_offline': {
+        // Start offline observer daemon on Pi
+        // Must kill the ONLINE main.py first (it holds port 8892 + camera via ffmpeg)
+        console.log('[start_offline] Starting offline observer on Pi...');
+        try {
+          // 1. Set offline flag to pause watchdog (for future reboots with updated boot-protocol)
+          try { await execAsync('ssh pi-deploy "touch /tmp/offline-mode.flag"', { timeout: 5000 }); } catch {}
+          
+          // 2. Kill watchdog, daemon, and ALL camera/port holders aggressively
+          try {
+            await execAsync(
+              `ssh pi-deploy "pkill -9 -f boot-protocol; cat /tmp/edge-daemon.pid 2>/dev/null | xargs -r kill -9; pkill -9 -f main.py; pkill -9 -f ffmpeg; fuser -k /dev/video0 2>/dev/null; fuser -k 8892/tcp 2>/dev/null; sleep 3"`,
+              { timeout: 25000 }
+            );
+          } catch {}
+          
+          // 3. Start offline daemon in background
+          await execAsync(
+            'ssh pi-deploy "cd ~/dexterslab-edge && nohup ./venv/bin/python main.py --offline > /tmp/offline-daemon.log 2>&1 &"',
+            { timeout: 15000 }
+          );
+          
+          // 4. Wait for it to be ready
+          await new Promise((r) => setTimeout(r, 4000));
+          
+          console.log('[start_offline] Offline observer daemon started');
+          return NextResponse.json({ 
+            success: true, 
+            message: 'Offline Observer started',
+            navigate: '/offline-observer.html'
+          });
+        } catch (err: any) {
+          console.error('[start_offline] Failed:', err.message);
+          return NextResponse.json({ 
+            success: false, 
+            message: `Failed to start offline observer: ${err.message}`,
+            navigate: '/offline-observer.html'
+          });
+        }
+      }
+
+      case 'stop_offline': {
+        // Stop offline observer daemon on Pi and restart online daemon
+        console.log('[stop_offline] Stopping offline observer on Pi...');
+        try {
+          // Remove offline flag so watchdog resumes
+          try { await execAsync('ssh pi-deploy "rm -f /tmp/offline-mode.flag"', { timeout: 5000 }); } catch {}
+          
+          // Kill offline daemon and free everything
+          try { await execAsync('ssh pi-deploy "pkill -f main.py; pkill -f ffmpeg; sleep 2"', { timeout: 15000 }); } catch {}
+          try { await execAsync('ssh pi-deploy "fuser -k 8892/tcp 2>/dev/null; sleep 1"', { timeout: 10000 }); } catch {}
+          
+          // Restart online daemon
+          try {
+            await execAsync(
+              'ssh pi-deploy "cd ~/dexterslab-edge && nohup ./venv/bin/python main.py > /tmp/edge-daemon-online.log 2>&1 &"',
+              { timeout: 15000 }
+            );
+            console.log('[stop_offline] Online daemon restarted');
+          } catch {}
+          
+          console.log('[stop_offline] Offline observer stopped');
+          return NextResponse.json({ 
+            success: true, 
+            message: 'Offline Observer stopped, online daemon restarted',
+            navigate: '/observer'
+          });
+        } catch (err: any) {
+          return NextResponse.json({ success: false, message: `Stop failed: ${err.message}` });
+        }
+      }
+
       default:
         return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 });
     }

@@ -46,8 +46,31 @@ export function evaluateSpellLock(char: LiveCharacter | null, spell: SpellData, 
     return { locked: true, reason: `Requires Spellcasting Class` };
   }
 
+  // Subclass expanded spell definitions
+  const SUBCLASS_EXPANDED_SPELLS: Record<string, string[]> = {
+    'The Fiend': ['command', 'burning hands', 'blindness/deafness', 'scorching ray', 'fireball', 'stinking cloud', 'fire shield', 'wall of fire', 'flame strike', 'hallow'],
+    'The Archfey': ['faerie fire', 'sleep', 'calm emotions', 'phantasmal force', 'blink', 'plant growth', 'dominate beast', 'greater invisibility', 'dominate person', 'seeming'],
+    'The Great Old One': ['dissonant whispers', "tasha's hideous laughter", 'detect thoughts', 'phantasmal force', 'clairvoyance', 'sending', 'dominate beast', "evard's black tentacles", 'dominate person', 'telekinesis'],
+    'Divine Soul': ['cure wounds', 'healing word', 'bless', 'bane', 'guiding bolt', 'inflict wounds', 'sanctuary', 'shield of faith']
+    // Expand as needed for Clerics, Paladins, etc.
+  };
+
   // 2. Does this spell belong to the character's class?
-  const isClassMatch = spell.classes.some(c => c.toLowerCase() === char.class.toLowerCase());
+  let isClassMatch = spell.classes.some(c => c.toLowerCase() === char.class.toLowerCase());
+  
+  // Check if subclass formally grants it
+  if (!isClassMatch && char.subclass) {
+     const expandedSpells = SUBCLASS_EXPANDED_SPELLS[char.subclass];
+     if (expandedSpells && expandedSpells.includes(spell.name.toLowerCase())) {
+        isClassMatch = true;
+     }
+  }
+  
+  // Divine Soul explicit exception (can pick from Cleric list)
+  if (!isClassMatch && char.subclass === 'Divine Soul' && spell.classes.map(c=>c.toLowerCase()).includes('cleric')) {
+     isClassMatch = true;
+  }
+
   if (!isClassMatch && spell.classes.length > 0) { // If classes is empty, assume homebrew universal
     return { locked: true, reason: `Requires ${spell.classes.join(' or ')}` };
   }

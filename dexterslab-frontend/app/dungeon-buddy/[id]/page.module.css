@@ -129,6 +129,16 @@
 }
 .btnUndo:hover { background: rgba(200, 60, 60, 0.1); }
 
+.rollBtn {
+  background: none; border: none; color: var(--gold-bright); cursor: pointer;
+  padding: 0 6px; font-size: 1.1rem; line-height: 1; transition: all 0.15s;
+  display: inline-flex; align-items: center; justify-content: center;
+}
+.rollBtn:hover {
+  transform: scale(1.15) rotate(10deg); color: #fff;
+  filter: drop-shadow(0 0 6px var(--gold));
+}
+
 /* Proficiency dot */
 .profDot {
   cursor: pointer; font-size: 0.7rem; color: #333; transition: color 0.15s;

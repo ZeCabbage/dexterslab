@@ -1,0 +1,5 @@
+# Pin DextersLab USB audio devices to consistent ALSA card names.
+# Mic (Centerm Camera): vendor 2b46, product bd01 → "dexmic"
+# Speaker (Jieli UACDemoV1.0): vendor 4c4a, product 4155 → "dexspk"
+ACTION=="add", SUBSYSTEM=="sound", ATTRS{idVendor}=="2b46", ATTRS{idProduct}=="bd01", ATTR{id}="dexmic"
+ACTION=="add", SUBSYSTEM=="sound", ATTRS{idVendor}=="4c4a", ATTRS{idProduct}=="4155", ATTR{id}="dexspk"

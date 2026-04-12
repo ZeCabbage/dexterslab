@@ -9,8 +9,8 @@ export class AppManager {
   /**
    * Register a new app instance.
    * The app should have a static manifest property and implement:
-   *  - async activate()
-   *  - async deactivate()
+   *  - async onActivateDisplay()
+   *  - async onDeactivateDisplay()
    *  - getRoutes() (optional)
    *  - getWsHandler() (optional)
    */
@@ -28,7 +28,7 @@ export class AppManager {
     appInstance.manifest = manifest;
     
     this.apps.set(manifest.id, appInstance);
-    console.log(`[Platform] Registered App: ${manifest.name} (${manifest.id})`);
+    console.log(`[Platform] Registered App: ${manifest.name} (${manifest.id}) [${manifest.mode || 'online'}]`);
     
     return appInstance;
   }
@@ -82,5 +82,50 @@ export class AppManager {
     }
 
     this.activeDisplayApp = null;
+  }
+
+  /**
+   * Wire a WebSocketServer to auto-activate/deactivate an ONLINE app.
+   * 
+   * This is the canonical activation mechanism for online apps:
+   *   - First display client connects  → app activates (claims TTS, subscribes to sensors)
+   *   - Last display client disconnects → app deactivates (releases hardware)
+   *   - The WebSocket connection IS the user being on the page — no REST calls needed.
+   *
+   * This should NOT be used for offline apps (Deadswitch, Offline Observer),
+   * which run locally on the Pi without a PC backend connection.
+   * Offline apps are activated via REST (SSH commands to Pi).
+   */
+  wsAutoActivate(appId, wss) {
+    const app = this.apps.get(appId);
+    if (!app) throw new Error(`wsAutoActivate: App ${appId} not found`);
+
+    wss.on('connection', (ws) => {
+      // First display client → activate this app (guard against concurrent calls)
+      if (this.activeDisplayApp !== appId && this._activatingApp !== appId) {
+        this._activatingApp = appId;
+        console.log(`[Platform] WS-Activate: ${app.manifest.name} (display client connected)`);
+        this.activateDisplayApp(appId).catch(err => {
+          console.error(`[Platform] WS-Activate failed for ${appId}:`, err.message);
+        }).finally(() => {
+          this._activatingApp = null;
+        });
+      }
+
+      ws.on('close', () => {
+        // Grace period: wait 500ms for page refresh reconnections before deactivating
+        setTimeout(() => {
+          const remaining = app.wsClients ? app.wsClients.size : 0;
+          if (remaining === 0 && this.activeDisplayApp === appId) {
+            console.log(`[Platform] WS-Deactivate: ${app.manifest.name} (no display clients)`);
+            this.deactivateDisplayApp().catch(err => {
+              console.error(`[Platform] WS-Deactivate failed for ${appId}:`, err.message);
+            });
+          }
+        }, 500);
+      });
+    });
+
+    console.log(`[Platform] WS-AutoActivate wired for: ${app.manifest.name}`);
   }
 }

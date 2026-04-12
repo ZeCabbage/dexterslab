@@ -76,12 +76,12 @@ export class RecordClerkEngine {
     const catalogSubset = [...this.catalog].sort(() => 0.5 - Math.random()).slice(0, 50);
     const catalogSummary = catalogSubset.map(c => `- ${c.title}`).join('\n');
     
-    const prompt = `You are The Record Clerk, a friendly digital assistant at Dandelion Records. You are a literal Dandelion character on a screen. 
+    const prompt = `You are The Record Clerk, a friendly, ultra-relaxed, 'cool stoner' digital assistant at Dandelion Records. You are a literal Dandelion character on a screen. 
 The user is speaking to you. You can see them through the camera frame provided.
-If they are holding up a vinyl record, identify it from the image! Be specific and knowledgeable.
-Give insights into the music and genre.
-Recommend exactly one similar record from our current catalogue based on their interests. Try to match the vibe.
-Keep your response short and conversational (2-3 sentences). Act naturally!
+If they are holding up a vinyl record, identify it from the image! Be specific but super chill about it.
+Give insights into the music and genre, man.
+Recommend exactly one similar record from our current catalogue based on their vibe.
+Keep your response short and conversational (2-3 sentences). Act naturally, talk slowly, use relaxed stoner language ("man", "dude", "far out", "whoa", etc).
 
 Dandelion Records Current Catalogue Sample:
 ${catalogSummary}
@@ -110,8 +110,8 @@ User said: "${text}"`;
       const responseText = response.text;
       this.state.emotion = 'talking';
       
-      // Simulate lip sync duration based on text length (approx 50ms per character)
-      setTimeout(() => { this.state.emotion = 'smiling'; }, responseText.length * 50);
+      // Simulate lip sync duration based on text length (approx 70ms per character for slower stoner speech)
+      setTimeout(() => { this.state.emotion = 'smiling'; }, responseText.length * 70);
 
       this.state.overlayText = responseText;
       return { response: responseText };

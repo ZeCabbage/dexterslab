@@ -104,7 +104,7 @@ chmod 600 ~/.ssh/authorized_keys
 ```bash
 sudo visudo
 # Add at the bottom:
-deploy ALL=(ALL) NOPASSWD: /bin/systemctl restart observer-capture.service
+deploy ALL=(ALL) NOPASSWD: /bin/systemctl restart observer-boot.service, /bin/systemctl restart observer-capture.service, /bin/systemctl daemon-reload, /bin/systemctl enable observer-boot.service, /bin/systemctl disable observer-capture.service, /usr/bin/cp /home/deploy/dexterslab-edge/observer-boot.service /etc/systemd/system/
 ```
 - Ensure permissions: `mkdir -p /home/deploy/dexterslab-edge/ && chown -R deploy:deploy /home/deploy/dexterslab-edge/`
 
@@ -119,15 +119,20 @@ python3 -m venv venv
 ```bash
 ./venv/bin/pip install -r requirements.txt
 ```
+- Make boot scripts executable:
+```bash
+chmod +x boot-protocol.sh hw-discover.sh clean-shutdown.sh
+```
 - Place the systemd service file:
 ```bash
-sudo cp observer-capture.service /etc/systemd/system/
+sudo cp observer-boot.service /etc/systemd/system/
 sudo systemctl daemon-reload
 ```
-- Enable and start:
+- Disable old service and enable new:
 ```bash
-sudo systemctl enable observer-capture
-sudo systemctl start observer-capture
+sudo systemctl disable observer-capture 2>/dev/null || true
+sudo systemctl enable observer-boot
+sudo systemctl start observer-boot
 ```
 
 ## Section 6: Chromium Kiosk Setup
@@ -152,8 +157,11 @@ WAYLAND_DISPLAY=wayland-1 XDG_RUNTIME_DIR=/run/user/1000 ~/observer-kiosk.sh
 - [ ] `sudo systemctl status cloudflared` shows active
 - [ ] From PC: `ssh pi-deploy "echo ok"` connects successfully via Cloudflare Tunnel
 - [ ] `curl http://localhost:8891/health` on Pi returns ok
-- [ ] `sudo systemctl status observer-capture` shows active
+- [ ] `cat /tmp/hw-manifest.json` shows discovered camera + audio devices
+- [ ] `sudo systemctl status observer-boot` shows active
 - [ ] Video stream arriving on PC: Check backend logs for `/ws/video` connection
 - [ ] Audio stream arriving on PC: Check backend logs for `/ws/audio` connection
 - [ ] TTS test: Send TTS command from PC dashboard, verify espeak-ng speaks on Pi
 - [ ] Chromium kiosk displays eye at `https://dexterslab.cclottaaworld.com/observer/eye-v2`
+- [ ] Reboot Pi and verify everything comes back automatically
+

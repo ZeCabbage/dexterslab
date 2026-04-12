@@ -1,5 +1,7 @@
 import { create } from 'zustand';
-import { LiveCharacter, EquipSlot, InventoryItem } from './types';
+import { LiveCharacter, EquipSlot, InventoryItem, ModifierEffect, ActiveModifierState, ActiveCombatToggle, StagedModifier } from './types';
+import { getResourceScaling } from '../data/resource-scaling';
+import { THIRD_CASTER_SLOTS } from '../data/resource-scaling';
 
 interface CharacterState {
   char: LiveCharacter | null;
@@ -34,6 +36,24 @@ interface CharacterState {
   // Rests
   shortRest: (hitDiceRoll: number) => void;
   longRest: () => void;
+
+  // Logs
+  addLog: (type: 'creation' | 'level_up' | 'manual_edit' | 'item' | 'spell' | 'note' | 'rest' | 'roll' | 'feature' | 'action', description: string) => void;
+
+  // Level Up
+  completeLevelUp: (payload: any) => void;
+
+  // Modifier Toggles (Metamagic / Maneuver one-shot buttons)
+  activateOneShot: (modifierId: string, name: string, recharge: 'short' | 'long') => void;
+  resetModifiers: (rechargeType: 'short' | 'long') => void;
+
+  // ── Active Combat Toggles (Rage, Bladesong, etc.) ──
+  toggleCombatState: (toggleId: string) => void;
+  deactivateAllToggles: () => void;
+
+  // ── Staged Modifier (Metamagic / Maneuver two-step staging) ──
+  stageModifier: (modifier: StagedModifier) => void;
+  clearStagedModifier: () => void;
 }
 
 export const useCharacterStore = create<CharacterState>((set, get) => ({
@@ -166,6 +186,31 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     const itemToEquip = char.inventory.find(i => i.id === itemId);
     if (!itemToEquip) return;
 
+    // ── Directive 4: Slot Validation ──
+    // Enforce that only valid item types can occupy each slot.
+    const SLOT_VALID_TYPES: Record<EquipSlot, { types: string[]; armorCategory?: string[] }> = {
+      head:     { types: ['armor', 'gear'] },
+      chest:    { types: ['armor'], armorCategory: ['light', 'medium', 'heavy'] },
+      cloak:    { types: ['armor', 'gear'] },
+      mainHand: { types: ['weapon'] },
+      offHand:  { types: ['weapon', 'armor'], armorCategory: ['shield'] },
+      gloves:   { types: ['armor', 'gear'] },
+      ring1:    { types: ['gear'] },
+      ring2:    { types: ['gear'] },
+      boots:    { types: ['armor', 'gear'] },
+      amulet:   { types: ['gear'] },
+    };
+
+    const slotRules = SLOT_VALID_TYPES[slot];
+    if (slotRules) {
+      const typeOk = slotRules.types.includes(itemToEquip.type);
+      // For chest slot, also check armorCategory is not shield
+      if (slot === 'chest' && itemToEquip.armorCategory === 'shield') return;
+      // For offHand armor, must be shield
+      if (slot === 'offHand' && itemToEquip.type === 'armor' && itemToEquip.armorCategory !== 'shield') return;
+      if (!typeOk) return;
+    }
+
     const currentEquippedItem = char.equipped?.[slot];
     let newInventory = char.inventory.filter(i => i.id !== itemId);
     
@@ -234,6 +279,21 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       newChar.resources = resetRes;
     }
 
+    // Reset short-rest activeModifiers (Metamagic/Maneuver one-shots)
+    if (newChar.activeModifiers) {
+      newChar.activeModifiers = newChar.activeModifiers.map(m =>
+        m.recharge === 'short' ? { ...m, isSpent: false } : m
+      );
+    }
+
+    // Deactivate all combat toggles on rest
+    if (newChar.activeCombatToggles) {
+      newChar.activeCombatToggles = newChar.activeCombatToggles.map(t => ({ ...t, isActive: false }));
+    }
+
+    // Clear staged modifier
+    newChar.stagedModifier = null;
+
     // Log the event
     newChar.logbook = [
       {
@@ -274,6 +334,19 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       newChar.resources = resetRes;
     }
 
+    // Reset ALL activeModifiers on long rest
+    if (newChar.activeModifiers) {
+      newChar.activeModifiers = newChar.activeModifiers.map(m => ({ ...m, isSpent: false }));
+    }
+
+    // Deactivate all combat toggles on long rest
+    if (newChar.activeCombatToggles) {
+      newChar.activeCombatToggles = newChar.activeCombatToggles.map(t => ({ ...t, isActive: false }));
+    }
+
+    // Clear staged modifier
+    newChar.stagedModifier = null;
+
     // Clear death saves
     newChar.deathSaves = { successes: 0, failures: 0 };
 
@@ -289,5 +362,364 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     ];
 
     set({ char: newChar });
+  },
+
+  addLog: (type, description) => {
+    const { char } = get();
+    if (!char) return;
+    set({
+      char: {
+        ...char,
+        logbook: [
+          {
+            id: 'log_' + Date.now() + Math.random().toString(36).substring(7),
+            timestamp: Date.now(),
+            type,
+            description,
+            previousState: null
+          },
+          ...Math.abs(char.logbook?.length ?? 0) ? char.logbook : []
+        ]
+      }
+    });
+  },
+
+  completeLevelUp: (payload: any) => {
+    const { char } = get();
+    if (!char) return;
+
+    let newChar = { ...char };
+    
+    newChar.level = payload.newLevel; // Total level
+    
+    // Multi-class tracking
+    if (payload.targetClass) {
+       newChar.classes = newChar.classes || { [newChar.class]: newChar.level - 1 };
+       newChar.classes[payload.targetClass] = (newChar.classes[payload.targetClass] || 0) + 1;
+    }
+
+    const targetClassLevel = newChar.classes?.[payload.targetClass] || newChar.level;
+
+    newChar.maxHp += payload.hpIncrease;
+    newChar.currentHp += payload.hpIncrease;
+    newChar.hitDiceTotal += 1;
+
+    if (payload.subclassChoice && payload.targetClass) {
+      newChar.subclasses = newChar.subclasses || {};
+      newChar.subclasses[payload.targetClass] = payload.subclassChoice;
+      if (payload.targetClass === newChar.class) {
+        newChar.subclass = payload.subclassChoice;
+      }
+    }
+
+    // Store subclass-specific choices (Totem animal, Draconic Ancestry, etc.)
+    if (payload.subclassChoicesUpdate) {
+      newChar.subclassChoices = { ...(newChar.subclassChoices || {}), ...payload.subclassChoicesUpdate };
+    }
+
+    if (payload.asiChoice) {
+      newChar.stats = {
+        str: newChar.stats.str + (payload.asiChoice.str || 0),
+        dex: newChar.stats.dex + (payload.asiChoice.dex || 0),
+        con: newChar.stats.con + (payload.asiChoice.con || 0),
+        int: newChar.stats.int + (payload.asiChoice.int || 0),
+        wis: newChar.stats.wis + (payload.asiChoice.wis || 0),
+        cha: newChar.stats.cha + (payload.asiChoice.cha || 0),
+      };
+    }
+
+    if (payload.featChoice) {
+      newChar.feats = [...(newChar.feats || []), payload.featChoice];
+      if (payload.featChoice.abilityIncrease) {
+        for (const [key, val] of Object.entries(payload.featChoice.abilityIncrease)) {
+          newChar.stats[key as keyof typeof newChar.stats] += (val as number);
+        }
+      }
+    }
+
+    if (payload.addedFeatures && payload.addedFeatures.length > 0) {
+      newChar.features = [...(newChar.features || []), ...payload.addedFeatures];
+    }
+
+    // ══════════════════════════════════════════════
+    // MODIFIER PROCESSING ENGINE
+    // Walk all added features and apply their modifiers to the character sheet
+    // ══════════════════════════════════════════════
+    newChar.resources = { ...(newChar.resources || {}) };
+    for (const feature of (payload.addedFeatures || [])) {
+      if (!feature.modifiers) continue;
+      for (const mod of feature.modifiers) {
+        switch (mod.type) {
+          case 'add_resource':
+            newChar.resources[mod.resourceId] = {
+              name: mod.name, max: mod.max, used: 0,
+              recharge: mod.recharge, actionCost: mod.actionCost,
+              description: mod.description, die: undefined
+            };
+            break;
+          case 'scale_resource': {
+            const existing = newChar.resources[mod.resourceId];
+            if (existing) {
+              // Resolve formula
+              let newMax = existing.max;
+              const profBonus = Math.ceil((newChar.level || 1) / 4) + 1;
+              const calcMod = (s: number) => Math.floor(((s || 10) - 10) / 2);
+              switch (mod.maxFormula) {
+                case 'prof_bonus': newMax = profBonus; break;
+                case 'class_level': newMax = targetClassLevel; break;
+                case 'half_class_level': newMax = Math.floor(targetClassLevel / 2); break;
+                case 'wis_mod': newMax = Math.max(1, calcMod(newChar.stats?.wis || 10)); break;
+                case 'cha_mod': newMax = Math.max(1, calcMod(newChar.stats?.cha || 10)); break;
+                case 'int_mod': newMax = Math.max(1, calcMod(newChar.stats?.int || 10)); break;
+              }
+              newChar.resources[mod.resourceId] = { ...existing, max: newMax };
+            }
+            break;
+          }
+          case 'upgrade_resource_die': {
+            const ex = newChar.resources[mod.resourceId];
+            if (ex) newChar.resources[mod.resourceId] = { ...ex, die: mod.newDie };
+            break;
+          }
+          case 'grant_proficiency':
+            if (mod.category === 'armor') {
+              newChar.armorProficiencies = [...new Set([...(newChar.armorProficiencies || []), mod.value])];
+            } else if (mod.category === 'weapon') {
+              newChar.weaponProficiencies = [...new Set([...(newChar.weaponProficiencies || []), mod.value])];
+            }
+            break;
+          case 'grant_spells_always_prepared':
+            newChar.preparedSpells = [...new Set([...(newChar.preparedSpells || []), ...mod.spells])];
+            newChar.knownSpells = [...new Set([...(newChar.knownSpells || []), ...mod.spells])];
+            break;
+          case 'grant_cantrip':
+            newChar.cantrips = [...new Set([...(newChar.cantrips || []), mod.cantrip])];
+            break;
+          case 'grant_skill':
+            if (mod.target !== '__choice__') {
+              newChar.skills = [...new Set([...(newChar.skills || []), mod.target])];
+            }
+            break;
+          case 'grant_extra_hp':
+            // +1 HP per level-up (e.g. Draconic Resilience)
+            // This is the ONLY place grant_extra_hp is processed (store-only, per Amendment 5)
+            newChar.maxHp += 1;
+            newChar.currentHp += 1;
+            break;
+          // ═══ DERIVED-STATE ONLY (resolved by resolveModifiers) ═══
+          // extraAttacks and critRange are no longer baked into the store.
+          // Legacy values on char.extraAttacks / char.critRange are kept for backward compat
+          // but the CombatTab now reads from resolved.extraAttacks / resolved.critRange.
+          case 'grant_extra_attack':
+          case 'expand_crit_range':
+            // Intentional no-op: these are now derived by resolveModifiers()
+            break;
+          case 'grant_third_caster': {
+            newChar.spellcaster = true;
+            newChar.spellcastingAbility = mod.spellList === 'Wizard' ? 'int' : 'cha';
+            // Inject third-caster spell slots
+            const tcSlots = THIRD_CASTER_SLOTS[targetClassLevel];
+            if (tcSlots) {
+              tcSlots.forEach((count: number, idx: number) => {
+                const sLevel = idx + 1;
+                const key = `spell_slot_${sLevel}`;
+                newChar.resources[key] = {
+                  name: `Level ${sLevel} Spell Slots`,
+                  max: count, used: 0, recharge: 'long'
+                };
+              });
+            }
+            break;
+          }
+          case 'metamagic_option':
+            // Store as an activeModifier entry so combat tab can render buttons
+            newChar.activeModifiers = newChar.activeModifiers || [];
+            if (!newChar.activeModifiers.find(m => m.modifierId === mod.optionId)) {
+              newChar.activeModifiers.push({
+                modifierId: mod.optionId, name: mod.name,
+                isSpent: false, recharge: 'long'
+              });
+            }
+            break;
+          case 'maneuver_option':
+            newChar.activeModifiers = newChar.activeModifiers || [];
+            if (!newChar.activeModifiers.find(m => m.modifierId === mod.optionId)) {
+              newChar.activeModifiers.push({
+                modifierId: mod.optionId, name: mod.name,
+                isSpent: false, recharge: 'short'
+              });
+            }
+            break;
+          // Passive / display-only types: no state mutation needed
+          default: break;
+        }
+      }
+    }
+
+    // ══════════════════════════════════════════════
+    // RESOURCE SCALING PASS
+    // Check scaling tables and update/CREATE resource maxes
+    // If a resource should exist according to scaling tables but doesn't, auto-create it
+    // ══════════════════════════════════════════════
+    const RESOURCE_META: Record<string, { name: string; recharge: 'short' | 'long' | 'none'; actionCost?: string; description?: string }> = {
+      'rage': { name: 'Rage', recharge: 'long', actionCost: 'bonus_action', description: 'Enter a primal fury. Advantage on STR checks/saves, bonus melee damage, resistance to bludgeoning/piercing/slashing.' },
+      'ki_points': { name: 'Ki Points', recharge: 'short', description: 'Channel mystical energy. Spend ki to fuel special actions.' },
+      'sorcery_points': { name: 'Sorcery Points', recharge: 'long', description: 'Fuel your metamagic and convert to/from spell slots.' },
+      'channel_divinity': { name: 'Channel Divinity', recharge: 'short', actionCost: 'action', description: 'Channel divine power for domain-specific effects.' },
+      'action_surge': { name: 'Action Surge', recharge: 'short', actionCost: 'special', description: 'Take one additional action on your turn.' },
+      'superiority_dice': { name: 'Superiority Dice', recharge: 'short', description: 'Fuel your combat maneuvers.' },
+      'indomitable': { name: 'Indomitable', recharge: 'long', actionCost: 'special', description: 'Reroll a failed saving throw.' },
+      'wild_shape': { name: 'Wild Shape', recharge: 'short', actionCost: 'action', description: 'Magically assume the shape of a beast.' },
+      'lay_on_hands': { name: 'Lay on Hands', recharge: 'long', actionCost: 'action', description: 'Heal with a touch from a pool of HP.' },
+      'bardic_inspiration': { name: 'Bardic Inspiration', recharge: 'long', actionCost: 'bonus_action', description: 'Grant a creature an Inspiration die to add to ability check, attack, or save.' },
+      'second_wind': { name: 'Second Wind', recharge: 'short', actionCost: 'bonus_action', description: 'Regain 1d10 + fighter level HP.' },
+    };
+    const scalableResources = ['rage', 'ki_points', 'sorcery_points', 'channel_divinity',
+      'action_surge', 'superiority_dice', 'indomitable', 'wild_shape',
+      'lay_on_hands', 'bardic_inspiration', 'second_wind'];
+    for (const resId of scalableResources) {
+      const scaled = getResourceScaling(payload.targetClass, resId, targetClassLevel);
+      if (scaled && scaled.max > 0) {
+        const meta = RESOURCE_META[resId];
+        if (newChar.resources[resId]) {
+          // Update existing resource
+          newChar.resources[resId] = {
+            ...newChar.resources[resId],
+            max: scaled.max,
+            ...(scaled.die ? { die: scaled.die } : {})
+          };
+        } else if (meta) {
+          // CREATE resource that should exist but wasn't created at character creation
+          newChar.resources[resId] = {
+            name: meta.name,
+            max: scaled.max,
+            used: 0,
+            recharge: meta.recharge,
+            actionCost: meta.actionCost as any,
+            description: meta.description,
+            ...(scaled.die ? { die: scaled.die } : {})
+          };
+        }
+      }
+    }
+
+    // BG3 Unified Spell Slots Full Override
+    if (payload.overrideSpellSlots) {
+      newChar.resources = { ...newChar.resources, ...payload.overrideSpellSlots };
+    }
+
+    // Seamless Spells / Homebrew
+    if (payload.learnedSpells) {
+      newChar.knownSpells = Array.from(new Set([...(newChar.knownSpells || []), ...payload.learnedSpells]));
+    }
+    if (payload.addedCustomSpells && payload.addedCustomSpells.length > 0) {
+      newChar.customSpells = [...(newChar.customSpells || []), ...payload.addedCustomSpells];
+      newChar.knownSpells = Array.from(new Set([...(newChar.knownSpells || []), ...payload.addedCustomSpells.map((cs:any)=>cs.id)]));
+    }
+
+    newChar.logbook = [
+      {
+        id: 'log_' + Date.now(),
+        timestamp: Date.now(),
+        type: 'level_up',
+        description: `Leveled up to ${newChar.level} (${payload.targetClass})! Max HP increased by ${payload.hpIncrease}.`,
+        previousState: null
+      },
+      ...(newChar.logbook || [])
+    ];
+
+    set({ char: newChar });
+  },
+
+  activateOneShot: (modifierId: string, name: string, recharge: 'short' | 'long') => {
+    const { char } = get();
+    if (!char) return;
+    const mods = char.activeModifiers || [];
+    const existing = mods.find(m => m.modifierId === modifierId);
+    if (existing) {
+      set({
+        char: {
+          ...char,
+          activeModifiers: mods.map(m =>
+            m.modifierId === modifierId ? { ...m, isSpent: true } : m
+          )
+        }
+      });
+    }
+  },
+
+  resetModifiers: (rechargeType: 'short' | 'long') => {
+    const { char } = get();
+    if (!char || !char.activeModifiers) return;
+    set({
+      char: {
+        ...char,
+        activeModifiers: char.activeModifiers.map(m =>
+          (rechargeType === 'long' || m.recharge === rechargeType)
+            ? { ...m, isSpent: false } : m
+        )
+      }
+    });
+  },
+
+  // ══════════════════════════════════════════════
+  // ACTIVE COMBAT TOGGLES (Rage, Bladesong, etc.)
+  // Flips isActive and deducts 1 use from the associated resource.
+  // ══════════════════════════════════════════════
+  toggleCombatState: (toggleId: string) => {
+    const { char } = get();
+    if (!char) return;
+
+    const toggles = char.activeCombatToggles || [];
+    const toggle = toggles.find(t => t.id === toggleId);
+    if (!toggle) return;
+
+    const newActive = !toggle.isActive;
+    let newResources = { ...char.resources };
+
+    // Deduct resource on activation (not on deactivation)
+    if (newActive && toggle.resourceId && newResources[toggle.resourceId]) {
+      const res = newResources[toggle.resourceId];
+      if (res.used >= res.max) return; // No charges remaining
+      newResources[toggle.resourceId] = { ...res, used: res.used + 1 };
+    }
+
+    set({
+      char: {
+        ...char,
+        resources: newResources,
+        activeCombatToggles: toggles.map(t =>
+          t.id === toggleId ? { ...t, isActive: newActive } : t
+        )
+      }
+    });
+  },
+
+  deactivateAllToggles: () => {
+    const { char } = get();
+    if (!char || !char.activeCombatToggles) return;
+    set({
+      char: {
+        ...char,
+        activeCombatToggles: char.activeCombatToggles.map(t => ({ ...t, isActive: false }))
+      }
+    });
+  },
+
+  // ══════════════════════════════════════════════
+  // STAGED MODIFIER (Metamagic / Maneuver two-step)
+  // Stage a modifier to be applied to the next qualifying spell/attack.
+  // ══════════════════════════════════════════════
+  stageModifier: (modifier: StagedModifier) => {
+    const { char } = get();
+    if (!char) return;
+    set({ char: { ...char, stagedModifier: modifier } });
+  },
+
+  clearStagedModifier: () => {
+    const { char } = get();
+    if (!char) return;
+    set({ char: { ...char, stagedModifier: null } });
   }
 }));
+

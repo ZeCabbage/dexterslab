@@ -89,18 +89,39 @@ vec3 themeClassic(vec2 uv, vec2 ic, float pupilR, float sd) {
     vec3 nSclera = calculateSphereNormal(uv, vec2(0.0), EYE_RADIUS);
     vec3 col = getMatcap(uMatCapSclera, nSclera);
 
-    // 2. Parallax Iris (Sinking inward)
-    vec2 irisUV = calculateParallax(uv, ic, 0.09);
+    // Subsurface scattering — warm pinkish glow near iris border
+    float scleraEdge = smoothstep(IRIS_RADIUS * 1.6, IRIS_RADIUS * 1.05, length(uv - ic));
+    col += vec3(0.08, 0.02, 0.02) * scleraEdge;
+
+    // 2. Parallax Iris (Sinking inward) — reduced depth for concentricity
+    vec2 irisUV = calculateParallax(uv, ic, 0.06);
     float irisDist = circleSDF(irisUV, ic, IRIS_RADIUS);
 
-    if (irisDist < 0.0) {
+    // Smooth feathered blend instead of hard cutoff — eliminates blue bleed ring
+    float irisBlend = smoothstep(0.004, -0.004, irisDist);
+    if (irisBlend > 0.001) {
         vec3 nIris = calculateBowlNormal(irisUV, ic, IRIS_RADIUS);
         vec3 irisCol = getMatcap(uMatCapIris, nIris);
-        col = irisCol;
+
+        // Radial fiber texture — organic iris detail
+        float theta = atan(irisUV.y - ic.y, irisUV.x - ic.x);
+        float irisR = length(irisUV - ic);
+        float fiber = sin(theta * 60.0) * 0.5 + 0.5;
+        float finerFiber = sin(theta * 120.0 + 3.0) * 0.5 + 0.5;
+        float fiberMask = smoothstep(IRIS_RADIUS * 0.3, IRIS_RADIUS * 0.9, irisR);
+        irisCol = mix(irisCol, irisCol * 0.7, fiber * 0.15 * fiberMask);
+        irisCol = mix(irisCol, irisCol * 1.2, finerFiber * 0.08 * fiberMask);
+
+        // Limbal ring — dark border at outer iris edge
+        float limbalDist = irisR / IRIS_RADIUS;
+        float limbalRing = smoothstep(0.82, 1.0, limbalDist);
+        irisCol *= mix(1.0, 0.3, limbalRing);
+
+        col = mix(col, irisCol, irisBlend);
     }
 
-    // 3. Parallax Pupil (Deepest drop)
-    vec2 pupilUV = calculateParallax(uv, ic, 0.16);
+    // 3. Parallax Pupil (Deepest drop) — tighter depth to stay concentric
+    vec2 pupilUV = calculateParallax(uv, ic, 0.10);
     float sPulse = sin(uTime * 2.5) * 0.15 + 1.0; 
     float effPupilR = mix(pupilR, pupilR * sPulse, uSentinel);
     float pupilDist = circleSDF(pupilUV, ic, effPupilR);
@@ -121,6 +142,12 @@ vec3 themeClassic(vec2 uv, vec2 ic, float pupilR, float sd) {
     float cMask = smoothstep(0.02, 0.0, circleSDF(uv, ic, IRIS_RADIUS * 1.05));
     col += vec3(1.0, 0.95, 0.9) * spec * 1.5 * cMask;
     col += vec3(0.8, 0.85, 1.0) * spec2 * 0.7 * cMask;
+
+    // 5. Wet specular — tear film across entire eyeball surface
+    vec3 nEyeSurface = calculateSphereNormal(uv, vec2(0.0), EYE_RADIUS);
+    vec3 wetLight = normalize(vec3(0.3, 0.7, 0.8));
+    float wetSpec = pow(max(0.0, dot(nEyeSurface, wetLight)), 120.0);
+    col += vec3(1.0) * wetSpec * 0.4;
 
     return col;
 }
@@ -316,7 +343,7 @@ vec3 themeReticle(vec2 uv, vec2 ic, float pupilR, float sd) {
 void main() {
     vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
     vec2 uv = (vUV - 0.5) * aspect;
-    vec2 irisCenter = uIrisOffset * 0.22;
+    vec2 irisCenter = uIrisOffset * 0.32;
 
     float scleraDist = circleSDF(uv, vec2(0.0), EYE_RADIUS);
     float pupilR = PUPIL_BASE * uDilation;
@@ -329,11 +356,8 @@ void main() {
         else color = themeReticle(uv, irisCenter, pupilR, scleraDist);
     }
 
-    if (scleraDist > -0.005 && scleraDist < 0.005) {
-        color *= smoothstep(0.003, -0.003, scleraDist);
-    } else if (scleraDist >= 0.005) {
-        color = vec3(0.0);
-    }
+    // Soft eyeball edge — wider AA for natural blending into black
+    color *= smoothstep(0.004, -0.008, scleraDist);
 
     // ══════════════════════════════════
     //  METALLIC SHUTTER BLINK (shared)

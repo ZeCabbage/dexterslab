@@ -47,6 +47,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
 }
 
 /* ── Inner ring ── */
@@ -96,10 +97,10 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: clamp(12px, 2.5vmin, 24px);
+  gap: clamp(8px, 1.5vmin, 16px);
   z-index: 10;
-  height: 100%;
-  padding: 12%;
+  width: 70%;
+  height: 70%;
   animation: fadeInUp 0.6s ease-out;
 }
 
@@ -120,17 +121,16 @@
 .selectSubtitle {
   font-family: var(--font-display);
   font-size: clamp(18px, 3vmin, 26px);
-  color: var(--color-text);
+  color: #ffffff;
   text-align: center;
-  opacity: 0.8;
+  margin-bottom: 8px;
 }
 
 .gameInputRow {
   display: flex;
   gap: clamp(6px, 1vmin, 10px);
   align-items: center;
-  width: 80%;
-  max-width: 380px;
+  width: 100%;
 }
 
 .gameInput {
@@ -150,8 +150,7 @@
   box-shadow: 0 0 12px rgba(0, 255, 224, 0.15);
 }
 .gameInput::placeholder {
-  color: var(--color-text-dim);
-  opacity: 0.6;
+  color: #aaaaaa;
 }
 
 .goBtn {
@@ -172,9 +171,9 @@
 .goBtn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 .voiceHintSmall {
-  font-size: clamp(12px, 1.8vmin, 16px);
-  color: var(--color-text-dim);
-  opacity: 0.5;
+  font-size: clamp(14px, 2vmin, 18px);
+  color: #cccccc;
+  margin-top: 4px;
 }
 
 /* ═══ ACTIVE SESSION (inside circle) ═══ */
@@ -182,8 +181,9 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  height: 100%;
-  width: 100%;
+  justify-content: space-between;
+  height: 70%;
+  width: 70%;
   z-index: 10;
   animation: fadeInUp 0.5s ease-out;
 }
@@ -194,8 +194,9 @@
   align-items: center;
   justify-content: center;
   gap: clamp(8px, 2vmin, 16px);
-  padding: clamp(16px, 4vmin, 32px) 0 clamp(4px, 1vmin, 8px);
+  padding: 0;
   z-index: 10;
+  flex-shrink: 0;
 }
 
 .sessionGameName {
@@ -247,8 +248,8 @@
 }
 
 .characterCanvas {
-  width: clamp(140px, 26vmin, 280px);
-  height: clamp(180px, 32vmin, 340px);
+  width: clamp(100px, 20vmin, 200px);
+  height: clamp(130px, 24vmin, 240px);
 }
 
 .moodLabel {
@@ -257,15 +258,16 @@
   letter-spacing: 2px;
   margin-top: 4px;
   padding: 2px 8px;
-  border: 1px solid var(--color-text-dim);
-  color: var(--color-text-dim);
+  border: 1px solid var(--color-cyan);
+  color: var(--color-cyan);
+  background: rgba(0, 255, 224, 0.1);
   text-transform: uppercase;
 }
 
 /* ── Chat (scrollable middle, inside circle) ── */
 .chatArea {
   flex: 1;
-  width: 75%;
+  width: 100%;
   overflow-y: auto;
   display: flex;
   flex-direction: column;
@@ -293,9 +295,9 @@
 
 .chatMessageBot {
   align-self: flex-start;
-  background: rgba(255, 170, 0, 0.06);
-  border: 1px solid rgba(255, 170, 0, 0.15);
-  color: var(--color-text);
+  background: rgba(255, 170, 0, 0.15);
+  border: 1px solid rgba(255, 170, 0, 0.3);
+  color: #ffffff;
   font-family: var(--font-display);
   font-size: clamp(18px, 2.7vmin, 24px);
   line-height: 1.4;
@@ -304,9 +306,9 @@
 
 .chatMessageGreeting {
   align-self: center;
-  background: rgba(153, 69, 255, 0.08);
-  border: 1px solid rgba(153, 69, 255, 0.2);
-  color: var(--color-purple);
+  background: rgba(153, 69, 255, 0.15);
+  border: 1px solid rgba(153, 69, 255, 0.3);
+  color: #e0b0ff;
   font-family: var(--font-display);
   font-size: clamp(18px, 2.4vmin, 22px);
   text-align: center;
@@ -314,11 +316,10 @@
 }
 
 .chatMessageRef {
-  font-size: clamp(12px, 1.5vmin, 15px);
-  color: var(--color-text-dim);
+  font-size: clamp(13px, 1.8vmin, 16px);
+  color: #dddddd;
   margin-top: 4px;
   font-family: var(--font-mono);
-  opacity: 0.6;
 }
 
 .chatLoading {
@@ -349,11 +350,11 @@
 
 /* ── Input Bar (bottom of circle) ── */
 .inputBar {
-  width: 70%;
+  width: 100%;
   display: flex;
-  border: 1px solid var(--color-text-dim);
-  background: rgba(10, 10, 20, 0.9);
-  margin-bottom: clamp(20px, 6vmin, 50px);
+  border: 1px solid var(--color-cyan);
+  background: rgba(20, 20, 30, 0.95);
+  margin-bottom: 0;
   z-index: 10;
   flex-shrink: 0;
 }
@@ -369,8 +370,7 @@
   outline: none;
 }
 .questionInput::placeholder {
-  color: var(--color-text-dim);
-  opacity: 0.4;
+  color: #aaaaaa;
 }
 
 .askBtn {

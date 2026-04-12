@@ -231,46 +231,104 @@
   color: #000;
 }
 
-/* ── Buttons Row ── */
-.buttonsRow {
+/* ── App List Items (in Apps panel) ── */
+.appListItem {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  padding: 3px 4px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: clamp(8px, 1.2vmin, 10px);
+  text-align: left;
+  transition: all 0.12s ease;
+}
+
+.appListItem:hover {
+  background: rgba(0, 255, 224, 0.06);
+  color: var(--color-cyan) !important;
+}
+
+.appListItem:last-of-type {
+  border-bottom: none;
+}
+
+.appListIcon {
+  font-size: 1.1em;
+  width: 18px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.appListName {
+  flex: 1;
+  letter-spacing: 1px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.appListVoice {
+  font-size: 0.8em;
+  opacity: 0.3;
+  flex-shrink: 0;
+}
+
+.appListItem:hover .appListVoice {
+  opacity: 0.7;
+}
+
+/* ── Bottom Status Bar ── */
+.bottomBar {
   width: 85%;
   margin: 0 auto 2%;
   display: flex;
-  gap: 2.5%;
+  align-items: center;
+  justify-content: space-between;
   z-index: 10;
+  padding: 4px 8px;
+  background: rgba(10, 10, 20, 0.6);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-size: clamp(8px, 1.2vmin, 10px);
 }
 
-.actionBtn {
-  flex: 1;
-  padding: clamp(6px, 1.5vmin, 12px) 0;
-  background: var(--color-btn-bg);
-  color: var(--color-btn-fg);
-  border: 1px solid var(--color-ring);
+.bottomBarLeft {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  overflow: hidden;
+}
+
+.bottomBarRight {
+  display: flex;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+.utilBtn {
+  padding: 3px 8px;
+  background: rgba(10, 10, 20, 0.8);
+  border: 1px solid #333;
   border-radius: 0;
   cursor: pointer;
   font-family: var(--font-mono);
   font-weight: bold;
-  font-size: clamp(10px, 1.8vmin, 14px);
-  letter-spacing: 2px;
-  text-shadow: 0 0 6px rgba(0, 255, 224, 0.25);
+  font-size: clamp(8px, 1.1vmin, 9px);
+  letter-spacing: 1px;
   transition: all 0.12s ease;
 }
 
-.actionBtn:hover:not(:disabled) {
+.utilBtn:hover:not(:disabled) {
   filter: brightness(1.4);
-  transform: scale(1.02);
 }
 
-.actionBtn:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.actionBtn:disabled {
-  opacity: 0.5;
+.utilBtn:disabled {
+  opacity: 0.4;
   cursor: not-allowed;
-  color: #444;
-  border-color: #333;
-  text-shadow: none;
 }
 
 .killBtn {
@@ -279,22 +337,10 @@
   border-color: var(--color-btn-kill);
 }
 
-.wifiBtn {
-  background: #0a1a14;
-  color: #66ffaa;
-  border-color: #44cc88;
-}
-
 .syncBtn {
   background: #0a141a;
   color: #55ccff;
   border-color: #3399cc;
-  text-shadow: 0 0 6px rgba(85, 204, 255, 0.25);
-}
-
-.syncBtn:hover:not(:disabled) {
-  background: #0e1e2a;
-  box-shadow: 0 0 12px rgba(85, 204, 255, 0.2);
 }
 
 .syncBtnActive {
@@ -306,19 +352,6 @@
 @keyframes syncPulse {
   0%, 100% { opacity: 1; text-shadow: 0 0 6px rgba(85, 204, 255, 0.25); }
   50% { opacity: 0.6; text-shadow: 0 0 12px rgba(85, 204, 255, 0.5); }
-}
-
-.projectBtn {
-  background: #0a0a28;
-  color: var(--color-purple);
-  border-color: var(--color-purple);
-  text-shadow: 0 0 6px rgba(153, 69, 255, 0.25);
-  font-size: clamp(12px, 2.2vmin, 16px);
-}
-
-.projectBtn:hover:not(:disabled) {
-  background: #14143a;
-  box-shadow: 0 0 12px rgba(153, 69, 255, 0.2);
 }
 
 /* ── Shutdown ── */

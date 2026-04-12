@@ -48,8 +48,18 @@ export class SpatialModel {
     const currentZoneCounts = new Map();
     
     for (const ent of entities) {
-      const cx = ent.x + (ent.w / 2);
-      const cy = ent.y + (ent.h / 2);
+      // Support both formats:
+      // MlProcessor output: {x, y, size} where x,y are normalized centroids (0-1)
+      // Raw pixel format: {x, y, w, h} with bounding boxes
+      let cx, cy;
+      if (ent.w !== undefined && ent.h !== undefined) {
+        cx = ent.x + (ent.w / 2);
+        cy = ent.y + (ent.h / 2);
+      } else {
+        // Normalized coords → pixel coords for zone lookup
+        cx = ent.x * this.width;
+        cy = ent.y * this.height;
+      }
       const zoneName = this.coordinateToZone(cx, cy);
       
       if (!currentZoneCounts.has(zoneName)) {

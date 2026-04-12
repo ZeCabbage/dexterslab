@@ -1,0 +1,24 @@
+[Unit]
+Description=DextersLab Edge Daemon
+After=network-online.target cloudflared.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=deploy
+Group=deploy
+WorkingDirectory=/home/deploy/dexterslab-edge
+# The - prefix makes these non-fatal: if amixer fails (wrong card number),
+# the daemon still starts. The TTS receiver handles volume internally.
+ExecStartPre=-/usr/bin/amixer -c 3 set PCM 90%% unmute
+ExecStartPre=-/usr/bin/amixer -c 2 set Mic 20%% cap
+ExecStart=/home/deploy/dexterslab-edge/venv/bin/python main.py
+Restart=always
+RestartSec=5
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=edge-daemon
+Environment=HOME=/home/deploy
+
+[Install]
+WantedBy=multi-user.target

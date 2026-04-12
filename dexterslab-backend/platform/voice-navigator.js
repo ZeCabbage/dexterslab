@@ -18,6 +18,16 @@ import { bus } from '../core/context-bus.js';
  *   1. Activates/deactivates the app via AppManager
  *   2. Broadcasts { type:'navigate', route } over /ws/system to the frontend
  *   3. Optionally speaks TTS confirmation via the HardwareBroker
+ *
+ * === Alias Matching Strategy ===
+ *
+ * To prevent "offline observer" matching the "observer" alias for observer-eye,
+ * aliases are sorted LONGEST FIRST and matched using word-boundary logic.
+ * This ensures more specific phrases always win over shorter substrings.
+ *
+ * "Virtual routes" are apps that exist in the frontend only (no backend App
+ * class). They can be navigated to by voice but skip AppManager activation.
+ * Example: offline-observer.
  */
 export class VoiceNavigator {
   constructor(appManager, wsRouter, hardwareBroker = null) {
@@ -28,9 +38,72 @@ export class VoiceNavigator {
     // Track the last command to prevent duplicate processing
     this._lastCommandText = '';
     this._lastCommandTime = 0;
-    this._DEDUP_MS = 2000; // Ignore identical commands within 2s
+    this._DEDUP_MS = 1200; // Ignore identical commands within 1.2s
+
+    // ── Voice Alias Registry ──
+    // Each entry maps an appId to its voice aliases and route.
+    // Aliases are matched longest-first to prevent ambiguity.
+    // 'virtual' flag means no AppManager app — just route broadcast.
+    this._voiceRegistry = [
+      {
+        appId: 'observer-eye',
+        virtual: false,
+        route: '/observer/eye-v2',
+        aliases: [
+          'observer version two', 'observer version 2', 'observer v two',
+          'observer v2', 'observer v 2', 'observer eye', 'eye v2',
+          'eye v two', 'eye v 2', 'i v two', 'i v2', 'eye',
+        ],
+      },
+      {
+        appId: 'offline-observer',
+        virtual: true,   // No backend App class — frontend-only
+        route: '/offline-observer.html',
+        aliases: [
+          'offline observer', 'offline mode', 'observer offline',
+          'observer version one', 'observer version 1', 'observer v1',
+          'observer v one', 'offline',
+        ],
+      },
+      {
+        appId: 'rules-lawyer',
+        virtual: false,
+        route: '/observer/rules-lawyer',
+        aliases: [
+          'rules lawyer', 'rules', 'lawyer', 'dnd', 'd&d', 'rule',
+        ],
+      },
+      {
+        appId: 'record-clerk',
+        virtual: false,
+        route: '/record-clerk',
+        aliases: [
+          'record clerk', 'dandelion records', 'dandelion', 'record',
+          'clerk', 'records', 'vinyl',
+        ],
+      },
+      {
+        appId: 'deadswitch',
+        virtual: false,
+        route: '/observer/deadswitch',
+        aliases: [
+          'dead switch', 'deadswitch', 'survival', 'bunker', 'doomsday',
+        ],
+      },
+    ];
+
+    // Pre-sort: build a flat list of (alias, entry) pairs sorted by alias
+    // length descending so longest aliases match first.
+    this._sortedAliases = [];
+    for (const entry of this._voiceRegistry) {
+      for (const alias of entry.aliases) {
+        this._sortedAliases.push({ alias: alias.toLowerCase(), entry });
+      }
+    }
+    this._sortedAliases.sort((a, b) => b.alias.length - a.alias.length);
 
     console.log('[Platform] Voice Navigator initialized');
+    console.log(`[VoiceNav] ${this._voiceRegistry.length} apps registered, ${this._sortedAliases.length} voice aliases loaded`);
 
     // ── Register /ws/system WebSocket path ──
     const wss = wsRouter.registerPath('/ws/system');
@@ -48,15 +121,9 @@ export class VoiceNavigator {
       this.handleVoiceCommand(data.text);
     });
 
-    // ── React to AppManager state changes ──
-    bus.subscribe('app.activated', (data) => {
-      const route = this._routeForApp(data.appId);
-      this._broadcast(route);
-    });
-
-    bus.subscribe('app.deactivated', () => {
-      this._broadcast('/observer');
-    });
+    // Note: VoiceNavigator broadcasts routes directly via _broadcast().
+    // Online apps auto-activate via WS connection — no need to listen to
+    // app.activated/deactivated events for navigation broadcasting.
   }
 
   // ══════════════════════════════════════════
@@ -91,7 +158,8 @@ export class VoiceNavigator {
       );
       // Directly broadcast navigation to hub (don't rely solely on bus event)
       this._broadcast('/observer');
-      this._speakConfirmation('COPY');
+      // TTS confirmation disabled — causes speaker→mic feedback loop
+      // this._speakConfirmation('COPY');
       return true;
     }
 
@@ -103,12 +171,16 @@ export class VoiceNavigator {
         this._lastCommandText = clean;
         this._lastCommandTime = now;
 
-        console.log(`[VoiceNav] ✓ OPEN command recognized → ${matched.manifest.id}`);
+        console.log(`[VoiceNav] ✓ OPEN command recognized → ${matched.appId} (virtual=${matched.virtual})`);
         this._markAsNavigation();
-        this.appManager.activateDisplayApp(matched.manifest.id).catch(e =>
-          console.error('[VoiceNav] Failed to activate:', e)
-        );
-        this._speakConfirmation('COPY');
+
+        // All apps: broadcast route navigation to frontend.
+        // Online apps will auto-activate via WS connection when the page loads.
+        // Virtual/offline apps just need the route broadcast.
+        this._broadcast(matched.route);
+
+        // TTS confirmation disabled — causes speaker→mic feedback loop
+        // this._speakConfirmation('COPY');
         return true;
       }
     }
@@ -148,77 +220,104 @@ export class VoiceNavigator {
     return null;
   }
 
-  // ═══ App Matching (fuzzy) ═══
+  // ═══ App Matching (longest-alias-first, word-boundary aware) ═══
 
   /**
-   * Matches a spoken target phrase to a registered app using multiple strategies:
-   *  1. Exact name match
-   *  2. App ID match (with dashes replaced by spaces)
-   *  3. Voice aliases defined in manifests
-   *  4. Substring containment
-   *  5. Word-overlap scoring as a fallback
+   * Matches a spoken target phrase to a registered app using the pre-sorted
+   * alias list. Longer aliases are checked first to prevent "offline observer"
+   * from matching the shorter "observer" alias of a different app.
+   *
+   * Matching strategies (in order):
+   *  1. Exact alias match
+   *  2. Alias contained in target phrase (word-boundary)
+   *  3. Word overlap scoring for fuzzy fallback
    */
   _matchApp(targetPhrase) {
-    const apps = this.appManager.getAllApps();
-    const target = targetPhrase.toLowerCase().replace(/the /g, '');
+    const target = targetPhrase.toLowerCase().replace(/\bthe\b/g, '').trim();
 
-    // Strategy 1 & 2: Exact or ID match
-    for (const app of apps) {
-      const name = app.manifest.name.toLowerCase();
-      const idName = app.manifest.id.replace(/-/g, ' ');
-      if (name === target || idName === target) return app;
-    }
+    // ── Strategy 1 & 2: Exact or contains (longest-first) ──
+    // Because _sortedAliases is sorted longest-first, "offline observer"
+    // will always be checked before "observer".
+    for (const { alias, entry } of this._sortedAliases) {
+      // Strategy 1: Exact match
+      if (target === alias) {
+        // For non-virtual apps, verify they exist in AppManager
+        if (!entry.virtual && !this.appManager.getApp(entry.appId)) continue;
+        return entry;
+      }
 
-    // Strategy 3: Voice aliases (e.g. "eye" → observer-eye)
-    const VOICE_ALIASES = {
-      'observer-eye': ['eye', 'observer', 'observer eye', 'eye v2', 'observer v2', 'i v2', 'i v two', 'i b two', 'observer i'],
-      'record-clerk':  ['record clerk', 'clerk', 'records', 'dandelion', 'record', 'vinyl'],
-      'rules-lawyer':  ['rules lawyer', 'rules', 'lawyer', 'dnd', 'd&d', 'rule'],
-      'dungeon-buddy': ['dungeon buddy', 'dungeon', 'buddy', 'character', 'characters'],
-    };
-
-    for (const [appId, aliases] of Object.entries(VOICE_ALIASES)) {
-      if (aliases.some(a => target.includes(a) || a.includes(target))) {
-        const app = this.appManager.getApp(appId);
-        if (app) return app;
+      // Strategy 2: Alias appears in target as whole word(s)
+      // Use word-boundary regex to avoid partial-word matches
+      try {
+        const regex = new RegExp(`\\b${this._escapeRegex(alias)}\\b`, 'i');
+        if (regex.test(target)) {
+          if (!entry.virtual && !this.appManager.getApp(entry.appId)) continue;
+          return entry;
+        }
+      } catch (e) {
+        // If regex fails (special chars), fall back to includes
+        if (target.includes(alias)) {
+          if (!entry.virtual && !this.appManager.getApp(entry.appId)) continue;
+          return entry;
+        }
       }
     }
 
-    // Strategy 4: Substring containment
-    for (const app of apps) {
-      const name = app.manifest.name.toLowerCase();
-      const idName = app.manifest.id.replace(/-/g, ' ');
-      if (name.includes(target) || target.includes(name) ||
-          idName.includes(target) || target.includes(idName)) {
-        return app;
+    // ── Strategy 3: App ID match (with dashes replaced by spaces) ──
+    for (const entry of this._voiceRegistry) {
+      const idName = entry.appId.replace(/-/g, ' ');
+      if (target === idName || target.includes(idName)) {
+        if (!entry.virtual && !this.appManager.getApp(entry.appId)) continue;
+        return entry;
       }
     }
 
-    // Strategy 5: Word overlap scoring
+    // ── Strategy 4: Word overlap scoring (fuzzy fallback) ──
     const targetWords = new Set(target.split(/\s+/));
-    let bestApp = null;
+    let bestEntry = null;
     let bestScore = 0;
 
-    for (const app of apps) {
-      const nameWords = app.manifest.name.toLowerCase().split(/\s+/);
-      let score = 0;
-      for (const w of nameWords) {
-        if (targetWords.has(w)) score++;
-      }
-      if (score > bestScore) {
-        bestScore = score;
-        bestApp = app;
+    for (const entry of this._voiceRegistry) {
+      // Check each alias for word overlap
+      for (const alias of entry.aliases) {
+        const aliasWords = alias.toLowerCase().split(/\s+/);
+        let score = 0;
+        for (const w of aliasWords) {
+          if (targetWords.has(w)) score++;
+        }
+        // Normalize by alias word count for specificity
+        const normalized = aliasWords.length > 0 ? score / aliasWords.length : 0;
+        if (score > 0 && normalized > bestScore) {
+          bestScore = normalized;
+          bestEntry = entry;
+        }
       }
     }
 
-    // Require at least 1 word overlap
-    return bestScore >= 1 ? bestApp : null;
+    // Require at least 50% word overlap to count
+    if (bestScore >= 0.5 && bestEntry) {
+      if (bestEntry.virtual || this.appManager.getApp(bestEntry.appId)) {
+        return bestEntry;
+      }
+    }
+
+    return null;
+  }
+
+  _escapeRegex(str) {
+    return str.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   }
 
   // ═══ Navigation Broadcasting ═══
 
   _routeForApp(appId) {
     if (!appId) return '/observer';
+
+    // Check voice registry first (handles virtual routes)
+    const entry = this._voiceRegistry.find(e => e.appId === appId);
+    if (entry) return entry.route;
+
+    // Fall back to app manifest
     const app = this.appManager.getApp(appId);
     return (app?.manifest?.frontendRoute) || '/observer';
   }

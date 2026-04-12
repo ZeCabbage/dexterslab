@@ -107,13 +107,90 @@ class TTSReceiver:
     def _speak(self, text: str):
         logger.info(f"[TTSReceiver] Speaking: {text}")
         try:
-            subprocess.run(
-                [self.config.tts_engine, text],
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                timeout=10
-            )
+            card = self.config.audio_output_card
+
+            # Set volume to 100% (LOUD) on the discovered speaker card
+            if card >= 0:
+                for control in ['PCM', 'Speaker', 'Master']:
+                    result = subprocess.run(
+                        ['amixer', '-c', str(card), 'set', control, '100%'],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=3
+                    )
+                    if result.returncode == 0:
+                        logger.info(f"[TTSReceiver] Volume set to 100% on card {card} ({control})")
+                        break
+            else:
+                subprocess.run(
+                    ['amixer', 'set', 'Master', '100%'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=3
+                )
+
+            # Route espeak-ng output through the correct ALSA device
+            # espeak-ng --stdout produces WAV on stdout, pipe to aplay on the right card
+            if card >= 0:
+                # Use plughw: as primary — handles mono→stereo conversion for USB speakers
+                # Raw hw: fails with "Channels count non available" for mono espeak-ng output
+                alsa_device = f"plughw:{card},0"
+                logger.info(f"[TTSReceiver] Routing audio: espeak-ng --stdout | aplay -D {alsa_device}")
+
+                # Pipe: espeak-ng --stdout "text" | aplay -D hw:N,0
+                espeak_proc = subprocess.Popen(
+                    [self.config.tts_engine, '--stdout', text],
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.DEVNULL,
+                )
+                aplay_proc = subprocess.Popen(
+                    ['aplay', '-D', alsa_device],
+                    stdin=espeak_proc.stdout,
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                )
+                espeak_proc.stdout.close()  # Allow espeak to receive SIGPIPE
+                aplay_proc.wait(timeout=15)
+                espeak_proc.wait(timeout=5)
+
+                if aplay_proc.returncode != 0:
+                    logger.warning(f"[TTSReceiver] aplay returned {aplay_proc.returncode}, trying hw directly")
+                    # Fallback: try raw hw (in case plughw fails for some reason)
+                    alsa_device = f"hw:{card},0"
+                    espeak_proc = subprocess.Popen(
+                        [self.config.tts_engine, '--stdout', text],
+                        stdout=subprocess.PIPE,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    aplay_proc = subprocess.Popen(
+                        ['aplay', '-D', alsa_device],
+                        stdin=espeak_proc.stdout,
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                    )
+                    espeak_proc.stdout.close()
+                    aplay_proc.wait(timeout=15)
+                    espeak_proc.wait(timeout=5)
+            else:
+                # No specific card — let espeak-ng use system default
+                subprocess.run(
+                    [self.config.tts_engine, text],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=10
+                )
+
         except subprocess.TimeoutExpired:
             logger.warning("[TTSReceiver] TTS subprocess timed out")
+            # Kill any lingering processes
+            try:
+                espeak_proc.kill()
+            except Exception:
+                pass
+            try:
+                aplay_proc.kill()
+            except Exception:
+                pass
         except Exception as e:
             logger.error(f"[TTSReceiver] TTS subprocess error: {e}")
+

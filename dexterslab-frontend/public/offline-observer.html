@@ -2,258 +2,499 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Offline Observer Hub</title>
+  <title>Offline Observer V1</title>
   <style>
+    @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
+
+    *, *::before, *::after { box-sizing: border-box; }
     body, html {
       margin: 0; padding: 0;
       width: 100vw; height: 100vh;
       background-color: #000;
       color: #0fc;
-      font-family: monospace;
+      font-family: 'VT323', monospace;
       overflow: hidden;
       cursor: none;
     }
-    canvas {
-      display: block;
-      width: 100%; height: 100%;
-    }
+    canvas { display: block; width: 100%; height: 100%; }
+
+    /* ── HUD Overlay ── */
     #hud {
       position: absolute;
-      top: 10px; left: 10px;
-      z-index: 10;
+      top: 8px; left: 8px;
+      z-index: 20;
       pointer-events: none;
-      background: rgba(0,0,0,0.7);
-      padding: 10px;
-      border: 1px solid rgba(0,255,200,0.5);
+      background: rgba(0,0,0,0.75);
+      padding: 8px 12px;
+      border: 1px solid rgba(0,255,200,0.4);
       border-radius: 4px;
-      font-size: 14px;
-      line-height: 1.5;
+      font-size: 13px;
+      line-height: 1.6;
+      max-width: 320px;
     }
-    .hud-line { margin: 0; }
+    .hud-title { color: #0fc; font-size: 15px; letter-spacing: 2px; }
+    .hud-line { margin: 0; color: #888; }
     .hud-warn { color: #f44; }
-    #video { display: none; }
+    .hud-ok { color: #0f0; }
+    .hud-tracking { color: #0ff; }
+
+    /* ── Entity Tags ── */
+    #entity-tags {
+      position: absolute;
+      top: 8px; right: 8px;
+      z-index: 20;
+      pointer-events: none;
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      align-items: flex-end;
+    }
+    .entity-tag {
+      padding: 3px 10px;
+      border-radius: 3px;
+      font-size: 12px;
+      letter-spacing: 1px;
+      font-weight: bold;
+      animation: tagFadeIn 0.3s ease-out;
+    }
+    .entity-tag.face { background: rgba(0,200,255,0.2); border: 1px solid rgba(0,200,255,0.6); color: #0cf; }
+    .entity-tag.person { background: rgba(0,255,100,0.2); border: 1px solid rgba(0,255,100,0.6); color: #0f6; }
+    .entity-tag.hand { background: rgba(255,200,0,0.2); border: 1px solid rgba(255,200,0,0.6); color: #fa0; }
+    .entity-tag.object { background: rgba(200,100,255,0.2); border: 1px solid rgba(200,100,255,0.6); color: #c6f; }
+
+    /* ── Overlay Text ── */
+    #overlay-text {
+      position: absolute;
+      bottom: 12%;
+      left: 5vw; right: 5vw;
+      text-align: center;
+      z-index: 25;
+      font-size: clamp(16px, 4vw, 24px);
+      line-height: 1.4;
+      font-weight: bold;
+      color: #0ff;
+      text-shadow: 0 0 20px currentColor;
+      letter-spacing: 2px;
+      opacity: 0;
+      transition: opacity 0.3s ease;
+      pointer-events: none;
+    }
+    #overlay-text.visible { opacity: 0.9; }
+    #overlay-text.oracle { color: #0ff; }
+    #overlay-text.ambient { color: rgba(100,120,255,0.7); font-size: clamp(10px, 2.5vw, 16px); }
+
+    /* ── Connection Status ── */
+    #conn-status {
+      position: absolute;
+      bottom: 8px; left: 0; right: 0;
+      text-align: center;
+      z-index: 20;
+      font-size: 11px;
+      letter-spacing: 1px;
+      pointer-events: none;
+    }
+
+    @keyframes tagFadeIn {
+      from { opacity: 0; transform: translateX(10px); }
+      to { opacity: 1; transform: translateX(0); }
+    }
+
+    /* ── Close Button ── */
+    #close-btn {
+      position: absolute;
+      bottom: 12px; right: 12px;
+      z-index: 30;
+      background: rgba(255,60,60,0.15);
+      border: 1px solid rgba(255,60,60,0.5);
+      color: #f66;
+      font-family: 'VT323', monospace;
+      font-size: 13px;
+      letter-spacing: 1px;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    #close-btn:hover {
+      background: rgba(255,60,60,0.35);
+      color: #fff;
+      border-color: #f44;
+    }
   </style>
 </head>
 <body>
+  <!-- HUD -->
   <div id="hud">
-    <p class="hud-line">◈ OFFLINE OBSERVER V1 ◈</p>
-    <p class="hud-line" id="hud-status">Initializing System...</p>
+    <p class="hud-title">◈ OFFLINE OBSERVER V1 ◈</p>
+    <p class="hud-line" id="hud-status">Initializing...</p>
+    <p class="hud-line" id="hud-vision">Vision: Starting...</p>
     <p class="hud-line" id="hud-voice">Mic: Waiting...</p>
-    <p class="hud-line" id="hud-face">Vision: Offline</p>
     <p class="hud-line" id="hud-fps">FPS: 0</p>
   </div>
-  <video id="video" autoplay playsinline></video>
+
+  <!-- Entity Tags (top right) -->
+  <div id="entity-tags"></div>
+
+  <!-- Eye Canvas -->
   <canvas id="eye"></canvas>
 
+  <!-- Overlay Text (oracle/ambient responses) -->
+  <div id="overlay-text"></div>
+
+  <!-- Connection Status -->
+  <div id="conn-status"></div>
+
+  <!-- Close Button -->
+  <button id="close-btn" onclick="returnToHub()">✕ CLOSE</button>
+
   <script>
+    // ═══════════════════════════════════════
+    //  State
+    // ═══════════════════════════════════════
     const canvas = document.getElementById('eye');
     const ctx = canvas.getContext('2d');
-
-    // UI HUD Elements
     const hudStatus = document.getElementById('hud-status');
+    const hudVision = document.getElementById('hud-vision');
     const hudVoice = document.getElementById('hud-voice');
-    const hudFace = document.getElementById('hud-face');
     const hudFps = document.getElementById('hud-fps');
+    const entityTagsEl = document.getElementById('entity-tags');
+    const overlayEl = document.getElementById('overlay-text');
+    const connEl = document.getElementById('conn-status');
 
-    // State
-    const state = {
-      cx: 0, cy: 0, size: 0, // canvas dimensions
+    const S = {
+      cx: 0, cy: 0, size: 0,
       targetX: 0, targetY: 0, targetDilation: 1.0,
       currentX: 0, currentY: 0, currentDilation: 1.0,
-      blinkPhase: 0, blinkTarget: 0, lastBlinkTime: 0,
-      fps: 0, frames: 0, lastFpsTime: performance.now()
+      blinkPhase: 0, sentinel: true, visible: false,
+      emotion: 'neutral', entityCount: 0,
+      entities: [],
+      fps: 0, frames: 0, lastFpsTime: performance.now(),
+      connected: false, lastMessage: 0,
     };
 
-    // Style
-    const style = {
-      scleraColor: 'rgb(250, 250, 250)',
-      scleraShadow: 'rgba(50, 60, 80, 0.6)',
-      irisRim: 'rgb(10, 20, 40)',
-      irisBase: 'rgb(0, 150, 255)',
-      irisHighlight: 'rgb(100, 220, 255)',
-      pupilColor: 'rgb(5, 5, 10)',
-    };
-
-    // Resize
+    // ═══════════════════════════════════════
+    //  Eye Rendering (enhanced canvas2D)
+    // ═══════════════════════════════════════
     function resize() {
       canvas.width = window.innerWidth;
       canvas.height = window.innerHeight;
-      state.cx = canvas.width / 2;
-      state.cy = canvas.height / 2;
-      state.size = Math.min(canvas.width, canvas.height) * 0.9;
+      S.cx = canvas.width / 2;
+      S.cy = canvas.height / 2;
+      S.size = Math.min(canvas.width, canvas.height) * 0.9;
     }
     window.addEventListener('resize', resize);
     resize();
 
-    // Lerp helper
     const lerp = (a, b, t) => a + (b - a) * t;
 
-    // Eye Renderer
-    function renderEye(offsetX, offsetY, dilation, blinkPhase) {
-      const s = state.size;
+    function renderEye() {
+      const s = S.size;
       const scleraR = s * 0.45;
-      const irisR = s * 0.22;
-      const pupilR = s * 0.08 * Math.max(0.4, Math.min(2.0, dilation));
-      const ix = state.cx + offsetX;
-      const iy = state.cy + offsetY;
+      const irisR = s * 0.24;
+      const pupilBase = s * 0.09;
+      const pupilR = pupilBase * Math.max(0.4, Math.min(2.0, S.currentDilation));
 
+      // Smooth tracking
+      S.currentX = lerp(S.currentX, S.targetX, 0.12);
+      S.currentY = lerp(S.currentY, S.targetY, 0.12);
+      S.currentDilation = lerp(S.currentDilation, S.targetDilation, 0.08);
+
+      // Clamp iris position to sclera bounds
+      const maxDisp = scleraR - irisR - 5;
+      const dispLen = Math.sqrt(S.currentX * S.currentX + S.currentY * S.currentY);
+      let ix = S.cx + S.currentX;
+      let iy = S.cy + S.currentY;
+      if (dispLen > maxDisp) {
+        const scale = maxDisp / dispLen;
+        ix = S.cx + S.currentX * scale;
+        iy = S.cy + S.currentY * scale;
+      }
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
       ctx.save();
-      ctx.shadowBlur = 0;
 
-      // Sclera
-      ctx.fillStyle = style.scleraColor;
+      // ── Sclera with subtle gradient ──
+      const scleraGrad = ctx.createRadialGradient(S.cx, S.cy - scleraR * 0.1, scleraR * 0.3, S.cx, S.cy, scleraR);
+      scleraGrad.addColorStop(0, 'rgb(252, 252, 252)');
+      scleraGrad.addColorStop(0.7, 'rgb(245, 242, 240)');
+      scleraGrad.addColorStop(1, 'rgb(220, 215, 210)');
+      ctx.fillStyle = scleraGrad;
       ctx.beginPath();
-      ctx.arc(state.cx, state.cy, scleraR, 0, Math.PI * 2);
+      ctx.arc(S.cx, S.cy, scleraR, 0, Math.PI * 2);
       ctx.fill();
 
-      // Sclera Shadow
-      ctx.fillStyle = style.scleraShadow;
+      // ── Sclera shadow (top crease) ──
+      ctx.save();
       ctx.beginPath();
-      ctx.arc(state.cx, state.cy, scleraR, 0, Math.PI * 2);
+      ctx.arc(S.cx, S.cy, scleraR, 0, Math.PI * 2);
       ctx.clip();
-      ctx.beginPath();
-      ctx.ellipse(state.cx, state.cy - scleraR * 0.3, scleraR * 1.5, scleraR * 0.7, 0, 0, Math.PI * 2);
-      ctx.fill();
+      const shadowGrad = ctx.createLinearGradient(S.cx, S.cy - scleraR, S.cx, S.cy - scleraR * 0.3);
+      shadowGrad.addColorStop(0, 'rgba(30, 30, 50, 0.5)');
+      shadowGrad.addColorStop(1, 'rgba(30, 30, 50, 0)');
+      ctx.fillStyle = shadowGrad;
+      ctx.fillRect(S.cx - scleraR, S.cy - scleraR, scleraR * 2, scleraR);
+      ctx.restore();
 
-      // Iris Rim
-      ctx.fillStyle = style.irisRim;
+      // ── Red veins (subtle) ──
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(S.cx, S.cy, scleraR, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(180, 60, 60, 0.08)';
+      ctx.lineWidth = 1;
+      for (let i = 0; i < 6; i++) {
+        const angle = (i / 6) * Math.PI * 2 + 0.3;
+        const len = scleraR * (0.5 + Math.sin(i * 3.7) * 0.3);
+        ctx.beginPath();
+        ctx.moveTo(S.cx + Math.cos(angle) * scleraR * 0.7, S.cy + Math.sin(angle) * scleraR * 0.7);
+        const cp1x = S.cx + Math.cos(angle + 0.1) * len;
+        const cp1y = S.cy + Math.sin(angle + 0.1) * len;
+        ctx.quadraticCurveTo(cp1x, cp1y, S.cx + Math.cos(angle + 0.2) * scleraR * 0.95, S.cy + Math.sin(angle + 0.2) * scleraR * 0.95);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // ── Iris rim (dark border) ──
+      ctx.fillStyle = 'rgb(10, 20, 45)';
       ctx.beginPath();
       ctx.arc(ix, iy, irisR, 0, Math.PI * 2);
       ctx.fill();
 
-      // Iris Base
-      ctx.fillStyle = style.irisBase;
+      // ── Iris with radial gradient ──
+      const irisGrad = ctx.createRadialGradient(ix, iy, pupilR, ix, iy, irisR * 0.92);
+      // Emotion-based iris color
+      if (S.emotion === 'curious') {
+        irisGrad.addColorStop(0, 'rgb(40, 180, 255)');
+        irisGrad.addColorStop(0.5, 'rgb(20, 120, 200)');
+        irisGrad.addColorStop(1, 'rgb(10, 60, 120)');
+      } else if (S.emotion === 'startled') {
+        irisGrad.addColorStop(0, 'rgb(60, 200, 180)');
+        irisGrad.addColorStop(0.5, 'rgb(30, 150, 140)');
+        irisGrad.addColorStop(1, 'rgb(10, 80, 80)');
+      } else {
+        irisGrad.addColorStop(0, 'rgb(40, 160, 240)');
+        irisGrad.addColorStop(0.5, 'rgb(20, 100, 180)');
+        irisGrad.addColorStop(1, 'rgb(10, 50, 100)');
+      }
+      ctx.fillStyle = irisGrad;
       ctx.beginPath();
-      ctx.arc(ix, iy, irisR * 0.9, 0, Math.PI * 2);
+      ctx.arc(ix, iy, irisR * 0.92, 0, Math.PI * 2);
       ctx.fill();
 
-      // Iris Highlight
-      ctx.fillStyle = style.irisHighlight;
+      // ── Iris fibers (radial lines) ──
+      ctx.save();
       ctx.beginPath();
-      ctx.arc(ix, iy, irisR * 0.85, 0, Math.PI * 2);
-      ctx.arc(ix, iy + irisR * 0.1, irisR * 0.85, 0, Math.PI * 2, true);
-      ctx.fill();
+      ctx.arc(ix, iy, irisR * 0.92, 0, Math.PI * 2);
+      ctx.clip();
+      ctx.strokeStyle = 'rgba(60, 180, 255, 0.15)';
+      ctx.lineWidth = 0.8;
+      for (let i = 0; i < 36; i++) {
+        const a = (i / 36) * Math.PI * 2;
+        ctx.beginPath();
+        ctx.moveTo(ix + Math.cos(a) * pupilR * 1.2, iy + Math.sin(a) * pupilR * 1.2);
+        ctx.lineTo(ix + Math.cos(a) * irisR * 0.88, iy + Math.sin(a) * irisR * 0.88);
+        ctx.stroke();
+      }
+      ctx.restore();
 
-      // Pupil
-      ctx.fillStyle = style.pupilColor;
+      // ── Pupil ──
+      ctx.fillStyle = 'rgb(3, 3, 8)';
       ctx.beginPath();
       ctx.arc(ix, iy, pupilR, 0, Math.PI * 2);
       ctx.fill();
 
-      // Specular Highlight
-      ctx.fillStyle = 'rgba(255,255,255,0.9)';
+      // ── Specular highlights ──
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.92)';
       ctx.beginPath();
-      ctx.arc(ix + irisR * 0.3, iy - irisR * 0.4, irisR * 0.2, 0, Math.PI * 2);
+      ctx.arc(ix + irisR * 0.28, iy - irisR * 0.35, irisR * 0.18, 0, Math.PI * 2);
       ctx.fill();
+      ctx.fillStyle = 'rgba(255, 255, 255, 0.5)';
       ctx.beginPath();
-      ctx.arc(ix - irisR * 0.4, iy + irisR * 0.2, irisR * 0.08, 0, Math.PI * 2);
+      ctx.arc(ix - irisR * 0.35, iy + irisR * 0.2, irisR * 0.07, 0, Math.PI * 2);
       ctx.fill();
 
       ctx.restore();
 
-      // Lids (Blinking)
-      if (blinkPhase > 0) {
+      // ── Lids (blink) ──
+      if (S.blinkPhase > 0.01) {
         ctx.fillStyle = '#000';
-        const lidY = scleraR * 1.1;
-        const upperLidLimit = state.cy - lidY + (lidY * 2 * blinkPhase);
-        const lowerLidLimit = state.cy + lidY - (lidY * 2 * blinkPhase);
-
-        ctx.fillRect(0, 0, canvas.width, upperLidLimit);
-        ctx.fillRect(0, lowerLidLimit, canvas.width, canvas.height - lowerLidLimit);
+        const lidExtent = scleraR * 1.15;
+        const upper = S.cy - lidExtent + (lidExtent * 2 * S.blinkPhase);
+        const lower = S.cy + lidExtent - (lidExtent * 2 * S.blinkPhase);
+        ctx.fillRect(0, 0, canvas.width, upper);
+        ctx.fillRect(0, lower, canvas.width, canvas.height - lower);
       }
     }
 
-    // Connect to Local edge-daemon via WebSocket
-    function connectOfflineDaemon() {
-      const ws = new WebSocket('ws://127.0.0.1:8892');
-      
+    // ═══════════════════════════════════════
+    //  Entity Tags UI
+    // ═══════════════════════════════════════
+    function updateEntityTags(entities) {
+      entityTagsEl.innerHTML = '';
+      if (!entities || entities.length === 0) return;
+
+      for (const ent of entities.slice(0, 6)) {
+        const tag = document.createElement('div');
+        const typeClass = ['face', 'person', 'hand'].includes(ent.type) ? ent.type : 'object';
+        tag.className = `entity-tag ${typeClass}`;
+        const conf = ent.confidence !== undefined ? ` ${(ent.confidence * 100).toFixed(0)}%` : '';
+        tag.textContent = `${ent.type.toUpperCase()}${conf}`;
+        entityTagsEl.appendChild(tag);
+      }
+    }
+
+    // ═══════════════════════════════════════
+    //  WebSocket Connection
+    // ═══════════════════════════════════════
+    let ws = null;
+    let reconnectTimer = null;
+
+    function connect() {
+      if (ws && ws.readyState <= 1) return;
+
+      connEl.style.color = 'rgba(255,200,50,0.8)';
+      connEl.textContent = '⟳ CONNECTING TO EDGE DAEMON...';
+      hudStatus.textContent = 'Connecting...';
+      hudStatus.className = 'hud-line';
+
+      ws = new WebSocket('ws://127.0.0.1:8892');
+
       ws.onopen = () => {
-        hudStatus.innerText = 'Connected to Edge Daemon';
-        hudStatus.className = 'hud-line';
+        S.connected = true;
+        connEl.style.color = 'rgba(0,255,100,0.4)';
+        connEl.textContent = '● EDGE DAEMON CONNECTED';
+        hudStatus.textContent = 'Connected to Edge Daemon';
+        hudStatus.className = 'hud-line hud-ok';
+        setTimeout(() => { connEl.textContent = ''; }, 3000);
       };
 
       ws.onmessage = (event) => {
         try {
           const data = JSON.parse(event.data);
-          
+          S.lastMessage = performance.now();
+
           if (data.sentinel) {
-            // Apply a slight simulated drift for sentinel wander
+            // Sentinel scanning — procedural eye movement
             const t = performance.now() * 0.001;
-            state.targetX = Math.sin(t * 1.5) * state.size * 0.15 + Math.sin(t * 0.7) * state.size * 0.05;
-            state.targetY = Math.cos(t * 1.2) * state.size * 0.1 + Math.sin(t * 0.5) * state.size * 0.05;
-            hudFace.innerText = 'Vision: Scanning...';
+            const ampX = 0.18, ampY = 0.12;
+            const limitX = canvas.width * 0.5;
+            const limitY = canvas.height * 0.5;
+            S.targetX = (Math.sin(t * 1.5) * ampX + Math.sin(t * 0.7) * 0.05) * limitX;
+            S.targetY = (Math.cos(t * 1.2) * ampY + Math.sin(t * 0.5) * 0.05) * limitY;
+            hudVision.textContent = 'Vision: Scanning...';
+            hudVision.className = 'hud-line';
           } else {
-            // Raw values from python cv2 target tracking
-            state.targetX = data.ix;
-            state.targetY = data.iy;
-            hudFace.innerText = `Vision: Targeted (${data.entityCount} detected)`;
+            S.targetX = data.ix || 0;
+            S.targetY = data.iy || 0;
+            const count = data.entityCount || 0;
+            hudVision.textContent = `Vision: ${count} entit${count === 1 ? 'y' : 'ies'} tracked`;
+            hudVision.className = 'hud-line hud-tracking';
           }
 
-          state.blinkTarget = data.blink;
-          state.targetDilation = data.dilation;
-          
+          S.blinkPhase = data.blink || 0;
+          S.targetDilation = data.dilation || 1.0;
+          S.sentinel = data.sentinel || false;
+          S.visible = data.visible || false;
+          S.emotion = data.emotion || 'neutral';
+          S.entityCount = data.entityCount || 0;
+          S.entities = data.entities || [];
+
+          updateEntityTags(S.entities);
+
+          // Navigate command (voice "close" / "go home")
+          if (data.navigate === 'hub') {
+            returnToHub();
+            return;
+          }
+
+          // Overlay text
           if (data.overlayText) {
-            hudVoice.innerText = data.overlayText;
-            if (data.overlayType === 'ambient') {
-                hudVoice.style.color = '#88f';
-            } else if (data.overlayType === 'oracle') {
-                hudVoice.style.color = '#0fc';
-            }
+            overlayEl.textContent = data.overlayText;
+            overlayEl.className = `visible ${data.overlayType || ''}`;
+            hudVoice.textContent = data.overlayText;
+            hudVoice.style.color = data.overlayType === 'oracle' ? '#0fc' : data.overlayType === 'ambient' ? '#88f' : '#fa0';
+          } else {
+            overlayEl.className = '';
           }
-
-        } catch(e) {}
+        } catch (e) {
+          console.error('Parse error:', e);
+        }
       };
 
       ws.onclose = () => {
-        hudStatus.innerText = 'Daemon Disconnected (Retrying...)';
+        S.connected = false;
+        connEl.style.color = 'rgba(255,100,100,0.8)';
+        connEl.textContent = '✕ DISCONNECTED — RECONNECTING...';
+        hudStatus.textContent = 'Disconnected';
         hudStatus.className = 'hud-line hud-warn';
-        setTimeout(connectOfflineDaemon, 3000);
+        scheduleReconnect();
       };
 
       ws.onerror = () => {
-        hudStatus.innerText = 'Daemon Error (Is offline_daemon.py running?)';
-        hudStatus.className = 'hud-line hud-warn';
+        S.connected = false;
+        scheduleReconnect();
       };
     }
 
-    // Main Loop
-    function loop(time) {
-      // FPS
-      state.frames++;
-      if (time - state.lastFpsTime >= 1000) {
-        state.fps = state.frames;
-        state.frames = 0;
-        state.lastFpsTime = time;
-        hudFps.innerText = `FPS: ${state.fps}`;
-      }
-
-      // Procedural Random Blinks
-      if (state.blinkTarget === 0 && Math.random() < 0.01 && time - state.lastBlinkTime > 3500) {
-        state.blinkTarget = 1;
-        state.lastBlinkTime = time;
-        setTimeout(() => { if (state.blinkTarget === 1) state.blinkTarget = 0; }, 150);
-      }
-      
-      state.blinkPhase = lerp(state.blinkPhase, state.blinkTarget, 0.3);
-
-      // Smooth tracking towards target
-      state.currentX = lerp(state.currentX, state.targetX, 0.15);
-      state.currentY = lerp(state.currentY, state.targetY, 0.15);
-      state.currentDilation = lerp(state.currentDilation, state.targetDilation, 0.05);
-
-      // Render
-      ctx.fillStyle = '#000';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-      renderEye(state.currentX, state.currentY, state.currentDilation, state.blinkPhase);
-
-      requestAnimationFrame(loop);
+    function scheduleReconnect() {
+      if (reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, 2000);
     }
 
-    // Init
-    hudStatus.innerText = 'Connecting to Edge Daemon...';
-    connectOfflineDaemon();
-    requestAnimationFrame(loop);
+    connect();
 
+    // ═══════════════════════════════════════
+    //  Render Loop
+    // ═══════════════════════════════════════
+    function frame() {
+      S.frames++;
+      const now = performance.now();
+      if (now - S.lastFpsTime >= 1000) {
+        S.fps = S.frames;
+        S.frames = 0;
+        S.lastFpsTime = now;
+        hudFps.textContent = `FPS: ${S.fps} | WS: ${S.connected ? 'OK' : 'OFF'}`;
+      }
+
+      // Connection health: dim canvas if stale
+      const staleSec = (now - S.lastMessage) / 1000;
+      if (staleSec > 5 && S.connected) {
+        canvas.style.opacity = '0.5';
+      } else if (!S.connected) {
+        canvas.style.opacity = '0.3';
+        // Slow blink effect when disconnected
+        S.blinkPhase = (Math.sin(now * 0.003) + 1) / 2;
+      } else {
+        canvas.style.opacity = '1.0';
+      }
+
+      renderEye();
+      requestAnimationFrame(frame);
+    }
+    requestAnimationFrame(frame);
+    // ═══════════════════════════════════════
+    //  Return to Hub
+    // ═══════════════════════════════════════
+    function returnToHub() {
+      // Tell backend to stop offline daemon
+      const backendUrl = window.location.origin.replace(':7777', ':8888');
+      fetch(`${backendUrl}/api/action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'stop_offline' }),
+      }).catch(() => {});
+
+      // Close WS connection
+      if (ws) { ws.close(); ws = null; }
+
+      // Navigate back to observer hub
+      setTimeout(() => {
+        window.location.href = '/observer';
+      }, 500);
+    }
   </script>
 </body>
 </html>

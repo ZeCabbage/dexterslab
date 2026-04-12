@@ -5,6 +5,7 @@ import { useCharacterStore } from '../lib/store';
 import styles from '../[id]/page.module.css';
 import { ITEM_DATABASE } from '../lib/data/items';
 import { InventoryItem, EquipSlot } from '../lib/types';
+import Tooltip from '../components/Tooltip';
 
 const SLOTS: { id: EquipSlot, label: string }[] = [
   { id: 'head', label: 'Head' },
@@ -25,7 +26,8 @@ export default function InventoryTab() {
   const [isAdding, setIsAdding] = useState(false);
   const [newItemMode, setNewItemMode] = useState<'srd' | 'custom'>('srd');
   const [srdSelection, setSrdSelection] = useState(Object.keys(ITEM_DATABASE)[0]);
-  const [customDraft, setCustomDraft] = useState({ name: '', type: 'gear', weight: 1 });
+  const [customDraft, setCustomDraft] = useState<Partial<InventoryItem>>({ name: '', type: 'gear', weight: 1 });
+  const [slotPickerDest, setSlotPickerDest] = useState<EquipSlot | null>(null);
 
   if (!char) return null;
 
@@ -40,6 +42,12 @@ export default function InventoryTab() {
          type: customDraft.type as any, 
          weight: customDraft.weight, 
          qty: 1, 
+         damage: customDraft.damage,
+         damageType: customDraft.damageType,
+         weaponCategory: customDraft.weaponCategory,
+         properties: customDraft.properties,
+         armorClass: customDraft.armorClass,
+         armorCategory: customDraft.armorCategory
       };
     }
     updateField('inventory', [...(char.inventory || []), itemToAdd]);
@@ -57,15 +65,15 @@ export default function InventoryTab() {
     return (
       <div 
         key={slotId}
-        onClick={() => item && unequipSlot(slotId)}
+        onClick={() => item ? unequipSlot(slotId) : setSlotPickerDest(slotId)}
         style={{
           width: '64px', height: '64px', 
           background: item ? 'rgba(50, 40, 30, 0.9)' : 'rgba(20,20,20,0.6)', 
-          border: `1px solid ${item ? '#cfaa5e' : '#444'}`,
+          border: `1px solid ${item ? '#cfaa5e' : (slotPickerDest === slotId ? '#55aacc' : '#444')}`,
           borderRadius: '4px',
           display: 'flex', flexDirection: 'column',
           alignItems: 'center', justifyContent: 'center',
-          cursor: item ? 'pointer' : 'default',
+          cursor: 'pointer',
           position: 'absolute',
           ...position,
           boxShadow: item ? '0 0 10px rgba(207, 170, 94, 0.2)' : 'none',
@@ -115,6 +123,41 @@ export default function InventoryTab() {
            {renderSlot('cloak', 'Cloak', { top: '190px', right: '16px' })}
            {renderSlot('ring2', 'Ring', { top: '280px', right: '16px' })}
            
+           {/* Slot Picker Overlay */}
+           {slotPickerDest && (
+             <div style={{ position: 'absolute', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.85)', zIndex: 20, padding: '16px', display: 'flex', flexDirection: 'column' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                  <h4 style={{ margin: 0, color: '#55aacc' }}>Equip {SLOTS.find(s => s.id === slotPickerDest)?.label}</h4>
+                  <button onClick={() => setSlotPickerDest(null)} style={{ background: 'none', border: 'none', color: '#888', cursor: 'pointer' }}>✕</button>
+                </div>
+                <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                  {char.inventory.filter(i => {
+                    // Filter logic: show items that make sense for the slot
+                    if (slotPickerDest === 'mainHand' || slotPickerDest === 'offHand') return i.type === 'weapon' || i.armorCategory === 'shield';
+                    if (slotPickerDest === 'chest') return i.type === 'armor' && i.armorCategory !== 'shield';
+                    return true; // We allow other gear to just be equipped for now if the user wants
+                  }).map(item => (
+                    <div 
+                      key={item.id} 
+                      onClick={() => {
+                        equipItem(item.id, slotPickerDest);
+                        setSlotPickerDest(null);
+                      }}
+                      style={{ padding: '8px', background: '#1a1a1a', border: '1px solid #444', borderRadius: '4px', cursor: 'pointer' }}
+                    >
+                      <div style={{ fontSize: '13px', color: '#cfaa5e' }}>{item.name}</div>
+                      {(item.damage || item.armorClass) && (
+                        <div style={{ fontSize: '10px', color: '#aaa', marginTop: '4px' }}>
+                          {item.damage && `DMG: ${item.damage} `}
+                          {item.armorClass && `AC: ${item.armorClass}`}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                  {char.inventory.length === 0 && <span style={{ color: '#666', fontSize: '12px' }}>Backpack empty.</span>}
+                </div>
+             </div>
+           )}
         </div>
 
         <p style={{ marginTop: '24px', fontSize: '12px', color: '#666', textAlign: 'center' }}>
@@ -163,7 +206,7 @@ export default function InventoryTab() {
               <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', marginBottom: '16px' }}>
                 <input placeholder="Item Name" value={customDraft.name} onChange={e => setCustomDraft({...customDraft, name: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff' }} />
                 <div style={{ display: 'flex', gap: '8px' }}>
-                  <select value={customDraft.type} onChange={e => setCustomDraft({...customDraft, type: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', flex: 1 }}>
+                  <select value={customDraft.type} onChange={e => setCustomDraft({...customDraft, type: e.target.value as any})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', flex: 1 }}>
                     <option value="gear">Standard Gear</option>
                     <option value="weapon">Weapon</option>
                     <option value="armor">Armor</option>
@@ -171,6 +214,30 @@ export default function InventoryTab() {
                   </select>
                   <input type="number" placeholder="Weight (lbs)" value={customDraft.weight} onChange={e => setCustomDraft({...customDraft, weight: parseFloat(e.target.value)||0})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', width: '100px' }} />
                 </div>
+                
+                {customDraft.type === 'weapon' && (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <input placeholder="Damage (e.g. 1d8)" value={(customDraft as any).damage || ''} onChange={e => setCustomDraft({...customDraft, damage: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', flex: 1, minWidth: '120px' }} />
+                    <input placeholder="Dmg Type (e.g. Slashing)" value={(customDraft as any).damageType || ''} onChange={e => setCustomDraft({...customDraft, damageType: e.target.value})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', flex: 1, minWidth: '120px' }} />
+                    <select value={(customDraft as any).weaponCategory || 'simple'} onChange={e => setCustomDraft({...customDraft, weaponCategory: e.target.value as any})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', flex: 1 }}>
+                      <option value="simple">Simple Weapon</option>
+                      <option value="martial">Martial Weapon</option>
+                    </select>
+                    <input placeholder="Properties (comma separated)" value={(customDraft as any).properties?.join(', ') || ''} onChange={e => setCustomDraft({...customDraft, properties: e.target.value.split(',').map(s=>s.trim())})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', flex: '1 0 100%' }} />
+                  </div>
+                )}
+
+                {customDraft.type === 'armor' && (
+                  <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                    <input type="number" placeholder="Armor Class" value={(customDraft as any).armorClass || ''} onChange={e => setCustomDraft({...customDraft, armorClass: parseInt(e.target.value)||0})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', flex: 1 }} />
+                    <select value={(customDraft as any).armorCategory || 'light'} onChange={e => setCustomDraft({...customDraft, armorCategory: e.target.value as any})} style={{ padding: '10px', background: '#111', border: '1px solid #444', color: '#fff', flex: 1 }}>
+                      <option value="light">Light Armor</option>
+                      <option value="medium">Medium Armor</option>
+                      <option value="heavy">Heavy Armor</option>
+                      <option value="shield">Shield</option>
+                    </select>
+                  </div>
+                )}
               </div>
             )}
 
@@ -184,10 +251,15 @@ export default function InventoryTab() {
         {selectedBackpackItem && (
           <div style={{ padding: '16px', background: '#1a1a1a', border: '1px solid #cfaa5e', borderRadius: '6px' }}>
             <h4 style={{ margin: '0 0 8px 0', color: '#cfaa5e' }}>{selectedBackpackItem.name}</h4>
-            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginBottom: '8px' }}>
               <span style={{ fontSize: '12px', color: '#aaa' }}>Type: {selectedBackpackItem.type}</span>
               <span style={{ fontSize: '12px', color: '#aaa' }}>Weight: {selectedBackpackItem.weight} lbs</span>
+              {selectedBackpackItem.damage && <span style={{ fontSize: '12px', color: '#ffaaaa' }}>DMG: {selectedBackpackItem.damage} {selectedBackpackItem.damageType}</span>}
+              {selectedBackpackItem.armorClass && <span style={{ fontSize: '12px', color: '#aaffaa' }}>AC: {selectedBackpackItem.armorClass}</span>}
             </div>
+            {selectedBackpackItem.description && (
+              <p style={{ fontSize: '12px', color: '#bbb', margin: '0 0 12px 0', fontStyle: 'italic', lineHeight: 1.4 }}>{selectedBackpackItem.description}</p>
+            )}
             
             <div style={{ marginTop: '16px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
               <span style={{ fontSize: '12px', color: '#aaa', alignSelf: 'center', marginRight: '8px' }}>Equip to:</span>
@@ -225,10 +297,27 @@ export default function InventoryTab() {
                 display: 'flex', justifyContent: 'space-between', alignItems: 'center', transition: 'all 0.1s'
               }}
             >
-              <span style={{ color: '#ccc', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
-                {item.qty > 1 ? `${item.qty}x ` : ''}{item.name}
-                <span style={{ flexShrink: 0, fontSize: '10px', color: '#cfaa5e', border: '1px solid #cfaa5e', borderRadius: '50%', width: '16px', height: '16px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center', paddingBottom: '1px' }}>i</span>
-              </span>
+              <div style={{ display: 'flex', flexDirection: 'column', flex: 1, paddingRight: '16px' }}>
+                <span style={{ color: '#ccc', fontSize: '14px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  {item.qty > 1 ? `${item.qty}x ` : ''}
+                  <Tooltip content={
+                    <div>
+                      <h4 style={{ margin: '0 0 4px', color: '#cfaa5e' }}>{item.name}</h4>
+                      <p style={{ margin: 0, fontStyle: 'italic', color: '#aaa', fontSize: '11px' }}>{item.description || "A standard piece of equipment."}</p>
+                    </div>
+                  }>
+                    {item.name}
+                  </Tooltip>
+                </span>
+                {/* Inline Stats */}
+                {(item.damage || item.armorClass || item.properties?.length) && (
+                  <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '6px' }}>
+                    {item.damage && <span style={{ background: '#442222', color: '#ffaaaa', fontSize: '10px', padding: '2px 4px', borderRadius: '2px' }}>{item.damage} {item.damageType}</span>}
+                    {item.armorClass && <span style={{ background: '#224422', color: '#aaffaa', fontSize: '10px', padding: '2px 4px', borderRadius: '2px' }}>AC {item.armorClass}</span>}
+                    {item.properties?.map(p => <span key={p} style={{ background: '#222', color: '#888', fontSize: '10px', padding: '2px 4px', borderRadius: '2px' }}>{p}</span>)}
+                  </div>
+                )}
+              </div>
               <span style={{ color: '#666', fontSize: '12px' }}>{item.weight} lb</span>
             </div>
           ))}
