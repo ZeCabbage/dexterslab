@@ -97,6 +97,12 @@ export default function ObserverEyeV2() {
             addObsEntry.current(`ORACLE_RX: "${truncResp}"`, 'oracle');
         };
 
+        ws.onUserQuestion = (data) => {
+            // Immediately log user's question in observation terminal
+            const truncQ = data.text.length > 45 ? data.text.slice(0, 42) + '...' : data.text;
+            addObsEntry.current(`QUERY_RX: "${truncQ}"`, 'speech');
+        };
+
         ws.connect();
 
         // ── Debug HUD Canvas overlay ──

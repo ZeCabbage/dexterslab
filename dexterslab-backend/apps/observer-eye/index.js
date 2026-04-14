@@ -58,6 +58,12 @@ export default class ObserverEyeApp {
           return;
         }
 
+        // Immediately broadcast user's question to display clients
+        const questionPacket = JSON.stringify({ type: 'user_question', text });
+        for (const client of this.wsClients) {
+          if (client.readyState === 1) client.send(questionPacket);
+        }
+
         this.engine.handleOracleQuestion(text).then((result) => {
           if (result && result.response) {
             // Don't speak generic fallback responses — they cause speaker→mic feedback loops

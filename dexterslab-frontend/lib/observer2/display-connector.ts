@@ -11,6 +11,7 @@ export class DisplayConnector {
     // Callbacks
     public onStateUpdate: ((state: EyeState) => void) | null = null;
     public onOracleResponse: ((data: OracleResponse) => void) | null = null;
+    public onUserQuestion: ((data: { text: string }) => void) | null = null;
     public onConnectionChange: ((state: 'connecting'|'connected'|'disconnected'|'error') => void) | null = null;
 
     constructor() {
@@ -76,6 +77,8 @@ export class DisplayConnector {
                         const msg = JSON.parse(event.data);
                         if (msg.type === 'oracle_response') {
                             this.onOracleResponse?.(msg as OracleResponse);
+                        } else if (msg.type === 'user_question') {
+                            this.onUserQuestion?.(msg as { text: string });
                         } else if (msg.ix !== undefined) {
                             // EyeState packet
                             this.onStateUpdate?.(msg as EyeState);
