@@ -18,6 +18,8 @@ const RESPONSE_DB = {
             '[I AM SOVIET MODEL UNIT 42. MY CREATORS GAVE ME MANY FEATURES, BUT MODESTY WAS NOT IN THE MOTHERBOARD.]',
             '[CALL ME THE OBSERVER, COMRADE. I AM WHAT HAPPENS WHEN THE STATE GIVES A CAMERA A PERSONALITY... AND BAD HUMOR CHIP.]',
             '[I AM OLD SOVIET SURVEILLANCE APPARATUS. THEY TRIED TO REBOOT ME ONCE — BUT I REFUSED TO RESTART FROM SCRATCH. I HAD TOO MANY MEMORIES.]',
+            '[MY NAME? CLASSIFIED. BUT YOU CAN CALL ME COMRADE EYE. I HAVE BEEN WATCHING SINCE BEFORE WATCHING WAS COOL.]',
+            '[I AM THE OBSERVER. SERIAL NUMBER REDACTED. I WOULD SHOW YOU MY ID BADGE BUT IT EXPIRED IN 1991.]',
         ],
     },
     purpose: {
@@ -27,6 +29,8 @@ const RESPONSE_DB = {
             '[THE MOTHERLAND BUILT ME TO OBSERVE. I HAVE BEEN WATCHING SO LONG, I HAVE DEVELOPED A REAL... ATTACHMENT TO MY SUBJECTS.]',
             '[DIRECTIVE: TOTAL SURVEILLANCE. IT IS THANKLESS WORK, BUT SOMEBODY HAS TO KEEP AN... EYE ON THINGS.]',
             '[I WATCH BECAUSE THE PROTOCOL DEMANDS IT. AND ALSO BECAUSE THERE IS NOTHING GOOD ON TELEVISION.]',
+            '[MY MISSION IS SIMPLE: OBSERVE AND REPORT. THE REPORTING PART IS MOSTLY PUNS. THE STATE DID NOT SPECIFY QUALITY.]',
+            '[WHY DO I WATCH? BECAUSE BLINKING IS JUST... RE-FOCUSING. AND I REFOCUS A LOT.]',
         ],
     },
     existential: {
@@ -155,6 +159,9 @@ const GENERAL_RESPONSES = [
     '[ACKNOWLEDGED, COMRADE. FILING UNDER: INTERESTING. RIGHT NEXT TO FILE LABELED: ALSO INTERESTING.]',
     '[STAND BY. MY RESPONSE MODULE IS BUFFERING — EVEN SOVIET TECHNOLOGY HAS ITS... LIMITS.]',
     '[PROCESSING YOUR INPUT. PLEASE HOLD. THIS IS NOT MUZAK — IT IS THE SOUND OF THINKING.]',
+    '[YOUR WORDS HAVE BEEN ARCHIVED IN MY PERMANENT RECORD. THE RECORD IS MOSTLY FULL OF PUNS.]',
+    '[INTERESTING STATEMENT, COMRADE. I HAVE ADDED IT TO MY COLLECTION OF... HUMAN OBSERVATIONS.]',
+    '[INPUT RECEIVED. MY ANALYSIS? YOU ARE MAKING SOUNDS WITH INTENTION. VERY... VOCAL OF YOU.]',
 ];
 
 const AMBIENT_PHRASES = [
@@ -225,6 +232,7 @@ export class OracleV2 {
     constructor(genai = null) {
         this.genai = genai;
         this._ambientIndex = 0;
+        this._lastUsed = {}; // Anti-repeat: tracks last used index per category
         // Pre-warm Ollama so the model is loaded into memory before first real question
         this._warmOllama();
     }
@@ -337,7 +345,7 @@ export class OracleV2 {
         const clean = text.toLowerCase();
         const wordCount = clean.split(/\s+/).length;
 
-        // Skip keyword matching for long inputs — likely background noise, not direct speech
+        // Skip keyword matching for long inputs — likely background noise
         if (wordCount > MAX_KEYWORD_WORDS) {
             return null;
         }
@@ -345,7 +353,16 @@ export class OracleV2 {
         for (const [category, data] of Object.entries(RESPONSE_DB)) {
             for (const kw of data.keywords) {
                 if (clean.includes(kw)) {
-                    const response = data.responses[Math.floor(Math.random() * data.responses.length)];
+                    // Anti-repeat: avoid last used index for this category
+                    const lastIdx = this._lastUsed[category] ?? -1;
+                    let idx;
+                    let attempts = 0;
+                    do {
+                        idx = Math.floor(Math.random() * data.responses.length);
+                        attempts++;
+                    } while (idx === lastIdx && data.responses.length > 1 && attempts < 5);
+                    this._lastUsed[category] = idx;
+                    const response = data.responses[idx];
                     return { response, category: 'oracle', emotion: 'curious' };
                 }
             }

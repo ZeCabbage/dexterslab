@@ -354,12 +354,15 @@ export default function ObserverEyeV2() {
             // Speech / overlay text — distinguish user questions vs oracle
             if (s.overlayText && s.overlayText !== obs.speech && s.overlayType !== 'ambient') {
                 const truncated = s.overlayText.length > 50 ? s.overlayText.slice(0, 47) + '...' : s.overlayText;
-                if (s.overlayType === 'oracle') {
+                if (s.overlayType === 'question') {
+                    // User's question — show immediately before Oracle responds
+                    addEntry(`QUERY_RX: ${truncated}`, 'speech');
+                } else if (s.overlayType === 'oracle') {
                     // Oracle response already logged via onOracleResponse callback
                 } else if (s.overlayType === 'goodboy' || s.overlayType === 'thankyou') {
                     addEntry(`REACT: ${s.overlayType.toUpperCase()} trigger acknowledged`, 'emote');
                 } else {
-                    // User speech / question captured by STT
+                    // General speech captured by STT
                     addEntry(`VOICE_IN: "${truncated}"`, 'speech');
                 }
                 obs.speech = s.overlayText;

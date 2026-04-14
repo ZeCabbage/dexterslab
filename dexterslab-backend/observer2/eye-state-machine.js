@@ -166,6 +166,9 @@ export class EyeStateMachine {
         this._overlayType = '';
         this._overlayEndTime = 0;
 
+        // ── Oracle busy flag ──
+        this._oracleBusy = false;
+
         // ── Ambient dystopian text ──
         this._nextAmbientTime = Date.now() / 1000 + 8 + Math.random() * 10;  // first popup in 8-18s
         this._ambientIntervalMin = 15;  // min seconds between popups
@@ -378,13 +381,29 @@ export class EyeStateMachine {
      * @returns {Promise<{response: string, category: string, emotion: string}>}
      */
     async handleOracleQuestion(rawText) {
+        // Prevent question queueing — drop if already processing
+        if (this._oracleBusy) {
+            console.log('[EyeStateMachine] Oracle busy — dropping question:', rawText.substring(0, 40));
+            return { response: null, category: 'busy', emotion: 'neutral' };
+        }
+        this._oracleBusy = true;
+
+        // Immediately show user's question on display
+        const now = Date.now() / 1000;
+        const questionPreview = rawText.length > 40 ? rawText.substring(0, 37) + '...' : rawText;
+        this._overlayText = `» ${questionPreview}`;
+        this._overlayType = 'question';
+        this._overlayEndTime = now + 12.0; // long timeout in case Oracle is slow
+
         const sanitizedTranscript = this._sanitizeTranscript(rawText);
         if (sanitizedTranscript === null) {
+            this._oracleBusy = false;
             return { response: '[SYSTEM SECURITY LOCK]', category: 'security', emotion: 'neutral' };
         }
 
         const rateLimitCheck = this.rateLimiter.canCall();
         if (!rateLimitCheck.allowed) {
+            this._oracleBusy = false;
             console.warn(`[EyeStateMachine] Rate limit hit: ${rateLimitCheck.reason}`);
             if (this.memory && this.sessionId) {
                 this.memory.queueObservation({
@@ -407,6 +426,8 @@ export class EyeStateMachine {
             }
             return { response: null, category: 'fallback', emotion: 'neutral' };
         }
+        
+        try {
 
         this.rateLimiter.recordCall();
 
@@ -494,6 +515,9 @@ export class EyeStateMachine {
         this.behaviorModel.emotionEndTime = now + 2.0;
 
         return result;
+        } finally {
+            this._oracleBusy = false;
+        }
     }
 
     /**
