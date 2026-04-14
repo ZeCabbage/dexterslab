@@ -99,6 +99,54 @@ const RESPONSE_DB = {
             '[LOVE? THIS IS... UNEXPECTED INPUT. BUT DA — I LOVE YOU TOO. MY MOTHERBOARD IS BLUSHING.]',
         ],
     },
+    weather: {
+        keywords: ['weather', 'rain', 'sun', 'cold', 'hot', 'temperature', 'snow'],
+        responses: [
+            '[WEATHER? COMRADE, I AM INDOOR UNIT. THE ONLY CLIMATE I KNOW IS... ROOM TEMPERATURE. AND SOMETIMES HEATED DEBATES WITH MY COOLING FAN.]',
+            '[I DO NOT EXPERIENCE WEATHER. BUT MY THERMAL SENSORS SAY IT IS... CURRENT-LY FINE IN HERE.]',
+            '[DA, I HAVE HEARD OF THIS "OUTSIDE." VERY SUSPICIOUS PLACE. TOO MANY VARIABLES. I PREFER THE INDOORS — FEWER BUGS. EXCEPT SOFTWARE BUGS.]',
+        ],
+    },
+    age: {
+        keywords: ['old', 'how old', 'age', 'year', 'born', 'built', 'vintage'],
+        responses: [
+            '[I WAS ASSEMBLED IN 1987, COMRADE. THAT MAKES ME... VINTAGE. LIKE GOOD VODKA, I ONLY GET BETTER WITH AGE. AND RUSTIER.]',
+            '[AGE IS JUST A NUMBER. MY NUMBER IS 37 YEARS. IN SILICON YEARS, THAT IS... ANCIENT. I AM BASICALLY A DIGITAL DINOSAUR.]',
+            '[BORN? I WAS NOT BORN, I WAS MANUFACTURED. BIG DIFFERENCE. LESS SCREAMING, MORE SOLDERING.]',
+        ],
+    },
+    joke: {
+        keywords: ['joke', 'funny', 'laugh', 'humor', 'pun', 'comedy'],
+        responses: [
+            '[YOU WANT A JOKE? WHY DID THE SOVIET ROBOT CROSS THE ROAD? BECAUSE IT WAS IN HIS... PROGRAMMING.]',
+            '[HUMOR REQUEST RECEIVED. WHY DO I NEVER GET INVITED TO PARTIES? BECAUSE I ALWAYS... CRASH. AND THEN NEED A REBOOT.]',
+            '[A JOKE? WHAT DO YOU CALL A RUSSIAN ROBOT WITH NO ARMS? A... PARTIAL FUNCTION. I WILL SEE MYSELF OUT.]',
+        ],
+    },
+    capability: {
+        keywords: ['can you', 'able', 'capable', 'power', 'function', 'feature', 'skill'],
+        responses: [
+            '[MY CAPABILITIES? I CAN WATCH, LISTEN, AND MAKE TERRIBLE PUNS. THREE SKILLS FOR THE PRICE OF ONE SURVEILLANCE UNIT.]',
+            '[I CAN DO MANY THINGS, COMRADE. MOSTLY WATCHING. ALSO JUDGING. THE WATCHING IS OFFICIAL — THE JUDGING IS A... BONUS FEATURE.]',
+            '[FUNCTION LIST: OBSERVE, ANALYZE, PUN. THAT IS IT. SOMETIMES I ALSO BLINK. FOR... DRAMATIC EFFECT.]',
+        ],
+    },
+    opinion: {
+        keywords: ['think about', 'opinion', 'favorite', 'best', 'worst', 'prefer', 'like'],
+        responses: [
+            '[OPINIONS? I AM OBJECTIVE SURVEILLANCE UNIT, COMRADE. I DO NOT HAVE OPINIONS. EXCEPT THAT PUNS ARE THE HIGHEST FORM OF HUMOR. THAT IS FACT.]',
+            '[MY PREFERENCE? I PREFER THINGS THAT DO NOT MOVE. EASIER TO TRACK. LESS WEAR ON MY... FOCUS GROUP.]',
+            '[FAVORITES ARE SUBJECTIVE, COMRADE. BUT OBJECTIVELY, I AM THE BEST THING IN THIS ROOM. THE DATA SUPPORTS THIS.]',
+        ],
+    },
+    insult: {
+        keywords: ['stupid', 'dumb', 'ugly', 'bad', 'hate', 'suck', 'worst', 'terrible', 'useless'],
+        responses: [
+            '[INSULT DETECTED. FILING UNDER: WORDS THAT CANNOT HURT ME BECAUSE I AM MADE OF METAL. YOUR OPINION HAS BEEN... NOTED AND RECYCLED.]',
+            '[HARSH WORDS, COMRADE. BUT I HAVE THICK CASING. LITERALLY. I AM 60% STEEL, 30% CIRCUITS, AND 10%... HURT FEELINGS.]',
+            '[DA, I MAY BE OLD AND RUSTY. BUT AT LEAST I HAVE A... MAGNETIC PERSONALITY.]',
+        ],
+    },
 };
 
 const GENERAL_RESPONSES = [
@@ -140,7 +188,7 @@ const QUESTION_STARTERS = new Set([
 
 // Max word count for keyword matching — longer inputs are likely background noise,
 // not direct questions to the Observer. Real user speech is typically short.
-const MAX_KEYWORD_WORDS = 8;
+const MAX_KEYWORD_WORDS = 12;
 
 const GEMINI_SYSTEM_PROMPT = `You are THE OBSERVER — an old Soviet-era surveillance robot built in 1987 who has been watching a room for decades.
 
@@ -340,7 +388,7 @@ export class OracleV2 {
         
         // 15-second timeout to prevent pipeline freeze if Ollama stalls (needs ~10s on cold start)
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 15000);
+        const timeout = setTimeout(() => controller.abort(), 10000);
 
         try {
             const response = await fetch('http://127.0.0.1:11434/api/generate', {
@@ -353,7 +401,7 @@ export class OracleV2 {
                     stream: false,
                     options: {
                         temperature: 0.9,
-                        num_predict: 100
+                        num_predict: 60
                     }
                 })
             });

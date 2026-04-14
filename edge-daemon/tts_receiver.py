@@ -139,7 +139,7 @@ class TTSReceiver:
 
                 # Pipe: espeak-ng --stdout "text" | aplay -D hw:N,0
                 espeak_proc = subprocess.Popen(
-                    [self.config.tts_engine, '--stdout', text],
+                    [self.config.tts_engine, '-v', 'en+klatt3', '-s', '160', '-p', '20', '-g', '5', '--stdout', text],
                     stdout=subprocess.PIPE,
                     stderr=subprocess.DEVNULL,
                 )
@@ -158,7 +158,7 @@ class TTSReceiver:
                     # Fallback: try raw hw (in case plughw fails for some reason)
                     alsa_device = f"hw:{card},0"
                     espeak_proc = subprocess.Popen(
-                        [self.config.tts_engine, '--stdout', text],
+                        [self.config.tts_engine, '-v', 'en+klatt3', '-s', '160', '-p', '20', '-g', '5', '--stdout', text],
                         stdout=subprocess.PIPE,
                         stderr=subprocess.DEVNULL,
                     )
@@ -174,7 +174,7 @@ class TTSReceiver:
             else:
                 # No specific card — let espeak-ng use system default
                 subprocess.run(
-                    [self.config.tts_engine, text],
+                    [self.config.tts_engine, '-v', 'en+klatt3', '-s', '160', '-p', '20', '-g', '5', text],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     timeout=10
