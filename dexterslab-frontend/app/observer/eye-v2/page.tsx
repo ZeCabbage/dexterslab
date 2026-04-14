@@ -49,6 +49,9 @@ export default function ObserverEyeV2() {
     const lastObsRef = useRef<{entities: number, mode: string, emotion: string, speech: string, analysisIdx: number, lastAnalysis: number}>({
         entities: -1, mode: '', emotion: '', speech: '', analysisIdx: 0, lastAnalysis: 0
     });
+    const addObsEntry = useRef((text: string, type: string) => {
+        setObsLog(prev => [...prev, { text, type, ts: Date.now() }].slice(-6));
+    });
 
     const startApp = useCallback(() => {
         const canvas = canvasRef.current;
@@ -89,7 +92,9 @@ export default function ObserverEyeV2() {
         ws.onOracleResponse = (data) => {
             setOverlayText(data.response);
             setOverlayType('oracle');
-            // TTS removed: handled by Pi daemon natively
+            // Log oracle response to observation terminal
+            const truncResp = data.response.length > 55 ? data.response.slice(0, 52) + '...' : data.response;
+            addObsEntry.current(`ORACLE_RX: "${truncResp}"`, 'oracle');
         };
 
         ws.connect();
@@ -346,11 +351,17 @@ export default function ObserverEyeV2() {
                 obs.emotion = 'neutral';
             }
 
-            // Speech / overlay text
+            // Speech / overlay text — distinguish user questions vs oracle
             if (s.overlayText && s.overlayText !== obs.speech && s.overlayType !== 'ambient') {
-                const label = s.overlayType === 'oracle' ? 'ORACLE_TX' : 'AUDIO_CAP';
-                const truncated = s.overlayText.length > 60 ? s.overlayText.slice(0, 57) + '...' : s.overlayText;
-                addEntry(`${label}: "${truncated}"`, s.overlayType === 'oracle' ? 'oracle' : 'speech');
+                const truncated = s.overlayText.length > 50 ? s.overlayText.slice(0, 47) + '...' : s.overlayText;
+                if (s.overlayType === 'oracle') {
+                    // Oracle response already logged via onOracleResponse callback
+                } else if (s.overlayType === 'goodboy' || s.overlayType === 'thankyou') {
+                    addEntry(`REACT: ${s.overlayType.toUpperCase()} trigger acknowledged`, 'emote');
+                } else {
+                    // User speech / question captured by STT
+                    addEntry(`VOICE_IN: "${truncated}"`, 'speech');
+                }
                 obs.speech = s.overlayText;
             }
 
@@ -457,7 +468,7 @@ export default function ObserverEyeV2() {
             {/* ── OBSERVATION TERMINAL ── */}
             <div id="obs-terminal" style={{
                 position: 'fixed',
-                bottom: 0,
+                bottom: 20,
                 left: '50%',
                 transform: 'translateX(-50%)',
                 width: '68%',
