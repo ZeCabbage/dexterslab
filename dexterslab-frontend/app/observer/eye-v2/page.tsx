@@ -447,16 +447,19 @@ export default function ObserverEyeV2() {
             <div id="obs-terminal" style={{
                 position: 'fixed',
                 bottom: 0,
-                left: 0,
-                right: 0,
+                left: '50%',
+                transform: 'translateX(-50%)',
+                width: '70%',
+                maxWidth: '340px',
                 zIndex: 35,
                 pointerEvents: 'none',
-                padding: '0 12px 28px 12px',
-                background: 'linear-gradient(transparent 0%, rgba(0,0,0,0.7) 40%, rgba(0,0,0,0.85) 100%)',
+                padding: '8px 0 6px 0',
+                background: 'linear-gradient(transparent 0%, rgba(0,0,0,0.75) 30%, rgba(0,0,0,0.9) 100%)',
                 fontFamily: "'VT323', 'Courier New', monospace",
-                fontSize: '14px',
-                lineHeight: '1.5',
-                letterSpacing: '0.5px',
+                fontSize: '11px',
+                lineHeight: '1.4',
+                letterSpacing: '0.3px',
+                textAlign: 'center',
             }}>
                 {obsLog.map((entry, i) => {
                     const isLatest = i === obsLog.length - 1;
@@ -478,13 +481,11 @@ export default function ObserverEyeV2() {
                             opacity,
                             animation: isLatest ? 'terminalGlitchIn 0.3s ease-out' : undefined,
                             textShadow: `0 0 6px ${typeColor}40`,
-                            whiteSpace: 'nowrap',
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
+                            whiteSpace: 'nowrap',
+                            padding: '0 4px',
                         }}>
-                            <span style={{ color: '#334444', marginRight: 6 }}>
-                                {new Date(entry.ts).toLocaleTimeString('en-US', { hour12: false })}
-                            </span>
                             {'>'} {entry.text}
                             {isLatest && <span className="terminal-cursor">█</span>}
                         </div>
