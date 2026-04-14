@@ -41,9 +41,9 @@ uniform sampler2D uMatCapIris;
 uniform sampler2D uMatCapMetal;
 uniform sampler2D uMatCapCrimson;
 
-const float EYE_RADIUS = 0.42;
-const float IRIS_RADIUS = 0.155;
-const float PUPIL_BASE = 0.055;
+const float EYE_RADIUS = 0.48;
+const float IRIS_RADIUS = 0.175;
+const float PUPIL_BASE = 0.062;
 const float PI = 3.14159265;
 
 float hash(vec2 p) {
@@ -82,261 +82,148 @@ vec3 getMatcap(sampler2D tex, vec3 normal) {
 }
 
 // ════════════════════════════════════
-//  THEME 0: CLASSIC (Stylized Realism)
+//  THEME 0: CRYSTAL GLASS EYE
 // ════════════════════════════════════
 vec3 themeClassic(vec2 uv, vec2 ic, float pupilR, float sd) {
-    // 1. Sclera (Bulging out)
+    // ── 1. SCLERA ──
     vec3 nSclera = calculateSphereNormal(uv, vec2(0.0), EYE_RADIUS);
     vec3 col = getMatcap(uMatCapSclera, nSclera);
 
-    // Subsurface scattering — warm pinkish glow near iris border
-    float scleraEdge = smoothstep(IRIS_RADIUS * 1.6, IRIS_RADIUS * 1.05, length(uv - ic));
-    col += vec3(0.08, 0.02, 0.02) * scleraEdge;
+    // Healthy vein pattern — subtle branching from periphery
+    float vDist = length(uv);
+    float vAng = atan(uv.y, uv.x);
+    float veinZone = smoothstep(IRIS_RADIUS * 1.15, IRIS_RADIUS * 2.2, vDist)
+                   * smoothstep(EYE_RADIUS, EYE_RADIUS * 0.55, vDist);
+    float v1 = smoothstep(0.007, 0.0, abs(sin(vAng * 4.0 + cos(vAng * 9.0) * 0.8) * 0.03
+               + vDist - EYE_RADIUS * 0.72));
+    float v2 = smoothstep(0.005, 0.0, abs(sin(vAng * 7.0 + 1.5 + sin(vAng * 13.0) * 0.4) * 0.02
+               + vDist - EYE_RADIUS * 0.65));
+    float v3 = smoothstep(0.003, 0.0, abs(sin(vAng * 11.0 - 0.8 + cos(vAng * 5.0) * 0.6) * 0.015
+               + vDist - EYE_RADIUS * 0.78));
+    col += vec3(0.2, 0.03, 0.01) * (v1 * 0.6 + v2 * 0.4 + v3 * 0.25) * veinZone * 0.08;
 
-    // 2. Parallax Iris (Sinking inward) — reduced depth for concentricity
-    vec2 irisUV = calculateParallax(uv, ic, 0.06);
+    // Subsurface warmth near iris border
+    float scleraEdge = smoothstep(IRIS_RADIUS * 1.8, IRIS_RADIUS * 1.05, length(uv - ic));
+    col += vec3(0.06, 0.015, 0.015) * scleraEdge;
+
+    // ── 2. CRYSTAL GLASS IRIS ──
+    vec2 irisUV = calculateParallax(uv, ic, 0.08);
     float irisDist = circleSDF(irisUV, ic, IRIS_RADIUS);
+    float irisBlend = smoothstep(0.005, -0.005, irisDist);
 
-    // Smooth feathered blend instead of hard cutoff — eliminates blue bleed ring
-    float irisBlend = smoothstep(0.004, -0.004, irisDist);
     if (irisBlend > 0.001) {
         vec3 nIris = calculateBowlNormal(irisUV, ic, IRIS_RADIUS);
         vec3 irisCol = getMatcap(uMatCapIris, nIris);
 
-        // Radial fiber texture — organic iris detail
         float theta = atan(irisUV.y - ic.y, irisUV.x - ic.x);
         float irisR = length(irisUV - ic);
-        float fiber = sin(theta * 60.0) * 0.5 + 0.5;
-        float finerFiber = sin(theta * 120.0 + 3.0) * 0.5 + 0.5;
-        float fiberMask = smoothstep(IRIS_RADIUS * 0.3, IRIS_RADIUS * 0.9, irisR);
-        irisCol = mix(irisCol, irisCol * 0.7, fiber * 0.15 * fiberMask);
-        irisCol = mix(irisCol, irisCol * 1.2, finerFiber * 0.08 * fiberMask);
+        float normR = irisR / IRIS_RADIUS;
 
-        // Limbal ring — dark border at outer iris edge
-        float limbalDist = irisR / IRIS_RADIUS;
-        float limbalRing = smoothstep(0.82, 1.0, limbalDist);
-        irisCol *= mix(1.0, 0.3, limbalRing);
+        // ── Color bands (gold inner → base → dark outer) ──
+        float innerRing = smoothstep(0.45, 0.12, normR);
+        float outerRing = smoothstep(0.55, 0.92, normR);
+        irisCol = mix(irisCol, irisCol * vec3(1.8, 1.4, 0.5), innerRing * 0.45);
+        irisCol = mix(irisCol, irisCol * vec3(0.3, 0.35, 0.5), outerRing * 0.5);
+
+        // ── Prismatic iridescence (crystal refraction) ──
+        float prismPhase = theta * 2.0 + normR * 6.0 + uTime * 0.08;
+        vec3 prism = vec3(
+            sin(prismPhase) * 0.5 + 0.5,
+            sin(prismPhase + 2.094) * 0.5 + 0.5,
+            sin(prismPhase + 4.189) * 0.5 + 0.5
+        );
+        irisCol = mix(irisCol, irisCol * (prism * 0.6 + 0.7), 0.18);
+
+        // ── Clear radial fibers (35% intensity — visible) ──
+        float fiber = sin(theta * 80.0) * 0.5 + 0.5;
+        float finerFiber = sin(theta * 160.0 + 5.0) * 0.5 + 0.5;
+        float fiberMask = smoothstep(0.12, 0.82, normR);
+        irisCol = mix(irisCol, irisCol * 0.5, fiber * 0.35 * fiberMask);
+        irisCol = mix(irisCol, irisCol * 1.35, finerFiber * 0.12 * fiberMask);
+
+        // ── Tech: iris color pulse (warm↔cool ~12s cycle) ──
+        float techPulse = sin(uTime * 0.52) * 0.5 + 0.5;
+        irisCol *= mix(vec3(1.06, 0.98, 0.92), vec3(0.92, 0.98, 1.06), techPulse);
+
+        // ── Tech: digital micro-flicker ──
+        float flickerSeed = fract(uTime * 0.33);
+        float flicker = step(0.96, flickerSeed) * (sin(uTime * 180.0) * 0.5 + 0.5);
+        irisCol *= 1.0 + flicker * 0.5;
+
+        // ── Limbal ring (realistic gradual darkening) ──
+        float limbalRing = smoothstep(0.72, 1.0, normR);
+        irisCol *= mix(1.0, 0.12, limbalRing);
+
+        // ── PUPIL (rendered in iris UV space — fixes blue circle bug) ──
+        float sPulse = sin(uTime * 2.5) * 0.15 + 1.0;
+        float effPupilR = mix(pupilR, pupilR * sPulse, uSentinel);
+        float pupilSDF = length(irisUV - ic) - effPupilR;
+        float pupilMask = smoothstep(0.005, -0.005, pupilSDF);
+
+        // Faint pupil glow — cool inner light
+        float glowFalloff = exp(-irisR * irisR * 600.0);
+        vec3 pupilCore = vec3(0.008, 0.012, 0.02) + vec3(0.015, 0.02, 0.035) * glowFalloff;
+
+        // Tech: pupil scan line
+        float scanY = sin(uTime * PI * 0.5) * effPupilR * 0.7;
+        float scanLine = smoothstep(0.002, 0.0, abs(irisUV.y - ic.y - scanY)) * pupilMask;
+        pupilCore += vec3(0.02, 0.03, 0.05) * scanLine;
+
+        irisCol = mix(irisCol, pupilCore, pupilMask);
 
         col = mix(col, irisCol, irisBlend);
     }
 
-    // 3. Parallax Pupil (Deepest drop) — tighter depth to stay concentric
-    vec2 pupilUV = calculateParallax(uv, ic, 0.10);
-    float sPulse = sin(uTime * 2.5) * 0.15 + 1.0; 
-    float effPupilR = mix(pupilR, pupilR * sPulse, uSentinel);
-    float pupilDist = circleSDF(pupilUV, ic, effPupilR);
-
-    if (pupilDist < 0.0) {
-        col = mix(col, vec3(0.01), smoothstep(0.002, -0.002, pupilDist));
-    }
-
-    // 4. Cornea (Glass dome pop-out)
+    // ── 3. CORNEA SPECULAR (glass dome) ──
     vec2 corneaUV = calculateParallax(uv, -ic, 0.04);
-    vec3 nCornea = calculateSphereNormal(corneaUV, ic, IRIS_RADIUS);
-    
-    vec3 lightDir = normalize(vec3(0.5, 0.6, 0.9));
-    float spec = pow(max(0.0, dot(nCornea, lightDir)), 80.0);
-    vec3 lightDir2 = normalize(vec3(-0.4, 0.3, 0.6));
-    float spec2 = pow(max(0.0, dot(nCornea, lightDir2)), 40.0);
-    
-    float cMask = smoothstep(0.02, 0.0, circleSDF(uv, ic, IRIS_RADIUS * 1.05));
-    col += vec3(1.0, 0.95, 0.9) * spec * 1.5 * cMask;
-    col += vec3(0.8, 0.85, 1.0) * spec2 * 0.7 * cMask;
+    vec3 nCornea = calculateSphereNormal(corneaUV, ic, IRIS_RADIUS * 1.1);
+    vec3 ld1 = normalize(vec3(0.5, 0.6, 0.9));
+    float spec1 = pow(max(0.0, dot(nCornea, ld1)), 80.0);
+    vec3 ld2 = normalize(vec3(-0.4, 0.3, 0.6));
+    float spec2 = pow(max(0.0, dot(nCornea, ld2)), 40.0);
+    float cMask = smoothstep(0.02, 0.0, circleSDF(uv, ic, IRIS_RADIUS * 1.08));
+    col += vec3(1.0, 0.97, 0.93) * spec1 * 1.6 * cMask;
+    col += vec3(0.85, 0.88, 1.0) * spec2 * 0.8 * cMask;
 
-    // 5. Wet specular — tear film (reuse sclera normal for perf)
-    vec3 wetLight = normalize(vec3(0.3, 0.7, 0.8));
-    float wetSpec = pow(max(0.0, dot(nSclera, wetLight)), 64.0);
-    col += vec3(1.0) * wetSpec * 0.5;
+    // ── 4. TEAR FILM ──
+    vec3 wetDir = normalize(vec3(0.25, 0.65, 0.75));
+    float wetSpec = pow(max(0.0, dot(nSclera, wetDir)), 50.0);
+    col += vec3(1.0, 0.99, 0.97) * wetSpec * 0.6;
+
+    // ── 5. PRISMATIC FLASH on focus change ──
+    float focusMag = length(ic);
+    float flashZone = smoothstep(0.005, -0.005, irisDist);
+    float flashIntensity = smoothstep(0.08, 0.2, focusMag) * flashZone;
+    float flashTheta = atan(uv.y - ic.y, uv.x - ic.x);
+    vec3 flashRainbow = vec3(
+        sin(flashTheta * 3.0) * 0.5 + 0.5,
+        sin(flashTheta * 3.0 + 2.094) * 0.5 + 0.5,
+        sin(flashTheta * 3.0 + 4.189) * 0.5 + 0.5
+    );
+    col += flashRainbow * flashIntensity * 0.12;
 
     return col;
 }
 
 // ════════════════════════════════════
-//  THEME 1: HAL-9000
+//  THEME 1: HAL-9000 (Reserved — redirects to Crystal)
 // ════════════════════════════════════
 vec3 themeHAL(vec2 uv, vec2 ic, float pupilR, float sd) {
-    // 1. Metal Housing (Static background)
-    vec3 nMetal = calculateBowlNormal(uv, vec2(0.0), EYE_RADIUS);
-    vec3 col = getMatcap(uMatCapMetal, nMetal);
-
-    // 2. Heavy Beveled Ridge around Lens
-    float lensR = 0.21;
-    float distToLens = length(uv) - lensR;
-    if (distToLens > 0.0 && distToLens < 0.02) {
-        // Create an inward bevel using normal offset
-        vec3 bevelN = calculateSphereNormal(uv, vec2(0.0), lensR + 0.02);
-        col = getMatcap(uMatCapMetal, bevelN) * 0.6; // Darker bevel
-    }
-
-    // 3. The Crimson Lens (Sunk inward)
-    vec2 lensUV = calculateParallax(uv, ic, 0.06);
-    float lensDist = circleSDF(lensUV, vec2(0.0), lensR);
-
-    if (lensDist < 0.0) {
-        // Base crimson bowl
-        vec3 nCrimson = calculateBowlNormal(lensUV, vec2(0.0), lensR);
-        vec3 lCol = getMatcap(uMatCapCrimson, nCrimson);
-        
-        // 4. Inner Golden Ring (Mid depth)
-        vec2 ringUV = calculateParallax(uv, ic, 0.11);
-        float rDist = length(ringUV - ic);
-        float ringThick = smoothstep(0.002, 0.0, abs(rDist - 0.12));
-        lCol += vec3(1.0, 0.7, 0.1) * ringThick * 0.4;
-        
-        // 5. Deep Tracking Core (Deepest depth, actively pulsing)
-        vec2 coreUV = calculateParallax(uv, ic, 0.18);
-        float coreDist = length(coreUV - ic);
-        float coreK = 90.0 / max(0.5, uDilation * 1.2);
-        float pInt = mix(1.0, sin(uTime * 4.0) * 0.3 + 0.7, uSentinel); // Sentinel breathing
-        
-        // Primary core laser
-        lCol += vec3(1.0, 0.8, 0.4) * exp(-coreDist * coreDist * coreK * 1.5) * 1.2 * pInt;
-        // Bleed glow
-        lCol += vec3(0.8, 0.15, 0.02) * exp(-coreDist * coreDist * coreK * 0.2) * 0.5 * pInt;
-        // Central sharp pinpoint
-        lCol += vec3(1.0, 1.0, 1.0) * smoothstep(0.005, 0.0, coreDist) * 0.8 * pInt;
-
-        // 6. Surface Glass Dome (Popped outward)
-        vec2 glassUV = calculateParallax(uv, -ic, 0.04);
-        vec3 nGlass = calculateSphereNormal(glassUV, vec2(0.0), lensR);
-        
-        // Soft room reflection
-        vec3 lightTop = normalize(vec3(0.0, 0.8, 0.6));
-        float spec1 = pow(max(0.0, dot(nGlass, lightTop)), 40.0);
-        lCol += vec3(1.0, 0.9, 0.8) * spec1 * 0.6;
-        
-        vec3 lightSide = normalize(vec3(-0.7, 0.2, 0.5));
-        float spec2 = pow(max(0.0, dot(nGlass, lightSide)), 12.0);
-        lCol += vec3(1.0, 0.95, 1.0) * spec2 * 0.15;
-
-        col = lCol;
-    }
-    
-    // Vignette shadow inside the housing ring
-    col *= smoothstep(0.0, 0.012, -circleSDF(uv, vec2(0.0), lensR));
-
-    // Outer Sentinel Sweep on Metal
-    float ang = atan(uv.y, uv.x);
-    float radarWarp = fract((ang / (2.0 * PI)) - uTime * 0.4);
-    float radarSweep = smoothstep(1.0, 0.8, radarWarp) * smoothstep(0.0, 0.05, radarWarp);
-    col += vec3(0.8, 0.1, 0.1) * radarSweep * uSentinel * smoothstep(-0.02, -EYE_RADIUS*0.8, sd) * 0.6;
-
-    return col;
+    return themeClassic(uv, ic, pupilR, sd);
 }
 
 // ════════════════════════════════════
-//  THEME 2: OBSIDIAN VOID (Cosmic)
+//  THEME 2: OBSIDIAN VOID (Reserved — redirects to Crystal)
 // ════════════════════════════════════
 vec3 themeVoid(vec2 uv, vec2 ic, float pupilR, float sd) {
-    vec3 col = vec3(0.012, 0.006, 0.028);
-    col += vec3(0.035, 0.012, 0.055) * smoothstep(-EYE_RADIUS, -EYE_RADIUS * 0.3, sd) * 0.5;
-
-    float dist = length(uv - ic);
-    float hR = pupilR * 1.8 + 0.035;
-    hR = mix(hR, hR * (sin(uTime * 4.0) * 0.15 + 1.0), uSentinel); 
-    float rDist = abs(dist - hR);
-    vec3 gold = vec3(1.0, 0.72, 0.22);
-
-    col += gold * 0.85 * exp(-rDist * rDist * 6000.0);
-    col += gold * 0.22 * exp(-rDist * rDist * 300.0);
-    float r2 = abs(dist - hR * 1.7);
-    col += gold * 0.18 * exp(-r2 * r2 * 10000.0);
-    float r3 = abs(dist - hR * 2.4);
-    col += gold * 0.08 * exp(-r3 * r3 * 15000.0);
-
-    float theta = atan(uv.y - ic.y, uv.x - ic.x);
-    float fZone = smoothstep(hR * 0.9, hR * 1.5, dist) * smoothstep(EYE_RADIUS * 0.95, EYE_RADIUS * 0.45, dist);
-    float tS1 = uTime * mix(0.4, 1.5, uSentinel);
-    float tS2 = uTime * mix(0.3, 1.2, uSentinel);
-    float s1 = smoothstep(0.6, 1.0, sin(theta * 3.0 + dist * 35.0 - tS1));
-    float s2 = smoothstep(0.72, 1.0, sin(theta * 5.0 - dist * 25.0 + tS2));
-    col += gold * 0.11 * (s1 + s2 * 0.5) * fZone;
-
-    col *= 1.0 - smoothstep(hR * 0.85, hR * 0.2, dist) * 0.97;
-
-    float stars = step(0.988, hash(floor((uv - ic) * 180.0)));
-    float starBr = hash(floor((uv - ic) * 180.0) + vec2(7.0, 13.0));
-    col += vec3(0.45, 0.35, 0.25) * stars * starBr * 0.25 * step(hR * 0.5, dist);
-
-    return col;
+    return themeClassic(uv, ic, pupilR, sd);
 }
 
 // ════════════════════════════════════
-//  THEME 3: VECTOR RETICLE (HUD)
+//  THEME 3: VECTOR RETICLE (Reserved — redirects to Crystal)
 // ════════════════════════════════════
 vec3 themeReticle(vec2 uv, vec2 ic, float pupilR, float sd) {
-    vec3 teal = vec3(0.0, 0.95, 0.85);
-    vec3 col = vec3(0.008, 0.014, 0.02);
-
-    float gridPulse = mix(1.0, sin(uTime * 5.0) * 0.5 + 0.5 + 0.5, uSentinel);
-    float gs = 0.05;
-    float gx = smoothstep(0.0012, 0.0, abs(mod(uv.x + gs * 0.5, gs) - gs * 0.5));
-    float gy = smoothstep(0.0012, 0.0, abs(mod(uv.y + gs * 0.5, gs) - gs * 0.5));
-    col += teal * (gx + gy) * 0.025 * gridPulse;
-
-    float scan = sin((uv.y * 150.0 + uTime * 6.0) * PI) * 0.5 + 0.5;
-    col += teal * 0.01 * scan;
-
-    float dist = length(uv);
-    col += teal * 0.45 * smoothstep(0.0012, 0.0, abs(dist - 0.08));
-    col += teal * 0.38 * smoothstep(0.0012, 0.0, abs(dist - 0.16));
-    col += teal * 0.30 * smoothstep(0.0012, 0.0, abs(dist - 0.24));
-    col += teal * 0.24 * smoothstep(0.0012, 0.0, abs(dist - 0.32));
-    col += teal * 0.18 * smoothstep(0.0012, 0.0, abs(dist - 0.40));
-
-    col += teal * 0.10 * smoothstep(0.0006, 0.0, abs(uv.y)) * step(0.05, dist);
-    col += teal * 0.10 * smoothstep(0.0006, 0.0, abs(uv.x)) * step(0.05, dist);
-
-    // Holographic Parallax Target Gimbal (The "Pupil")
-    // Compiling 3 distinct layers that offset differently to create a floating 3D mechanical effect
-
-    float baseR = pupilR * 0.6 + 0.005;
-
-    // Layer 1: Deep Base Target (recessed, rotating slowly CW)
-    vec2 pUV1 = calculateParallax(uv, ic, 0.15); // Deep inward
-    float d1 = length(pUV1 - ic);
-    float a1 = atan(pUV1.y - ic.y, pUV1.x - ic.x) + uTime * 0.8;
-    float ring1 = smoothstep(0.0015, 0.0, abs(d1 - baseR * 2.5));
-    // Dotted pattern
-    ring1 *= step(0.0, sin(a1 * 16.0));
-    col += teal * ring1 * 0.35;
-
-    // Layer 2: Mid Bracket Gimbal (mid-depth, rotating fast CCW)
-    vec2 pUV2 = calculateParallax(uv, ic, 0.06); // Mid depth
-    float d2 = length(pUV2 - ic);
-    float a2 = atan(pUV2.y - ic.y, pUV2.x - ic.x) - uTime * 1.5;
-    float ring2 = smoothstep(0.002, 0.0, abs(d2 - baseR * 1.4));
-    // Dashed locking brackets
-    ring2 *= step(0.6, cos(a2 * 4.0));
-    col += teal * ring2 * 0.8;
-
-    // Static Crosshair tying targeting scope to center
-    float cDist = length(uv - ic);
-    float gap = smoothstep(0.035, 0.05, cDist);
-    float cH = smoothstep(0.0008, 0.0, abs(uv.y - ic.y)) * smoothstep(0.35, 0.12, abs(uv.x - ic.x)) * gap;
-    float cV = smoothstep(0.0008, 0.0, abs(uv.x - ic.x)) * smoothstep(0.35, 0.12, abs(uv.y - ic.y)) * gap;
-    col += teal * (cH + cV) * 0.35;
-
-    // Layer 3: Pop-out Core Tracker Dot (floating above screen)
-    vec2 pUV3 = calculateParallax(uv, ic, -0.06); // Popped outward
-    float d3 = length(pUV3 - ic);
-    
-    // Crisp inner dot
-    col += teal * 0.95 * smoothstep(baseR + 0.002, baseR, d3);
-    // Core intense laser glow
-    col += vec3(0.5, 1.0, 0.9) * 0.6 * exp(-d3 * d3 * 3000.0);
-    // Outer floating lock-ring
-    col += teal * 0.6 * smoothstep(0.0015, 0.0, abs(d3 - baseR * 0.6));
-
-    float edgeR = smoothstep(-0.005, -0.001, sd);
-    col += teal * 0.12 * (1.0 - edgeR) * smoothstep(-0.025, -0.003, sd);
-
-    float rAng = atan(uv.y, uv.x);
-    float rsAngle = fract(rAng / (2.0 * PI) + uTime * 0.6); 
-    float rSweep = smoothstep(1.0, 0.8, rsAngle) * smoothstep(0.0, 0.05, rsAngle);
-    col += teal * rSweep * uSentinel * 0.25 * step(0.05, dist) * smoothstep(-0.02, -0.05, sd);
-
-    return col;
+    return themeClassic(uv, ic, pupilR, sd);
 }
 
 void main() {
@@ -447,6 +334,8 @@ export class RealisticEyeRenderer {
     private startTime = 0;
     private transitionPhase: 'idle' | 'closing' | 'opening' = 'idle';
     private transitionStart = 0;
+    private smoothDilation = 1.0;
+    private lastRenderTime = 0;
 
     private _randomInterval() {
         return MIN_INTERVAL_S + Math.random() * (MAX_INTERVAL_S - MIN_INTERVAL_S);
@@ -567,6 +456,12 @@ export class RealisticEyeRenderer {
         const now = performance.now() / 1000;
         const shaderTime = now - this.startTime;
 
+        // Smooth pupil dilation — interpolate for organic feel
+        const dt = this.lastRenderTime > 0 ? Math.min(now - this.lastRenderTime, 0.1) : 0.016;
+        this.lastRenderTime = now;
+        const dilationSpeed = 3.0; // units/sec — natural pupil response
+        this.smoothDilation += (state.dilation - this.smoothDilation) * Math.min(1, dt * dilationSpeed);
+
         const blinkOverride = this._updateTransition(now);
         const blink = blinkOverride !== null ? Math.max(state.blink, blinkOverride) : state.blink;
 
@@ -575,7 +470,7 @@ export class RealisticEyeRenderer {
 
         gl.uniform1f(this.uTime, shaderTime);
         gl.uniform2f(this.uIrisOffset, normX, normY);
-        gl.uniform1f(this.uDilation, state.dilation);
+        gl.uniform1f(this.uDilation, this.smoothDilation);
         gl.uniform1f(this.uBlink, blink);
         gl.uniform1f(this.uBlush, state.blush || 0);
         gl.uniform2f(this.uResolution, canvas.width, canvas.height);
