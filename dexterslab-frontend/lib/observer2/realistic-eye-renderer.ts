@@ -229,6 +229,42 @@ vec3 themeReticle(vec2 uv, vec2 ic, float pupilR, float sd) {
 void main() {
     vec2 aspect = vec2(uResolution.x / uResolution.y, 1.0);
     vec2 uv = (vUV - 0.5) * aspect;
+
+    // ══════════════════════════════════════════
+    //  DISTORTION PROTOCOL — Decaying Hardware
+    //  Pre-render UV distortions
+    // ══════════════════════════════════════════
+
+    float t = uTime;
+
+    // ── Frame jitter — whole-image micro-shift (~every 0.3s chance) ──
+    float jSeed = floor(t * 3.0);
+    float jChance = step(0.86, fract(sin(jSeed * 91.3) * 43.7));
+    uv += vec2(
+        (fract(sin(jSeed * 17.1) * 43.7) - 0.5) * 0.005,
+        (fract(sin(jSeed * 31.3) * 17.1) - 0.5) * 0.003
+    ) * jChance;
+
+    // ── Horizontal tear — shift a strip sideways (~every 5-8s) ──
+    float tearCycle = floor(t * 0.18);
+    float tearActive = step(0.82, fract(sin(tearCycle * 43.1) * 17.3));
+    float tearY = (fract(sin(tearCycle * 71.7) * 31.5) - 0.5) * 0.8;
+    float inTearBand = (1.0 - smoothstep(0.0, 0.035, abs(uv.y - tearY))) * tearActive;
+    float tearDir = fract(sin(tearCycle * 13.7) * 97.1) - 0.5;
+    uv.x += inTearBand * tearDir * 0.07;
+
+    // ── Pixelation burst — momentary resolution drop (~every 8-12s) ──
+    float pixCycle = floor(t * 0.12);
+    float pixActive = step(0.88, fract(sin(pixCycle * 67.3) * 29.1));
+    if (pixActive > 0.5) {
+        float pixS = 0.014;
+        uv = floor(uv / pixS) * pixS + pixS * 0.5;
+    }
+
+    // ══════════════════════════════════════════
+    //  EYE RENDERING (with distorted UVs)
+    // ══════════════════════════════════════════
+
     vec2 irisCenter = uIrisOffset * 0.32;
 
     float scleraDist = circleSDF(uv, vec2(0.0), EYE_RADIUS);
@@ -299,6 +335,50 @@ void main() {
             }
         }
     }
+
+    // ══════════════════════════════════════════════
+    //  DISTORTION PROTOCOL — Post-Processing
+    //  CRT / VHS / Signal Decay
+    // ══════════════════════════════════════════════
+
+    // ── CRT scan lines — subtle horizontal darkening ──
+    float scanFreq = vUV.y * uResolution.y * 0.8;
+    float scanline = sin(scanFreq * PI) * 0.5 + 0.5;
+    color *= 0.87 + 0.13 * scanline;
+
+    // ── Signal noise — static grain ──
+    float grain = fract(sin(dot(vUV * 997.0 + t * 7.13, vec2(12.9898, 78.233))) * 43758.5453);
+    color += (grain - 0.5) * 0.03;
+
+    // ── VHS tracking band — horizontal interference line drifting down ──
+    float trackY = fract(t * 0.06);
+    float trackBand = smoothstep(0.02, 0.0, abs(vUV.y - trackY));
+    color = mix(color, vec3(0.6, 0.6, 0.65), trackBand * 0.25);
+
+    // ── Chromatic aberration — RGB channel split during glitch events ──
+    float caActive = max(tearActive, jChance);
+    float caDist = length(vUV - 0.5);
+    float caStrength = caActive * 0.018 + 0.003; // always-on subtle + boost during glitch
+    color.r *= 1.0 + caDist * caStrength * 4.0;
+    color.b *= 1.0 - caDist * caStrength * 4.0;
+    // Slight green shift on tear band
+    color.g *= 1.0 + inTearBand * 0.08;
+
+    // ── Brightness flicker — random frame dimming ──
+    float fSeed = floor(t * 5.0);
+    float fChance = step(0.91, fract(sin(fSeed * 53.7) * 29.3));
+    color *= 1.0 - fChance * 0.18;
+
+    // ── Horizontal interlace — alternating line brightness ──
+    float interlace = step(0.5, fract(vUV.y * uResolution.y * 0.5));
+    color *= 0.97 + 0.03 * interlace;
+
+    // ── CRT vignette — darker edges like a curved display ──
+    float vigDist = length(vUV - 0.5) * 1.8;
+    color *= smoothstep(1.3, 0.35, vigDist);
+
+    // ── Phosphor warmth — slight amber CRT tint ──
+    color *= vec3(0.98, 1.0, 0.95);
 
     fragColor = vec4(color, 1.0);
 }
