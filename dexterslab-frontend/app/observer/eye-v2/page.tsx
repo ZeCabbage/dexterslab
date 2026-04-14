@@ -399,45 +399,56 @@ export default function ObserverEyeV2() {
             {/* Connection indicator */}
             {connState !== 'connected' && (
                 <div style={{
-                    position: 'absolute', bottom: 60, left: 0, right: 0,
+                    position: 'absolute', top: '18%', left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '60%', maxWidth: '280px',
                     textAlign: 'center', zIndex: 25,
-                    color: connState === 'error' ? 'red' : 'rgba(255,200,50,0.8)',
-                    fontFamily: 'monospace', fontSize: '14px',
-                    fontWeight: 'bold'
+                    color: connState === 'error' ? '#ff3300' : '#ffaa00',
+                    fontFamily: "'VT323', monospace", fontSize: '16px',
+                    letterSpacing: '2px',
+                    textShadow: connState === 'error' ? '0 0 12px #ff3300' : '0 0 12px #ffaa00',
                 }}>
-                    ⚠ BACKEND {connState.toUpperCase()}
+                    ▲ UPLINK {connState.toUpperCase()} ▲
                 </div>
             )}
 
             {/* Health HUD Overlay */}
             <div style={{
-                position: 'fixed', bottom: 8, right: 8,
-                zIndex: 40, fontFamily: 'monospace', fontSize: '10px',
-                color: 'rgba(0, 255, 200, 0.4)', pointerEvents: 'none'
+                position: 'fixed', top: 6, left: '50%',
+                transform: 'translateX(-50%)',
+                width: '55%', maxWidth: '260px',
+                zIndex: 40, fontFamily: "'VT323', monospace", fontSize: '10px',
+                color: 'rgba(0, 255, 140, 0.35)', pointerEvents: 'none',
+                textAlign: 'center', letterSpacing: '1px',
             }}>
-                {healthOverlay || 'WAITING FOR TELEMETRY...'}
+                {healthOverlay || '...'}
             </div>
 
-            {/* Text overlay (Oracle responses, reactions, ambient) */}
+            {/* Text overlay (Oracle responses, reactions) */}
             {overlayText && overlayType !== 'ambient' && (
                 <div style={{
                     position: 'absolute',
-                    bottom: '15%',
-                    left: '5vw', right: '5vw', // Prevent horizontal overflow
+                    top: '20%',
+                    left: '50%',
+                    transform: 'translateX(-50%)',
+                    width: '62%',
+                    maxWidth: '300px',
                     textAlign: 'center', zIndex: 25,
-                    fontFamily: 'var(--font-main)',
-                    fontSize: overlayType === 'oracle' ? 'clamp(16px, 4vw, 24px)' : 'clamp(20px, 6vw, 32px)',
-                    lineHeight: '1.4',
+                    fontFamily: "'VT323', 'Courier New', monospace",
+                    fontSize: overlayType === 'oracle' ? '15px' : '18px',
+                    lineHeight: '1.5',
                     wordWrap: 'break-word',
-                    fontWeight: 'bold',
-                    color: overlayType === 'oracle' ? '#0ff' :
+                    color: overlayType === 'oracle' ? '#00ffcc' :
                            overlayType === 'goodboy' ? '#ff88aa' :
-                           overlayType === 'thankyou' ? '#0df' : '#0fc',
-                    textShadow: '0 0 20px currentColor',
-                    letterSpacing: '2px',
-                    opacity: 0.9,
+                           overlayType === 'thankyou' ? '#88ddff' : '#00ff88',
+                    textShadow: '0 0 8px currentColor, 0 0 20px currentColor',
+                    letterSpacing: '1.5px',
+                    opacity: 0.95,
                     animation: 'fadeInUp 0.3s ease-out',
                     pointerEvents: 'none',
+                    borderTop: '1px solid currentColor',
+                    borderBottom: '1px solid currentColor',
+                    padding: '8px 6px',
                 }}>
                     {overlayText}
                 </div>
@@ -449,45 +460,61 @@ export default function ObserverEyeV2() {
                 bottom: 0,
                 left: '50%',
                 transform: 'translateX(-50%)',
-                width: '70%',
-                maxWidth: '340px',
+                width: '68%',
+                maxWidth: '330px',
                 zIndex: 35,
                 pointerEvents: 'none',
-                padding: '8px 0 6px 0',
-                background: 'linear-gradient(transparent 0%, rgba(0,0,0,0.75) 30%, rgba(0,0,0,0.9) 100%)',
+                padding: '6px 8px 5px 8px',
+                borderTop: '1px solid rgba(0, 255, 140, 0.25)',
+                borderLeft: '1px solid rgba(0, 255, 140, 0.1)',
+                borderRight: '1px solid rgba(0, 255, 140, 0.1)',
+                background: 'linear-gradient(transparent 0%, rgba(0,4,2,0.8) 25%, rgba(0,6,3,0.92) 100%)',
+                boxShadow: '0 0 15px rgba(0, 255, 140, 0.06), inset 0 0 30px rgba(0, 255, 140, 0.03)',
                 fontFamily: "'VT323', 'Courier New', monospace",
-                fontSize: '11px',
-                lineHeight: '1.4',
-                letterSpacing: '0.3px',
-                textAlign: 'center',
+                fontSize: '12px',
+                lineHeight: '1.45',
+                letterSpacing: '0.8px',
+                textAlign: 'left',
             }}>
+                {/* Terminal header */}
+                <div style={{
+                    color: 'rgba(0, 255, 140, 0.3)',
+                    fontSize: '9px',
+                    letterSpacing: '3px',
+                    textAlign: 'center',
+                    marginBottom: 3,
+                    borderBottom: '1px solid rgba(0, 255, 140, 0.12)',
+                    paddingBottom: 2,
+                }}>
+                    ◈ OBSERVER LOG ◈
+                </div>
                 {obsLog.map((entry, i) => {
                     const isLatest = i === obsLog.length - 1;
                     const age = (Date.now() - entry.ts) / 1000;
-                    const opacity = Math.max(0.3, 1 - age / 25);
+                    const opacity = Math.max(0.25, 1 - age / 20);
                     const typeColor = {
                         detect: '#00ff88',
-                        warn: '#ff6644',
-                        system: '#00ccff',
-                        emote: '#ff88cc',
-                        oracle: '#00ffff',
-                        speech: '#ffcc00',
-                        analysis: '#667788',
-                    }[entry.type] || '#556666';
+                        warn: '#ff4422',
+                        system: '#00ddff',
+                        emote: '#ff66aa',
+                        oracle: '#00ffcc',
+                        speech: '#ffbb00',
+                        analysis: '#447755',
+                    }[entry.type] || '#335544';
 
                     return (
                         <div key={entry.ts + i} style={{
                             color: typeColor,
                             opacity,
-                            animation: isLatest ? 'terminalGlitchIn 0.3s ease-out' : undefined,
-                            textShadow: `0 0 6px ${typeColor}40`,
+                            animation: isLatest ? 'terminalGlitchIn 0.25s ease-out' : undefined,
+                            textShadow: `0 0 4px ${typeColor}50`,
                             overflow: 'hidden',
                             textOverflow: 'ellipsis',
                             whiteSpace: 'nowrap',
-                            padding: '0 4px',
                         }}>
-                            {'>'} {entry.text}
-                            {isLatest && <span className="terminal-cursor">█</span>}
+                            <span style={{ color: '#1a5533', marginRight: 4 }}>▸</span>
+                            {entry.text}
+                            {isLatest && <span className="terminal-cursor">▊</span>}
                         </div>
                     );
                 })}
