@@ -44,6 +44,12 @@ export default function ObserverEyeV2() {
     const [trackingActive, setTrackingActive] = useState(false);
     const [detectionMode, setDetectionMode] = useState('none');
 
+    // ── Observation Terminal state ──
+    const [obsLog, setObsLog] = useState<{text: string, type: string, ts: number}[]>([]);
+    const lastObsRef = useRef<{entities: number, mode: string, emotion: string, speech: string, analysisIdx: number, lastAnalysis: number}>({
+        entities: -1, mode: '', emotion: '', speech: '', analysisIdx: 0, lastAnalysis: 0
+    });
+
     const startApp = useCallback(() => {
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -272,6 +278,99 @@ export default function ObserverEyeV2() {
         return cleanup;
     }, [startApp]);
 
+    // ── Observation Terminal: generate log entries from live state ──
+    useEffect(() => {
+        const MAX_LOG = 6;
+
+        const ANALYSIS_LINES = [
+            'THERMAL_SCAN: ambient temperature nominal',
+            'PATTERN_MATCH: cross-referencing biometric signatures...',
+            'SIGNAL_PROC: filtering environmental noise floor',
+            'DEPTH_MAP: stereoscopic parallax calibrated',
+            'NETWORK_STAT: telemetry uplink stable',
+            'MEM_ALLOC: observation buffer at 47% capacity',
+            'GAIT_ANALYSIS: locomotion pattern within normal range',
+            'SPECTRAL_SCAN: visible light band — no anomalies',
+            'AUDIO_FFT: ambient decibel level 42dB — nominal',
+            'THREAT_EVAL: environment classified GREEN',
+            'IRIS_CAL: matcap refraction index recalibrated',
+            'SENTIMENT: micro-expression analysis running...',
+            'POSTURE_MAP: skeletal alignment within tolerance',
+            'PROXIMITY: calculating subject distance vector',
+            'CODEC_SYNC: frame buffer synchronized at 60Hz',
+            'ENV_SCAN: cataloguing visible objects in field...',
+            'BIOMETRIC: heart rate estimation via micro-tremor',
+            'OPTICAL_FLOW: motion vectors computed — 24 points',
+            'RECOGNITION: comparing against known entity database',
+            'HARDWARE_CHK: VideoCore thermal throttle — nominal',
+        ];
+
+        const addEntry = (text: string, type: string) => {
+            setObsLog(prev => {
+                const next = [...prev, { text, type, ts: Date.now() }];
+                return next.slice(-MAX_LOG);
+            });
+        };
+
+        const interval = setInterval(() => {
+            const s = stateRef.current;
+            const obs = lastObsRef.current;
+            const now = Date.now();
+
+            // Entity count change
+            if (s.entityCount !== obs.entities) {
+                if (s.entityCount > 0) {
+                    addEntry(
+                        `ENTITY_DETECT: ${s.entityCount} subject${s.entityCount > 1 ? 's' : ''} identified — tracking active`,
+                        'detect'
+                    );
+                } else if (obs.entities > 0) {
+                    addEntry('ENTITY_LOST: all subjects exited field of view', 'warn');
+                }
+                obs.entities = s.entityCount;
+            }
+
+            // Detection mode change
+            if (s.detectionMode && s.detectionMode !== obs.mode) {
+                const modeLabel = s.detectionMode === 'face' ? 'FACIAL_RECOGNITION' :
+                                  s.detectionMode === 'motion' ? 'MOTION_DETECTION' : 'PASSIVE_SCAN';
+                addEntry(`MODE_SWITCH: ${modeLabel} engaged`, 'system');
+                obs.mode = s.detectionMode;
+            }
+
+            // Emotion change
+            if (s.emotion && s.emotion !== obs.emotion && s.emotion !== 'neutral') {
+                addEntry(`EMOTE_READ: subject affect classified as "${s.emotion.toUpperCase()}"`, 'emote');
+                obs.emotion = s.emotion;
+            } else if (s.emotion === 'neutral' && obs.emotion !== 'neutral') {
+                obs.emotion = 'neutral';
+            }
+
+            // Speech / overlay text
+            if (s.overlayText && s.overlayText !== obs.speech && s.overlayType !== 'ambient') {
+                const label = s.overlayType === 'oracle' ? 'ORACLE_TX' : 'AUDIO_CAP';
+                const truncated = s.overlayText.length > 60 ? s.overlayText.slice(0, 57) + '...' : s.overlayText;
+                addEntry(`${label}: "${truncated}"`, s.overlayType === 'oracle' ? 'oracle' : 'speech');
+                obs.speech = s.overlayText;
+            }
+
+            // Periodic analysis line (every 4-7 seconds when idle)
+            if (now - obs.lastAnalysis > 4000 + Math.random() * 3000) {
+                addEntry(ANALYSIS_LINES[obs.analysisIdx % ANALYSIS_LINES.length], 'analysis');
+                obs.analysisIdx++;
+                obs.lastAnalysis = now;
+            }
+        }, 800);
+
+        // Boot sequence
+        setTimeout(() => addEntry('SYS_INIT: Observer V2 distortion protocol online', 'system'), 500);
+        setTimeout(() => addEntry('OPTIC_CAL: crystal lens array initialized', 'system'), 1200);
+        setTimeout(() => addEntry('AWAIT: scanning environment...', 'analysis'), 2000);
+
+        return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
     return (
         <div className="theme-modern-dystopian">
         <div style={{
@@ -344,7 +443,54 @@ export default function ObserverEyeV2() {
                 </div>
             )}
 
-            {/* Tracking Detection Alert (Disabled per user request) */}
+            {/* ── OBSERVATION TERMINAL ── */}
+            <div id="obs-terminal" style={{
+                position: 'fixed',
+                bottom: 0,
+                left: 0,
+                right: 0,
+                zIndex: 35,
+                pointerEvents: 'none',
+                padding: '0 12px 28px 12px',
+                background: 'linear-gradient(transparent 0%, rgba(0,0,0,0.7) 40%, rgba(0,0,0,0.85) 100%)',
+                fontFamily: "'VT323', 'Courier New', monospace",
+                fontSize: '14px',
+                lineHeight: '1.5',
+                letterSpacing: '0.5px',
+            }}>
+                {obsLog.map((entry, i) => {
+                    const isLatest = i === obsLog.length - 1;
+                    const age = (Date.now() - entry.ts) / 1000;
+                    const opacity = Math.max(0.3, 1 - age / 25);
+                    const typeColor = {
+                        detect: '#00ff88',
+                        warn: '#ff6644',
+                        system: '#00ccff',
+                        emote: '#ff88cc',
+                        oracle: '#00ffff',
+                        speech: '#ffcc00',
+                        analysis: '#667788',
+                    }[entry.type] || '#556666';
+
+                    return (
+                        <div key={entry.ts + i} style={{
+                            color: typeColor,
+                            opacity,
+                            animation: isLatest ? 'terminalGlitchIn 0.3s ease-out' : undefined,
+                            textShadow: `0 0 6px ${typeColor}40`,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
+                        }}>
+                            <span style={{ color: '#334444', marginRight: 6 }}>
+                                {new Date(entry.ts).toLocaleTimeString('en-US', { hour12: false })}
+                            </span>
+                            {'>'} {entry.text}
+                            {isLatest && <span className="terminal-cursor">█</span>}
+                        </div>
+                    );
+                })}
+            </div>
 
             <style>{`
                 @import url('https://fonts.googleapis.com/css2?family=VT323&display=swap');
@@ -372,6 +518,22 @@ export default function ObserverEyeV2() {
                     0% { opacity: 0.65; }
                     50% { opacity: 0.85; }
                     100% { opacity: 0.65; }
+                }
+                @keyframes terminalGlitchIn {
+                    0% { opacity: 0; transform: translateX(-8px) scaleY(1.3); }
+                    40% { opacity: 1; transform: translateX(3px) scaleY(0.9); }
+                    70% { transform: translateX(-1px) scaleY(1.05); }
+                    100% { opacity: 1; transform: translateX(0) scaleY(1); }
+                }
+                @keyframes cursorBlink {
+                    0%, 50% { opacity: 1; }
+                    51%, 100% { opacity: 0; }
+                }
+                .terminal-cursor {
+                    animation: cursorBlink 0.8s step-end infinite;
+                    color: #00ff88;
+                    margin-left: 2px;
+                    font-size: 12px;
                 }
             `}</style>
         </div>
