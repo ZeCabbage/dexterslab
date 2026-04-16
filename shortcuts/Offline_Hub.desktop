@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Offline Hub
+Comment=Launch the Offline Hub (local sentinel mode)
+Exec=bash /home/thecabbage/Desktop/dexterslab/edge-daemon/launch-offline-hub.sh
+Icon=preferences-system
+Terminal=false
+Categories=Utility;

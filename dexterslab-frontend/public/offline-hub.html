@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Offline Hub — Sentinel Mode</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=VT323&family=Orbitron:wght@700;900&display=swap');
+
+    :root {
+      --color-bg: #08080f;
+      --color-cyan: #00ffe0;
+      --color-amber: #ffaa00;
+      --color-green: #00ff66;
+      --color-red: #ff4444;
+      --color-blue: #4488ff;
+      --color-ring: rgba(0, 232, 208, 0.25);
+      --color-ring2: rgba(255, 45, 149, 0.08);
+      --color-muted: #444;
+      --color-dim: #333;
+      --font-mono: 'VT323', monospace;
+      --font-title: 'Orbitron', sans-serif;
+    }
+
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body, html {
+      width: 100vw; height: 100vh;
+      background: var(--color-bg);
+      color: #ccc;
+      font-family: var(--font-mono);
+      overflow: hidden;
+      cursor: default;
+    }
+
+    /* ═══ Main Container ═══ */
+    .container {
+      width: 100vw; height: 100vh;
+      display: flex; align-items: center; justify-content: center;
+    }
+
+    /* ═══ Circular Hub ═══ */
+    .hub {
+      width: 95vmin; height: 95vmin;
+      max-width: 1060px; max-height: 1060px;
+      border-radius: 50%;
+      background: radial-gradient(circle at 50% 45%, #0e0e1c 0%, var(--color-bg) 70%);
+      border: 3px solid var(--color-ring);
+      box-shadow:
+        0 0 40px rgba(0, 232, 208, 0.12),
+        0 0 80px rgba(255, 45, 149, 0.06),
+        inset 0 0 60px rgba(0, 0, 0, 0.7);
+      position: relative;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 6%;
+    }
+
+    /* ── Decorative rings ── */
+    .ring-inner {
+      position: absolute; top: 4px; left: 4px; right: 4px; bottom: 4px;
+      border-radius: 50%; border: 1px solid var(--color-ring2);
+      pointer-events: none; z-index: 1;
+      animation: ringPulse 3s ease-in-out infinite;
+    }
+    .ring-mid {
+      position: absolute; top: 14px; left: 14px; right: 14px; bottom: 14px;
+      border-radius: 50%; border: 1px solid var(--color-dim);
+      pointer-events: none; z-index: 1;
+    }
+
+    /* ── CRT effects ── */
+    .crt-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: 50%;
+      background-image: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(0,0,0,0.10) 2px, rgba(0,0,0,0.10) 4px);
+      pointer-events: none; z-index: 22;
+    }
+    .grid-overlay {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: 50%;
+      background-image:
+        repeating-linear-gradient(90deg, transparent, transparent 7.5%, rgba(22,32,64,0.25) 7.5%, rgba(22,32,64,0.25) 7.6%),
+        repeating-linear-gradient(0deg, transparent, transparent 7.5%, rgba(22,32,64,0.25) 7.5%, rgba(22,32,64,0.25) 7.6%);
+      pointer-events: none; z-index: 2;
+    }
+    .scanline {
+      position: absolute; left: 5%; right: 5%; height: 3px;
+      background: linear-gradient(90deg, transparent, rgba(0,255,224,0.12) 30%, rgba(0,255,224,0.2) 50%, rgba(0,255,224,0.12) 70%, transparent);
+      pointer-events: none; z-index: 23;
+    }
+    .vignette {
+      position: absolute; top: 0; left: 0; right: 0; bottom: 0;
+      border-radius: 50%;
+      background: radial-gradient(circle, transparent 50%, rgba(0,0,0,0.5) 80%, rgba(0,0,0,0.9) 100%);
+      pointer-events: none; z-index: 21;
+    }
+
+    /* ═══ Header ═══ */
+    .header { text-align: center; margin-bottom: 1.5%; z-index: 10; width: 100%; }
+    .header-title {
+      font-family: var(--font-title);
+      font-size: clamp(18px, 3.5vmin, 30px);
+      font-weight: 900;
+      color: var(--color-amber);
+      letter-spacing: 5px;
+      text-shadow: 0 0 12px var(--color-amber), 0 0 40px rgba(255,170,0,0.2);
+      animation: textFlicker 8s infinite;
+    }
+    .header-sub {
+      font-size: clamp(8px, 1.4vmin, 11px);
+      color: var(--color-red);
+      letter-spacing: 3px;
+      margin-top: 2px;
+    }
+    .header-status {
+      display: flex; align-items: center; justify-content: center;
+      gap: 10px; margin-top: 6px;
+      font-size: clamp(9px, 1.6vmin, 13px);
+    }
+    .mode-dot {
+      width: 7px; height: 7px; border-radius: 50%;
+      background: var(--color-amber);
+      box-shadow: 0 0 8px var(--color-amber);
+      animation: blink80s 2s infinite;
+    }
+
+    /* ═══ Diagnostics Grid (2x2) ═══ */
+    .diag-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      grid-template-rows: 1fr 1fr;
+      gap: 2%; width: 88%;
+      margin: 0 auto 1%;
+      z-index: 10; flex: 1; min-height: 0;
+    }
+    .panel {
+      padding: 3% 4%;
+      background: rgba(10,10,20,0.8);
+      border: 1px solid var(--color-dim);
+      display: flex; flex-direction: column;
+      overflow: hidden;
+      transition: border-color 0.3s ease;
+    }
+    .panel.ok { border-color: rgba(0,255,100,0.3); }
+    .panel.err { border-color: rgba(255,68,68,0.3); }
+    .panel-header {
+      font-size: clamp(9px, 1.3vmin, 11px);
+      color: var(--color-muted);
+      letter-spacing: 2px;
+      margin-bottom: 2px; flex-shrink: 0;
+    }
+    .panel-value {
+      font-size: clamp(9px, 1.6vmin, 13px);
+      font-weight: bold;
+      margin-bottom: 2px; flex-shrink: 0;
+      display: flex; justify-content: space-between; align-items: center;
+    }
+    .panel-detail {
+      font-size: clamp(7px, 1.1vmin, 9px);
+      line-height: 1.5; flex-grow: 1;
+      overflow-y: auto; display: flex;
+      flex-direction: column; gap: 2px;
+    }
+    .log-line {
+      white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    }
+
+    /* ── Buttons ── */
+    .mini-btn {
+      background: #1a1a2e; color: var(--color-cyan);
+      border: 1px solid var(--color-cyan);
+      font-family: var(--font-mono);
+      font-size: clamp(7px, 1vmin, 9px);
+      padding: 2px 6px; cursor: pointer;
+      transition: all 0.1s ease;
+    }
+    .mini-btn:hover { background: var(--color-cyan); color: #000; }
+    .mini-btn.amber { color: var(--color-amber); border-color: var(--color-amber); }
+    .mini-btn.amber:hover { background: var(--color-amber); color: #000; }
+    .mini-btn.red { color: var(--color-red); border-color: var(--color-red); }
+    .mini-btn.red:hover { background: var(--color-red); color: #000; }
+
+    .app-item {
+      display: flex; align-items: center; gap: 6px;
+      width: 100%; padding: 3px 4px;
+      background: transparent; border: none;
+      border-bottom: 1px solid rgba(255,255,255,0.04);
+      cursor: pointer; font-family: var(--font-mono);
+      font-size: clamp(8px, 1.2vmin, 10px);
+      text-align: left; color: var(--color-amber);
+      transition: all 0.12s ease;
+    }
+    .app-item:hover { background: rgba(255,170,0,0.06); color: var(--color-cyan); }
+    .app-item .icon { font-size: 1.1em; width: 18px; text-align: center; flex-shrink: 0; }
+    .app-item .name { flex: 1; letter-spacing: 1px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .app-item .status { font-size: 0.8em; flex-shrink: 0; }
+    .app-item.running { color: var(--color-green); }
+
+    /* ═══ Activity Log ═══ */
+    .activity-bar {
+      width: 88%; margin: 0 auto 1%;
+      z-index: 10;
+      background: rgba(10,10,20,0.6);
+      border: 1px solid rgba(255,255,255,0.06);
+      padding: 3px 6px;
+      max-height: 12%;
+      overflow-y: auto;
+      font-size: clamp(7px, 1vmin, 9px);
+    }
+    .activity-bar .title {
+      color: var(--color-muted); letter-spacing: 2px;
+      font-size: clamp(7px, 0.9vmin, 8px); margin-bottom: 2px;
+    }
+    .activity-entry { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; line-height: 1.4; }
+    .activity-entry .time { color: #555; }
+    .activity-entry.system { color: var(--color-cyan); }
+    .activity-entry.hardware { color: var(--color-green); }
+    .activity-entry.app { color: var(--color-amber); }
+    .activity-entry.wifi { color: var(--color-blue); }
+    .activity-entry.error { color: var(--color-red); }
+
+    /* ═══ Bottom Status Bar ═══ */
+    .bottom-bar {
+      width: 85%; margin: 0 auto 1%;
+      display: flex; align-items: center; justify-content: space-between;
+      z-index: 10; padding: 3px 8px;
+      background: rgba(10,10,20,0.6);
+      border: 1px solid rgba(255,255,255,0.06);
+      font-size: clamp(7px, 1.1vmin, 9px);
+    }
+    .bottom-left { display: flex; gap: 8px; align-items: center; overflow: hidden; }
+    .bottom-right { display: flex; gap: 4px; flex-shrink: 0; }
+    .stat { color: #666; }
+    .stat .val { color: #aaa; }
+    .stat .warn { color: var(--color-amber); }
+    .stat .crit { color: var(--color-red); }
+
+    /* ═══ Return to Online Button ═══ */
+    .return-bar {
+      width: 85%; margin: 0 auto;
+      z-index: 10;
+    }
+    .return-btn {
+      width: 100%;
+      padding: clamp(5px, 1.2vmin, 10px) 0;
+      background: #0a140a;
+      color: var(--color-green);
+      border: 1px solid rgba(0,255,100,0.3);
+      cursor: pointer;
+      font-family: var(--font-mono);
+      font-weight: bold;
+      font-size: clamp(9px, 1.6vmin, 13px);
+      letter-spacing: 2px;
+      transition: all 0.12s ease;
+    }
+    .return-btn:hover { filter: brightness(1.4); transform: scale(1.02); border-color: var(--color-green); }
+
+    /* ═══ WiFi Modal ═══ */
+    #wifi-modal {
+      display: none; position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.85); z-index: 50;
+      align-items: center; justify-content: center;
+      backdrop-filter: blur(4px); border-radius: 50%;
+    }
+    #wifi-modal-content {
+      background: #111; border: 1px solid var(--color-amber);
+      border-radius: 6px; width: 380px; max-width: 80%;
+      height: 340px; max-height: 80%;
+      display: flex; flex-direction: column; padding: 12px;
+      box-shadow: 0 0 30px rgba(255,170,0,0.2);
+    }
+    #wifi-header {
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid #333; padding-bottom: 8px; margin-bottom: 10px;
+      font-size: 16px; font-weight: bold; letter-spacing: 2px; color: var(--color-amber);
+    }
+    #wifi-close-btn { background: transparent; border: none; color: var(--color-red); font-size: 18px; cursor: pointer; }
+    #wifi-status { font-size: 12px; color: var(--color-amber); margin-bottom: 8px; }
+    #wifi-list { flex: 1; overflow-y: auto; border: 1px solid #333; background: #000; margin-bottom: 10px; }
+    .wifi-item { padding: 6px 10px; border-bottom: 1px solid #222; display: flex; justify-content: space-between; align-items: center; cursor: pointer; font-size: 12px; }
+    .wifi-item:hover { background: #222; }
+    .wifi-item .ssid { font-weight: bold; color: #fff; }
+    .wifi-item .info { font-size: 10px; color: #888; }
+    #wifi-join-panel { display: none; flex-direction: column; background: #0a0a0a; border: 1px solid var(--color-amber); padding: 10px; margin-bottom: 10px; }
+    #wifi-join-target { font-weight: bold; color: #fff; margin-bottom: 6px; font-size: 14px; }
+    #wifi-pwd {
+      background: #000; border: 1px solid #444; color: #fff;
+      font-family: inherit; font-size: 16px; padding: 5px;
+      width: 100%; letter-spacing: 2px; outline: none;
+    }
+    #wifi-pwd:focus { border-color: var(--color-amber); }
+    .wifi-btn { background: #222; border: 1px solid #555; color: #ddd; font-family: var(--font-mono); font-size: 12px; padding: 5px 10px; cursor: pointer; letter-spacing: 1px; }
+    .wifi-btn:hover { background: #333; }
+    .wifi-btn.primary { background: rgba(255,170,0,0.15); border-color: var(--color-amber); color: var(--color-amber); }
+    .wifi-btn.primary:hover { background: rgba(255,170,0,0.3); color: #fff; }
+
+    /* ═══ Animations ═══ */
+    @keyframes ringPulse {
+      0%, 100% { opacity: 0.5; }
+      50% { opacity: 1; }
+    }
+    @keyframes blink80s {
+      0%, 100% { opacity: 1; }
+      50% { opacity: 0.3; }
+    }
+    @keyframes textFlicker {
+      0%, 95%, 100% { opacity: 1; }
+      96% { opacity: 0.8; }
+      97% { opacity: 1; }
+      98% { opacity: 0.9; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="hub">
+      <!-- Decorative -->
+      <div class="ring-inner"></div>
+      <div class="ring-mid"></div>
+      <div class="grid-overlay"></div>
+      <div class="crt-overlay"></div>
+      <div class="scanline" id="scanline"></div>
+      <div class="vignette"></div>
+
+      <!-- ═══ Header ═══ -->
+      <div class="header">
+        <div class="header-title">◈ OFFLINE HUB ◈</div>
+        <div class="header-sub">SENTINEL MODE — NO UPLINK</div>
+        <div class="header-status">
+          <span class="mode-dot"></span>
+          <span style="color: var(--color-amber)">LOCAL SYSTEMS ONLY</span>
+          <span style="color: #333">│</span>
+          <span id="clock" style="color: var(--color-cyan)">--:--:--</span>
+        </div>
+      </div>
+
+      <!-- ═══ Diagnostics Grid ═══ -->
+      <div class="diag-grid">
+
+        <!-- Hardware Panel -->
+        <div class="panel" id="hw-panel">
+          <div class="panel-header">╔══ HARDWARE ══╗</div>
+          <div class="panel-value" id="hw-value">SCANNING...</div>
+          <div class="panel-detail" id="hw-detail">
+            <div class="log-line" id="hw-camera">📷 Camera: checking...</div>
+            <div class="log-line" id="hw-mic">🎤 Mic: checking...</div>
+            <div class="log-line" id="hw-speaker">🔊 Speaker: checking...</div>
+            <div style="margin-top:auto; text-align:center;">
+              <button class="mini-btn" onclick="testSpeaker()">▶ TEST SPEAKER</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- AI Models Panel -->
+        <div class="panel" id="ai-panel">
+          <div class="panel-header">╔══ AI MODELS ══╗</div>
+          <div class="panel-value" id="ai-value">
+            <span>OLLAMA: <span id="ollama-status">...</span></span>
+          </div>
+          <div class="panel-detail" id="ai-detail">
+            <div style="color: #555;">Loading models...</div>
+          </div>
+        </div>
+
+        <!-- Apps Panel -->
+        <div class="panel" id="apps-panel">
+          <div class="panel-header">╔══ APPS ══╗</div>
+          <div class="panel-value" id="apps-value" style="color: var(--color-amber);">0 AVAILABLE</div>
+          <div class="panel-detail" id="apps-detail">
+            <div style="color: #555;">Loading apps...</div>
+          </div>
+        </div>
+
+        <!-- Network Panel -->
+        <div class="panel" id="net-panel">
+          <div class="panel-header">╔══ NETWORK ══╗</div>
+          <div class="panel-value" id="net-value">WIFI: ---</div>
+          <div class="panel-detail" id="net-detail">
+            <div class="log-line" id="net-ssid">SSID: ---</div>
+            <div class="log-line" id="net-ip">IP: ---</div>
+            <div class="log-line" id="net-signal">Signal: ---</div>
+            <div style="margin-top:auto; text-align:center;">
+              <button class="mini-btn amber" onclick="openWifiModal()">☫ SCAN WIFI</button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ═══ Activity Log ═══ -->
+      <div class="activity-bar" id="activity-bar">
+        <div class="title">▸ ACTIVITY LOG</div>
+        <div id="activity-entries"></div>
+      </div>
+
+      <!-- ═══ Bottom Status Bar ═══ -->
+      <div class="bottom-bar">
+        <div class="bottom-left">
+          <span class="stat">CPU: <span class="val" id="stat-cpu">--°C</span></span>
+          <span style="color:#333">│</span>
+          <span class="stat">RAM: <span class="val" id="stat-ram">--</span></span>
+          <span style="color:#333">│</span>
+          <span class="stat">DISK: <span class="val" id="stat-disk">--</span></span>
+          <span style="color:#333">│</span>
+          <span class="stat">UP: <span class="val" id="stat-uptime">--</span></span>
+        </div>
+        <div class="bottom-right">
+          <span class="stat" id="stat-ip" style="color: var(--color-cyan);">---</span>
+        </div>
+      </div>
+
+      <!-- ═══ Return to Online ═══ -->
+      <div class="return-bar">
+        <button class="return-btn" onclick="returnToOnline()">⟳ RETURN TO ONLINE MODE</button>
+      </div>
+
+      <!-- WiFi Modal -->
+      <div id="wifi-modal">
+        <div id="wifi-modal-content">
+          <div id="wifi-header">
+            <span>☫ NETWORK CONFIG</span>
+            <button id="wifi-close-btn" onclick="closeWifiModal()">✕</button>
+          </div>
+          <div id="wifi-status">Click SCAN to find networks...</div>
+          <div id="wifi-list"></div>
+          <div id="wifi-join-panel">
+            <div id="wifi-join-target"></div>
+            <input type="password" id="wifi-pwd" placeholder="Enter Password" autocomplete="off" />
+            <div style="display:flex; gap:8px; margin-top:8px; justify-content:flex-end;">
+              <button class="wifi-btn" onclick="cancelJoin()">CANCEL</button>
+              <button class="wifi-btn primary" onclick="submitJoin()">CONNECT</button>
+            </div>
+          </div>
+          <div style="margin-top:auto; padding-top:10px; border-top:1px solid #444;">
+            <button class="wifi-btn" onclick="doScanWifi()">SCAN NETWORKS</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ═══════════════════════════════════════
+    //  WebSocket Connection
+    // ═══════════════════════════════════════
+    let ws = null;
+    let reconnectTimer = null;
+    let connected = false;
+
+    function connect() {
+      if (ws && ws.readyState <= 1) return;
+      ws = new WebSocket('ws://127.0.0.1:8894');
+
+      ws.onopen = () => {
+        connected = true;
+        addLocalLog('system', 'Connected to Offline Hub daemon');
+      };
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          handleMessage(data);
+        } catch (e) {
+          console.error('Parse error:', e);
+        }
+      };
+
+      ws.onclose = () => {
+        connected = false;
+        scheduleReconnect();
+      };
+
+      ws.onerror = () => {
+        connected = false;
+        scheduleReconnect();
+      };
+    }
+
+    function scheduleReconnect() {
+      if (reconnectTimer) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = null;
+        connect();
+      }, 2000);
+    }
+
+    function send(action, extra = {}) {
+      if (ws && connected) {
+        ws.send(JSON.stringify({ action, ...extra }));
+      }
+    }
+
+    // ═══════════════════════════════════════
+    //  Message Handler
+    // ═══════════════════════════════════════
+    function handleMessage(data) {
+      if (data.type === 'status') updateStatus(data);
+      else if (data.type === 'wifi_results') handleWifiResults(data);
+      else if (data.type === 'wifi_join_status') handleWifiJoin(data);
+      else if (data.type === 'test_result') handleTestResult(data);
+      else if (data.type === 'models') updateModels(data);
+      else if (data.type === 'app_event') handleAppEvent(data);
+      else if (data.type === 'mode_switch') handleModeSwitch(data);
+    }
+
+    // ═══════════════════════════════════════
+    //  Status Update
+    // ═══════════════════════════════════════
+    function updateStatus(s) {
+      // Hardware
+      const hw = s.hardware || {};
+      updateHwLine('hw-camera', '📷', 'Camera', hw.camera);
+      updateHwLine('hw-mic', '🎤', 'Mic', hw.microphone);
+      updateHwLine('hw-speaker', '🔊', 'Speaker', hw.speaker);
+
+      const hwOk = [hw.camera, hw.microphone, hw.speaker].filter(h => h && h.status === 'ok').length;
+      const hwEl = document.getElementById('hw-value');
+      hwEl.textContent = `${hwOk}/3 SYSTEMS OK`;
+      hwEl.style.color = hwOk === 3 ? 'var(--color-green)' : hwOk > 0 ? 'var(--color-amber)' : 'var(--color-red)';
+      document.getElementById('hw-panel').className = 'panel ' + (hwOk > 0 ? 'ok' : 'err');
+
+      // Ollama / Models
+      const ol = s.ollama || {};
+      const olEl = document.getElementById('ollama-status');
+      olEl.textContent = ol.running ? 'ONLINE' : 'OFFLINE';
+      olEl.style.color = ol.running ? 'var(--color-green)' : 'var(--color-red)';
+      if (ol.models) renderModels(ol.models, ol.running);
+
+      // Apps
+      const apps = s.apps || [];
+      document.getElementById('apps-value').textContent = `${apps.length} AVAILABLE`;
+      renderApps(apps);
+
+      // Network
+      const wifi = s.wifi || {};
+      const netVal = document.getElementById('net-value');
+      netVal.innerHTML = `WIFI: <span style="color:${wifi.connected ? 'var(--color-green)' : 'var(--color-red)'}">${wifi.connected ? 'CONNECTED' : 'DISCONNECTED'}</span>`;
+      document.getElementById('net-ssid').textContent = `SSID: ${wifi.ssid || '---'}`;
+      document.getElementById('net-ip').textContent = `IP: ${wifi.ip || '---'}`;
+      document.getElementById('net-signal').textContent = `Signal: ${wifi.signal || 0}%`;
+      document.getElementById('net-panel').className = 'panel ' + (wifi.connected ? 'ok' : 'err');
+
+      // System stats
+      const sys = s.system || {};
+      const cpuEl = document.getElementById('stat-cpu');
+      if (sys.cpu_temp != null) {
+        cpuEl.textContent = sys.cpu_temp + '°C';
+        cpuEl.className = sys.cpu_temp > 70 ? 'crit' : sys.cpu_temp > 55 ? 'warn' : 'val';
+      }
+      const ramEl = document.getElementById('stat-ram');
+      ramEl.textContent = sys.ram_used_pct ? sys.ram_used_pct + '%' : '--';
+      ramEl.className = sys.ram_used_pct > 85 ? 'crit' : sys.ram_used_pct > 70 ? 'warn' : 'val';
+      document.getElementById('stat-disk').textContent = sys.disk_used_pct || '--';
+      document.getElementById('stat-uptime').textContent = sys.uptime || '--';
+      document.getElementById('stat-ip').textContent = sys.ip || '---';
+
+      // Activity log
+      if (s.log) renderActivityLog(s.log);
+    }
+
+    function updateHwLine(id, emoji, label, info) {
+      const el = document.getElementById(id);
+      if (!info) { el.textContent = `${emoji} ${label}: unknown`; el.style.color = '#555'; return; }
+      el.textContent = `${emoji} ${label}: ${info.status === 'ok' ? '✓' : '✗'} ${info.detail || ''}`;
+      el.style.color = info.status === 'ok' ? 'var(--color-green)' : 'var(--color-red)';
+    }
+
+    // ═══════════════════════════════════════
+    //  Renderers
+    // ═══════════════════════════════════════
+    function renderModels(models, ollamaUp) {
+      const el = document.getElementById('ai-detail');
+      if (!models || models.length === 0) {
+        el.innerHTML = `<div style="color:#555">${ollamaUp ? 'No models installed' : 'Ollama not running'}</div>`;
+        return;
+      }
+      el.innerHTML = models.map(m =>
+        `<div class="log-line" style="color:var(--color-cyan)">⬡ ${m.name} <span style="color:#666">(${m.size})</span></div>`
+      ).join('');
+      document.getElementById('ai-panel').className = 'panel ok';
+    }
+
+    function renderApps(apps) {
+      const el = document.getElementById('apps-detail');
+      if (!apps || apps.length === 0) {
+        el.innerHTML = '<div style="color:#555">No apps registered</div>';
+        return;
+      }
+      el.innerHTML = apps.map(app => {
+        const cls = app.running ? 'app-item running' : 'app-item';
+        const statusText = app.running ? '● RUN' : '○';
+        return `<button class="${cls}" onclick="launchApp('${app.id}')">
+          <span class="icon">${app.icon}</span>
+          <span class="name">${app.name.toUpperCase()}</span>
+          <span class="status">${statusText}</span>
+        </button>`;
+      }).join('');
+    }
+
+    function renderActivityLog(entries) {
+      const el = document.getElementById('activity-entries');
+      el.innerHTML = entries.slice(-12).map(e =>
+        `<div class="activity-entry ${e.type}"><span class="time">${e.time}</span> ${e.message}</div>`
+      ).join('');
+      // Auto-scroll
+      const bar = document.getElementById('activity-bar');
+      bar.scrollTop = bar.scrollHeight;
+    }
+
+    function addLocalLog(type, message) {
+      const time = new Date().toLocaleTimeString('en-GB', {hour:'2-digit', minute:'2-digit', second:'2-digit'});
+      const el = document.getElementById('activity-entries');
+      el.innerHTML += `<div class="activity-entry ${type}"><span class="time">${time}</span> ${message}</div>`;
+      const bar = document.getElementById('activity-bar');
+      bar.scrollTop = bar.scrollHeight;
+    }
+
+    // ═══════════════════════════════════════
+    //  Actions
+    // ═══════════════════════════════════════
+    function testSpeaker() { send('test_speaker'); }
+
+    function handleTestResult(data) {
+      addLocalLog(data.success ? 'hardware' : 'error', `Speaker test: ${data.message}`);
+    }
+
+    function launchApp(appId) {
+      addLocalLog('app', `Launching ${appId}...`);
+      send('launch_app', { app_id: appId });
+    }
+
+    function handleAppEvent(data) {
+      addLocalLog(data.success ? 'app' : 'error', data.message);
+      if (data.navigate) {
+        const basePath = '/home/thecabbage/Desktop/dexterslab/dexterslab-frontend/public/';
+        setTimeout(() => {
+          window.location.href = 'file://' + basePath + data.navigate;
+        }, 1000);
+      }
+    }
+
+    function returnToOnline() {
+      if (!confirm('Return to Online Mode? This will stop all offline services.')) return;
+      addLocalLog('system', 'Switching to online mode...');
+      send('return_online');
+    }
+
+    function handleModeSwitch(data) {
+      addLocalLog('system', data.message);
+      if (data.navigate === 'online') {
+        setTimeout(() => {
+          window.location.href = 'https://dexterslab.cclottaaworld.com/observer';
+        }, 2000);
+      }
+    }
+
+    // ═══════════════════════════════════════
+    //  WiFi Modal
+    // ═══════════════════════════════════════
+    let selectedSsid = '';
+
+    function openWifiModal() { document.getElementById('wifi-modal').style.display = 'flex'; doScanWifi(); }
+    function closeWifiModal() { document.getElementById('wifi-modal').style.display = 'none'; cancelJoin(); }
+
+    function doScanWifi() {
+      document.getElementById('wifi-status').textContent = 'Scanning...';
+      document.getElementById('wifi-status').style.color = 'var(--color-amber)';
+      document.getElementById('wifi-list').innerHTML = '';
+      cancelJoin();
+      send('scan_wifi');
+    }
+
+    function handleWifiResults(data) {
+      document.getElementById('wifi-status').textContent = 'Scan complete.';
+      document.getElementById('wifi-status').style.color = 'var(--color-green)';
+      const listEl = document.getElementById('wifi-list');
+      const nets = data.networks || [];
+      if (nets.length === 0) {
+        listEl.innerHTML = '<div style="padding:8px; color:#888;">No networks found</div>';
+        return;
+      }
+      listEl.innerHTML = nets.map(n => {
+        const sigColor = n.signal >= 50 ? 'var(--color-green)' : n.signal >= 30 ? 'var(--color-amber)' : 'var(--color-red)';
+        return `<div class="wifi-item" onclick="selectWifi('${n.ssid.replace(/'/g,"\\'")}','${(n.security||'').replace(/'/g,"\\'")}')">
+          <span class="ssid">${n.ssid}</span>
+          <span class="info">Sec: ${n.security || 'OPEN'} | Sig: <span style="color:${sigColor}">${n.signal}%</span></span>
+        </div>`;
+      }).join('');
+    }
+
+    function selectWifi(ssid, sec) {
+      selectedSsid = ssid;
+      document.getElementById('wifi-join-panel').style.display = 'flex';
+      document.getElementById('wifi-join-target').textContent = `JOINING: ${ssid}`;
+      const pwd = document.getElementById('wifi-pwd');
+      if (!sec || sec.trim() === '') { pwd.style.display = 'none'; pwd.value = ''; }
+      else { pwd.style.display = 'block'; pwd.value = ''; pwd.focus(); }
+    }
+
+    function cancelJoin() {
+      selectedSsid = '';
+      document.getElementById('wifi-join-panel').style.display = 'none';
+    }
+
+    function submitJoin() {
+      if (!selectedSsid) return;
+      document.getElementById('wifi-status').textContent = `Connecting to ${selectedSsid}...`;
+      document.getElementById('wifi-status').style.color = 'var(--color-amber)';
+      send('join_wifi', { ssid: selectedSsid, password: document.getElementById('wifi-pwd').value });
+    }
+
+    function handleWifiJoin(data) {
+      document.getElementById('wifi-status').textContent = data.message || (data.success ? 'Connected!' : 'Failed!');
+      document.getElementById('wifi-status').style.color = data.success ? 'var(--color-green)' : 'var(--color-red)';
+      if (data.success) {
+        document.getElementById('wifi-join-panel').style.display = 'none';
+        setTimeout(() => closeWifiModal(), 2000);
+      }
+    }
+
+    // ═══════════════════════════════════════
+    //  Clock & Scan Line
+    // ═══════════════════════════════════════
+    setInterval(() => {
+      document.getElementById('clock').textContent =
+        new Date().toLocaleTimeString('en-GB', { hour:'2-digit', minute:'2-digit', second:'2-digit' });
+    }, 1000);
+
+    let scanY = 0;
+    setInterval(() => {
+      scanY = (scanY + 1.5) % 100;
+      document.getElementById('scanline').style.top = scanY + '%';
+    }, 50);
+
+    // ═══════════════════════════════════════
+    //  Boot
+    // ═══════════════════════════════════════
+    connect();
+  </script>
+</body>
+</html>
