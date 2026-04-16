@@ -288,6 +288,7 @@ export class BehaviorModel {
         for (const e of entities) {
             let score = e.size + e.activity * 0.3;
             if (e.id === this.primaryId) score *= 1.3;  // stability bonus
+            if (e.type === 'hand') score *= 2.0;        // hand priority: always track over face
             if (score > bestScore) {
                 bestScore = score;
                 best = e;

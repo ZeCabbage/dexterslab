@@ -343,7 +343,8 @@ export default function ObserverEyeV2() {
 
             // Detection mode change
             if (s.detectionMode && s.detectionMode !== obs.mode) {
-                const modeLabel = s.detectionMode === 'face' ? 'FACIAL_RECOGNITION' :
+                const modeLabel = s.detectionMode === 'hand' ? 'HAND_TRACKING' :
+                                  s.detectionMode === 'face' ? 'FACIAL_RECOGNITION' :
                                   s.detectionMode === 'motion' ? 'MOTION_DETECTION' : 'PASSIVE_SCAN';
                 addEntry(`MODE_SWITCH: ${modeLabel} engaged`, 'system');
                 obs.mode = s.detectionMode;

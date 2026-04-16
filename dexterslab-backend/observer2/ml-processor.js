@@ -56,7 +56,17 @@ export class MlProcessor {
         this._motionThreshold = 25;      // pixel brightness change threshold
         this._motionMinPixels = 80;      // minimum changed pixels to count as motion
         this._motionGridSize = 16;       // grid cell size for motion centroid
-        this._detectionMode = 'none';    // 'face', 'motion', or 'none'
+        this._detectionMode = 'none';    // 'face', 'motion', 'hand', or 'none'
+
+        // ── Hand detection (skin-tone blob above/beside face) ──
+        this._handSmoothX = 0;
+        this._handSmoothY = 0;
+        this._handSmoothSize = 0;
+        this._handHasPrior = false;
+        this._handLostTime = 0;          // when hand was last lost
+        this._handHoldDuration = 300;    // ms to hold hand position after losing it
+        this._handLastValid = null;      // last valid hand entity
+        this._handDetected = false;      // current frame hand state
     }
 
     /**
@@ -228,6 +238,47 @@ export class MlProcessor {
                     size: this._smoothSize,
                 };
 
+                // ── Hand detection: scan for skin-tone motion near face ──
+                const handEntity = this._detectHand(pixelData, width, height, channels, entities[0]);
+                if (handEntity) {
+                    this._handDetected = true;
+                    this._detectionMode = 'hand';
+                    // Smooth hand position
+                    if (this._handHasPrior) {
+                        this._handSmoothX += (handEntity.x - this._handSmoothX) * 0.5;
+                        this._handSmoothY += (handEntity.y - this._handSmoothY) * 0.5;
+                        this._handSmoothSize += (handEntity.size - this._handSmoothSize) * 0.4;
+                    } else {
+                        this._handSmoothX = handEntity.x;
+                        this._handSmoothY = handEntity.y;
+                        this._handSmoothSize = handEntity.size;
+                        this._handHasPrior = true;
+                    }
+                    const smoothedHand = {
+                        ...handEntity,
+                        x: this._handSmoothX,
+                        y: this._handSmoothY,
+                        size: this._handSmoothSize,
+                    };
+                    this._handLastValid = smoothedHand;
+                    this._handLostTime = 0;
+                    // Prepend hand as priority entity
+                    entities.unshift(smoothedHand);
+                } else {
+                    this._handDetected = false;
+                    // Hold hand briefly after losing it
+                    if (this._handLastValid) {
+                        if (!this._handLostTime) this._handLostTime = Date.now();
+                        if (Date.now() - this._handLostTime < this._handHoldDuration) {
+                            entities.unshift(this._handLastValid);
+                            this._detectionMode = 'hand';
+                        } else {
+                            this._handLastValid = null;
+                            this._handHasPrior = false;
+                        }
+                    }
+                }
+
                 this._lastValidEntities = entities;
                 this._lastDetectionTime = Date.now();
             } else {
@@ -357,6 +408,89 @@ export class MlProcessor {
                 this._prevGray[i] = pixelData[i * 3] * 0.299 + pixelData[i * 3 + 1] * 0.587 + pixelData[i * 3 + 2] * 0.114;
             }
         }
+    }
+
+    /**
+     * Detect a hand near a detected face using skin-tone color + motion.
+     * Scans in regions above and to the sides of the face bounding box.
+     * Returns a hand entity or null.
+     */
+    _detectHand(pixelData, width, height, channels, faceEntity) {
+        if (!this._prevGray) return null;
+
+        // Face position in pixel coords
+        const faceSize = Math.sqrt(faceEntity.size); // normalized side length
+        const facePxW = faceSize * width;
+        const facePxH = faceSize * height;
+        const faceCx = faceEntity.x * width;
+        const faceCy = faceEntity.y * height;
+
+        // Scan region: above, left, and right of the face
+        // Expand search area to 3× face width and from face-top upward + sides
+        const scanLeft   = Math.max(0, Math.floor(faceCx - facePxW * 2.5));
+        const scanRight  = Math.min(width - 1, Math.floor(faceCx + facePxW * 2.5));
+        const scanTop    = Math.max(0, Math.floor(faceCy - facePxH * 3.0));
+        const scanBottom = Math.min(height - 1, Math.floor(faceCy - facePxH * 0.3));
+
+        if (scanBottom <= scanTop || scanRight <= scanLeft) return null;
+
+        // Grid-based scan (4px steps for speed)
+        const step = 4;
+        let skinMotionSumX = 0, skinMotionSumY = 0, skinMotionCount = 0;
+
+        for (let y = scanTop; y < scanBottom; y += step) {
+            for (let x = scanLeft; x < scanRight; x += step) {
+                const idx = y * width + x;
+                const pxOff = idx * channels;
+
+                const r = pixelData[pxOff];
+                const g = pixelData[pxOff + 1];
+                const b = pixelData[pxOff + 2];
+
+                // Quick skin-tone check (RGB heuristic — fast, avoids HSV conversion)
+                // Skin: R > 80, G > 40, B > 20, R > G, R > B, |R-G| > 15, R-B > 15
+                if (r < 80 || g < 40 || b < 20) continue;
+                if (r <= g || r <= b) continue;
+                if (r - g < 15 || r - b < 15) continue;
+                // Reject very bright whites (paper, walls)
+                if (r > 230 && g > 210 && b > 200) continue;
+
+                // Check motion at this pixel
+                const gray = r * 0.299 + g * 0.587 + b * 0.114;
+                const prevGray = this._prevGray[idx];
+                const diff = Math.abs(gray - prevGray);
+
+                if (diff > 18) {  // skin pixel + motion
+                    skinMotionSumX += x;
+                    skinMotionSumY += y;
+                    skinMotionCount++;
+                }
+            }
+        }
+
+        // Need enough skin-motion pixels to qualify as a hand
+        // Threshold: at least 12 grid cells (= ~192 pixels at step=4)
+        if (skinMotionCount < 12) return null;
+
+        // Compute centroid
+        const handX = (skinMotionSumX / skinMotionCount) / width;
+        const handY = (skinMotionSumY / skinMotionCount) / height;
+        const handSize = Math.min(0.15, (skinMotionCount * step * step) / (width * height) * 4.0);
+
+        // Verify the hand centroid isn't overlapping the face center too much
+        const distToFace = Math.sqrt(
+            Math.pow(handX - faceEntity.x, 2) + Math.pow(handY - faceEntity.y, 2)
+        );
+        if (distToFace < faceSize * 0.5) return null;  // too close to face center, likely false positive
+
+        return {
+            x: Math.max(0, Math.min(1, handX)),
+            y: Math.max(0, Math.min(1, handY)),
+            size: Math.max(0.005, handSize),
+            activity: 1.5,   // higher than face (1.0) — behavior model will prioritize
+            id: 0,
+            type: 'hand',
+        };
     }
 
     /**
