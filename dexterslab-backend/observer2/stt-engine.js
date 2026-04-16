@@ -76,8 +76,11 @@ export class STTEngine extends EventEmitter {
     if (result.text && result.text.trim()) {
       const text = result.text.trim();
       const conf = result.confidence !== undefined ? result.confidence : null;
+      const fast = result.fast ? ' ⚡FAST' : '';
       if (conf !== null) {
-        console.log(`[STT] ← (conf=${conf})`);
+        console.log(`[STT] ← (conf=${conf})${fast}`);
+      } else if (fast) {
+        console.log(`[STT] ←${fast}`);
       }
       this.emit('transcript', text);
     }

@@ -640,17 +640,81 @@ def vision_tracking():
 async def ws_handler(websocket):
     connected_clients.add(websocket)
     print(f"{LOG_TAG} Display client connected.")
-    try:
-        while True:
-            # Build compact payload (exclude internal keys)
-            payload = {k: v for k, v in eye_state.items() if not k.startswith('_')}
-            await websocket.send(json.dumps(payload))
-            await asyncio.sleep(1.0 / 30.0)
-    except Exception:
-        pass
-    finally:
-        connected_clients.discard(websocket)
-        print(f"{LOG_TAG} Display client disconnected.")
+    
+    async def send_loop():
+        try:
+            while True:
+                # Build compact payload (exclude internal keys)
+                payload = {k: v for k, v in eye_state.items() if not k.startswith('_')}
+                await websocket.send(json.dumps(payload))
+                await asyncio.sleep(1.0 / 30.0)
+        except Exception:
+            pass
+
+    async def recv_loop():
+        try:
+            async for message in websocket:
+                try:
+                    data = json.loads(message)
+                except Exception:
+                    continue
+                
+                action = data.get('action')
+                if action == 'scan_wifi':
+                    print(f"{LOG_TAG} Scanning WiFi...")
+                    try:
+                        result = subprocess.run(
+                            ['nmcli', '-t', '-f', 'SSID,SIGNAL,SECURITY', 'dev', 'wifi', 'list'],
+                            capture_output=True, text=True, timeout=10
+                        )
+                        networks = []
+                        seen = set()
+                        for line in result.stdout.strip().split('\n'):
+                            if not line: continue
+                            match = re.match(r'^(.*):(\d+):(.*)$', line)
+                            if match:
+                                ssid = match.group(1).replace(r'\:', ':')
+                                signal = match.group(2)
+                                sec = match.group(3)
+                                if ssid and ssid != '--' and ssid not in seen:
+                                    seen.add(ssid)
+                                    networks.append({'ssid': ssid, 'signal': signal, 'security': sec})
+                                    
+                        networks.sort(key=lambda x: int(x['signal']), reverse=True)
+                        await websocket.send(json.dumps({'type': 'wifi_results', 'networks': networks}))
+                    except Exception as e:
+                        print(f"{LOG_TAG} WiFi Scan Error: {e}")
+                        await websocket.send(json.dumps({'type': 'wifi_results', 'networks': [], 'error': str(e)}))
+                        
+                elif action == 'join_wifi':
+                    ssid = data.get('ssid')
+                    password = data.get('password')
+                    print(f"{LOG_TAG} Joining WiFi: {ssid}")
+                    try:
+                        cmd = ['nmcli', 'dev', 'wifi', 'connect', ssid]
+                        if password:
+                            cmd.extend(['password', password])
+                        result = subprocess.run(cmd, capture_output=True, text=True, timeout=20)
+                        success = result.returncode == 0
+                        await websocket.send(json.dumps({
+                            'type': 'wifi_join_status', 
+                            'success': success, 
+                            'message': result.stdout if success else result.stderr
+                        }))
+                    except Exception as e:
+                        await websocket.send(json.dumps({'type': 'wifi_join_status', 'success': False, 'message': str(e)}))
+        except Exception:
+            pass
+
+    send_task = asyncio.create_task(send_loop())
+    recv_task = asyncio.create_task(recv_loop())
+    
+    done, pending = await asyncio.wait([send_task, recv_task], return_when=asyncio.FIRST_COMPLETED)
+    for task in pending:
+        task.cancel()
+        
+    connected_clients.discard(websocket)
+    print(f"{LOG_TAG} Display client disconnected.")
 
 
 async def main():

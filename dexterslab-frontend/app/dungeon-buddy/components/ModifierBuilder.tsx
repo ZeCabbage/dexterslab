@@ -160,25 +160,51 @@ function ConditionalDamageForm({ onAdd }: { onAdd: (mod: ModifierEffect) => void
 }
 
 function ModifyACForm({ onAdd }: { onAdd: (mod: ModifierEffect) => void }) {
-  const [formula, setFormula] = useState('1');
+  const [mode, setMode] = useState<'bonus' | 'formula'>('bonus');
+  const [bonus, setBonus] = useState(1);
+  const [formula, setFormula] = useState('13+dex');
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-      <div>
-        <div style={labelStyle}>AC Bonus / Formula</div>
-        <input
-          style={inputStyle}
-          value={formula}
-          onChange={e => setFormula(e.target.value)}
-          placeholder="e.g., 1 for +1, or 13+dex for Unarmored"
-        />
-        <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
-          Use a number for flat bonus (e.g., "1" = +1 AC) or a formula like "13+dex" for Unarmored Defense
-        </div>
+      <div style={{ display: 'flex', gap: '8px' }}>
+        <button onClick={() => setMode('bonus')} style={{ ...btnPrimary, flex: 1, background: mode === 'bonus' ? 'linear-gradient(135deg, #cfaa5e, #b8842e)' : '#222', color: mode === 'bonus' ? '#000' : '#888' }}>Flat Bonus (+1, +2)</button>
+        <button onClick={() => setMode('formula')} style={{ ...btnPrimary, flex: 1, background: mode === 'formula' ? 'linear-gradient(135deg, #cfaa5e, #b8842e)' : '#222', color: mode === 'formula' ? '#000' : '#888' }}>Base Formula</button>
       </div>
+      {mode === 'bonus' ? (
+        <div>
+          <div style={labelStyle}>AC Bonus</div>
+          <input
+            style={inputStyle}
+            type="number"
+            min={1}
+            max={10}
+            value={bonus}
+            onChange={e => setBonus(parseInt(e.target.value) || 1)}
+          />
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
+            Flat bonus that stacks with everything (e.g., Ring of Protection +1)
+          </div>
+        </div>
+      ) : (
+        <div>
+          <div style={labelStyle}>AC Formula</div>
+          <input
+            style={inputStyle}
+            value={formula}
+            onChange={e => setFormula(e.target.value)}
+            placeholder="e.g., 13+dex, 10+dex+wis, 10+dex+con"
+          />
+          <div style={{ fontSize: '10px', color: '#666', marginTop: '4px' }}>
+            Base AC formula (replaces armor). Engine picks the highest between all formulas and equipped armor.
+          </div>
+        </div>
+      )}
       <button
         style={btnPrimary}
-        onClick={() => onAdd({ type: 'modify_ac', formula })}
+        onClick={() => mode === 'bonus'
+          ? onAdd({ type: 'modify_ac', bonus })
+          : onAdd({ type: 'set_ac_formula', formula })
+        }
         onMouseOver={e => e.currentTarget.style.filter = 'brightness(1.2)'}
         onMouseOut={e => e.currentTarget.style.filter = 'brightness(1)'}
       >
@@ -222,7 +248,11 @@ function ModifierBadge({ mod, onRemove }: { mod: ModifierEffect; onRemove: () =>
       color = '#ff6666';
       break;
     case 'modify_ac':
-      label = `🛡️ AC: ${mod.formula}`;
+      label = `🛡️ AC: +${mod.bonus}`;
+      color = '#66aaff';
+      break;
+    case 'set_ac_formula':
+      label = `🛡️ AC Formula: ${mod.formula}`;
       color = '#66aaff';
       break;
     case 'grant_resistance':

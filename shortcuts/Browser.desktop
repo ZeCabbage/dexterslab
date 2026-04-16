@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Web Browser
+Exec=/usr/bin/chromium-browser
+Icon=/home/thecabbage/Desktop/dexterslab/dexterslab-frontend/public/icons/browser-icon.svg
+Terminal=false
+StartupNotify=false

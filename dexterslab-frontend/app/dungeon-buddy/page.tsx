@@ -80,10 +80,10 @@ export default function DungeonBuddyLobby() {
             <h3 className={styles.rosterTitle}>Select Existing Hero</h3>
             
             <div style={{ marginBottom: '24px', maxHeight: '200px', overflowY: 'auto', border: '1px solid #4a3b2a', borderRadius: '4px', background: 'rgba(0,0,0,0.5)', padding: '8px' }}>
-              {characters.length === 0 ? (
+              {characters.filter(c => c.id).length === 0 ? (
                  <div style={{ color: '#888', textAlign: 'center', padding: '12px', fontStyle: 'italic' }}>No heroes found. Forge one below!</div>
               ) : (
-                characters.map(c => (
+                characters.filter(c => c.id).map(c => (
                   <button 
                     key={c.id} 
                     onClick={() => setSelectedCharId(c.id)}
@@ -91,15 +91,15 @@ export default function DungeonBuddyLobby() {
                       display: 'block', 
                       width: '100%', 
                       padding: '10px 12px', 
-                      background: selectedCharId === c.id ? '#cfaa5e' : 'transparent',
-                      color: selectedCharId === c.id ? '#000' : '#cfaa5e',
+                      background: selectedCharId && selectedCharId === c.id ? '#cfaa5e' : 'transparent',
+                      color: selectedCharId && selectedCharId === c.id ? '#000' : '#cfaa5e',
                       border: 'none',
                       borderBottom: '1px solid #332211',
                       textAlign: 'left',
                       fontFamily: 'Cinzel, serif',
                       fontSize: '14px',
                       cursor: 'pointer',
-                      fontWeight: selectedCharId === c.id ? 'bold' : 'normal',
+                      fontWeight: selectedCharId && selectedCharId === c.id ? 'bold' : 'normal',
                       transition: 'all 0.1s'
                     }}
                   >

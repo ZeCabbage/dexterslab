@@ -5,7 +5,8 @@
   "type": "module",
   "scripts": {
     "dev": "node --watch server.js",
-    "start": "node server.js"
+    "start": "node server.js",
+    "seed:crucible": "node scripts/seed-crucible.js"
   },
   "dependencies": {
     "@google/genai": "^1.46.0",

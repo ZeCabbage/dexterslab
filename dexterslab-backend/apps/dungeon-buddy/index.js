@@ -101,8 +101,8 @@ export default class DungeonBuddyApp {
     router.post('/characters', express.json({ limit: '10mb' }), (req, res) => {
       const characters = this.readData();
       const newChar = {
-        id: 'char_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
         ...req.body,
+        id: 'char_' + Date.now() + '_' + Math.floor(Math.random() * 1000),
         logbook: req.body.logbook || []
       };
       characters.push(newChar);
@@ -294,12 +294,12 @@ You must return a valid JSON object strictly matching this schema:
   "classId": "ID of the class",
   "backgroundId": "ID of the background",
   "baseScores": {
-     "str": number (8-15),
-     "dex": number (8-15),
-     "con": number (8-15),
-     "int": number (8-15),
-     "wis": number (8-15),
-     "cha": number (8-15)
+     "str": number (8-20),
+     "dex": number (8-20),
+     "con": number (8-20),
+     "int": number (8-20),
+     "wis": number (8-20),
+     "cha": number (8-20)
   },
   "skills": ["Array of skill IDs appropriate for this class to choose"],
   "portraitPrompt": "A highly detailed, atmospheric image prompt describing this character's visual appearance based on your choices and the user's description.",
@@ -352,7 +352,7 @@ MODIFIER TYPES (for customEquipment.modifiers, use ONLY these exact structures):
 CRITICAL RULES:
 1. You MUST pick "raceId", "classId", and "backgroundId" ONLY from the provided allowed lists below.
 2. If "raceId" has subraces in the allowed list, you MUST pick a valid "subraceId" from that specific race's subrace list. If it has no subraces, use null.
-3. The "baseScores" MUST perfectly adhere to D&D 5e Point Buy rules: exactly 27 points must be spent. (Costs: 8=0, 9=1, 10=2, 11=3, 12=4, 13=5, 14=7, 15=9). Do not overspend or underspend. Do NOT add racial bonuses to these base scores.
+3. The "baseScores" MUST perfectly adhere to D&D 5e Point Buy rules: exactly 27 points must be spent. (Costs: 8=0, 9=1, 10=2, 11=3, 12=4, 13=5, 14=7, 15=9, 16=11, 17=13, 18=15, 19=17, 20=19). Scores can range from 8 to 20. Do not overspend or underspend. Do NOT add racial bonuses to these base scores.
 4. The "skills" array must contain EXACTLY the number of skill choices allowed by the chosen class (usually 2, sometimes 3 or 4 like Rogue/Bard). You can only choose skills from the chosen Class's allowed skill list. DO NOT include skills already provided by the chosen Background.
 5. "customSpells": If the chosen Class is a spellcaster, invent 2 or 3 completely custom, wildly creative homebrew spells (Level 0 Cantrips or Level 1 Spells ONLY) that strictly fit the user's narrative theme. EVERY spell with damage MUST include "damageType" and "school". If the chosen class is a martial (Fighter, Barbarian, Rogue, Monk) without spellcasting provided, leave the "customSpells" array EMPTY.
 6. "customEquipment": Invent 3 to 5 deeply thematic starting items for this character. Include at least one weapon (type: "weapon", slot: "mainHand") and one set of armor or clothing (type: "armor", slot: "chest") tailored to the theme. Weapons MUST include "damage", "damageType", "weaponCategory", and "properties". Give weapons balanced 5E damage (e.g. 1d8) and armor balanced AC (e.g. 11 to 14). You may include ONE magic item with a "modifiers" array if thematically appropriate.
@@ -467,6 +467,13 @@ MODIFIER TYPES (you MUST use ONLY these exact JSON structures in the modifiers a
 
   Post-Hit (Smite pattern):
   { "type": "post_hit_modifier", "name": "Eldritch Smite", "costType": "spell_slot", "baseDice": "1d8", "dicePerLevel": "1d8", "damageType": "force" }
+
+  Virtual Weapons (Unarmed Strikes & Natural Weapons):
+  { "type": "modify_unarmed_strike", "damageDie": "1d4", "useDexterity": true }  — Upgrades unarmed strike (e.g. Monk Martial Arts, Tavern Brawler)
+  { "type": "grant_natural_weapon", "name": "Claws", "damageDie": "1d4", "damageType": "slashing", "useDexterity": true }  — Racial/form natural weapons (Tabaxi, Minotaur, etc.)
+
+  Damage Reduction:
+  { "type": "flat_damage_reduction", "value": 3, "damageTypes": ["bludgeoning", "piercing", "slashing"], "nonMagicalOnly": true, "source": "Heavy Armor Master" }
 
 CRITICAL RULES:
 1. JSON SYNTAX: You MUST NOT use literal newlines or line breaks inside your JSON strings. Keep descriptions on a single continuous line, or use explicit "\\n" characters if a newline is absolutely required.

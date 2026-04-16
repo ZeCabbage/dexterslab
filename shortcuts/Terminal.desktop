@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Terminal
+Exec=/usr/bin/lxterminal
+Icon=/home/thecabbage/Desktop/dexterslab/dexterslab-frontend/public/icons/terminal-icon.svg
+Terminal=false
+StartupNotify=false

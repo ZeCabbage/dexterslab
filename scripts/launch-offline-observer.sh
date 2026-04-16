@@ -48,6 +48,11 @@ if [ -d "$CHROMIUM_DIR" ]; then
   sed -i 's/"exit_type":"Crashed"/"exit_type":"Normal"/' "$CHROMIUM_DIR/Preferences" 2>/dev/null
 fi
 
+if [ "$1" == "--wifi" ]; then
+  echo "$LOG_TAG Triggering WiFi config UI format..."
+  OFFLINE_URL="${OFFLINE_URL}#wifi"
+fi
+
 echo "$LOG_TAG Launching Chromium kiosk directly to local file..."
 
 # ── Launch Chromium in fullscreen kiosk mode ──

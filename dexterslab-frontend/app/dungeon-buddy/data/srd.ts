@@ -98,6 +98,7 @@ export const SKILL_LABELS: Record<SkillName, string> = {
 
 export const POINT_BUY_COSTS: Record<number, number> = {
   8: 0, 9: 1, 10: 2, 11: 3, 12: 4, 13: 5, 14: 7, 15: 9,
+  16: 11, 17: 13, 18: 15, 19: 17, 20: 19,
 };
 export const POINT_BUY_TOTAL = 27;
 

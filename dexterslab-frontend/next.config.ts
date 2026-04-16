@@ -11,6 +11,10 @@ const nextConfig: NextConfig = {
         source: '/api/dungeon-buddy/:path*',
         destination: 'http://localhost:8888/api/dungeon-buddy/:path*',
       },
+      {
+        source: '/api/generate-dog',
+        destination: 'http://localhost:8888/api/generate-dog',
+      },
     ];
   },
 };

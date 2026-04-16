@@ -120,6 +120,106 @@
       color: #fff;
       border-color: #f44;
     }
+
+    /* ── Wi-Fi Modal ── */
+    #wifi-btn {
+      position: absolute;
+      bottom: 12px; left: 12px;
+      z-index: 30;
+      background: rgba(0,255,100,0.15);
+      border: 1px solid rgba(0,255,100,0.5);
+      color: #0f6;
+      font-family: 'VT323', monospace;
+      font-size: 13px;
+      letter-spacing: 1px;
+      padding: 6px 14px;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: all 0.2s ease;
+    }
+    #wifi-btn:hover {
+      background: rgba(0,255,100,0.35);
+      color: #fff;
+      border-color: #0f6;
+    }
+    
+    #wifi-modal {
+      display: none;
+      position: absolute;
+      top: 0; left: 0; right: 0; bottom: 0;
+      background: rgba(0,0,0,0.85);
+      z-index: 50;
+      align-items: center; justify-content: center;
+      backdrop-filter: blur(4px);
+    }
+    #wifi-modal-content {
+      background: #111;
+      border: 1px solid #0fc;
+      border-radius: 6px;
+      width: 420px;
+      max-width: 90vw;
+      height: 380px;
+      max-height: 90vh;
+      display: flex;
+      flex-direction: column;
+      padding: 15px;
+      box-shadow: 0 0 30px rgba(0, 255, 200, 0.2);
+    }
+    #wifi-header {
+      display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid #333;
+      padding-bottom: 10px; margin-bottom: 15px;
+      font-size: 18px; font-weight: bold; letter-spacing: 2px;
+    }
+    #wifi-close-btn {
+      background: transparent; border: none; color: #f44; font-size: 20px;
+      cursor: pointer; padding: 0;
+    }
+    #wifi-status {
+      font-size: 14px; color: #fa0; margin-bottom: 10px;
+    }
+    #wifi-list {
+      flex: 1;
+      overflow-y: auto;
+      border: 1px solid #333;
+      background: #000;
+      margin-bottom: 15px;
+    }
+    .wifi-item {
+      padding: 8px 12px;
+      border-bottom: 1px solid #222;
+      display: flex; justify-content: space-between; align-items: center;
+      cursor: pointer;
+    }
+    .wifi-item:hover { background: #222; }
+    .wifi-item .ssid { font-weight: bold; color: #fff; }
+    .wifi-item .info { font-size: 11px; color: #888; }
+    .wifi-item .signal { color: #0fc; }
+    
+    #wifi-join-panel {
+      display: none;
+      flex-direction: column;
+      background: #0a0a0a;
+      border: 1px solid #0fc;
+      padding: 12px;
+      margin-bottom: 15px;
+    }
+    #wifi-join-target { font-weight: bold; color: #fff; margin-bottom: 8px; font-size: 16px; }
+    #wifi-pwd {
+      background: #000; border: 1px solid #444; color: #fff;
+      font-family: inherit; font-size: 18px; padding: 6px;
+      width: 100%; letter-spacing: 2px; outline: none;
+    }
+    #wifi-pwd:focus { border-color: #0fc; }
+    .wifi-action-btn {
+      background: #222; border: 1px solid #555; color: #ddd;
+      font-family: 'VT323', monospace; font-size: 14px;
+      padding: 6px 12px; cursor: pointer; letter-spacing: 1px;
+    }
+    .wifi-action-btn:hover { background: #333; }
+    .wifi-action-btn.primary { background: rgba(0,255,200,0.15); border-color: #0fc; color: #0fc; }
+    .wifi-action-btn.primary:hover { background: rgba(0,255,200,0.3); color: #fff; }
+
   </style>
 </head>
 <body>
@@ -143,6 +243,31 @@
 
   <!-- Connection Status -->
   <div id="conn-status"></div>
+
+  <!-- Network Config Button & Modal -->
+  <button id="wifi-btn" onclick="openWifiModal()">[ NO SIGNAL? SCAN WIFI ]</button>
+  
+  <div id="wifi-modal">
+    <div id="wifi-modal-content">
+      <div id="wifi-header">
+        <span>☫ LOCAL NETWORK CONFIGURATION</span>
+        <button id="wifi-close-btn" onclick="closeWifiModal()">✕</button>
+      </div>
+      <div id="wifi-status">Click SCAN to find nearby networks...</div>
+      <div id="wifi-list"></div>
+      <div id="wifi-join-panel">
+        <div id="wifi-join-target"></div>
+        <input type="password" id="wifi-pwd" placeholder="Enter Password" autocomplete="off" />
+        <div style="display:flex; gap:10px; margin-top:10px; justify-content:flex-end;">
+          <button class="wifi-action-btn" onclick="cancelJoin()">CANCEL</button>
+          <button class="wifi-action-btn primary" onclick="submitJoin()">CONNECT</button>
+        </div>
+      </div>
+      <div style="margin-top:auto; padding-top:15px; border-top:1px solid #444;">
+        <button class="wifi-action-btn" onclick="scanWifi()">SCAN NETWORKS</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Close Button -->
   <button id="close-btn" onclick="returnToHub()">✕ CLOSE</button>
@@ -366,6 +491,9 @@
         hudStatus.textContent = 'Connected to Edge Daemon';
         hudStatus.className = 'hud-line hud-ok';
         setTimeout(() => { connEl.textContent = ''; }, 3000);
+        
+        // Auto-open WiFi config if launched by desktop icon
+        if (window.location.hash === '#wifi') openWifiModal();
       };
 
       ws.onmessage = (event) => {
@@ -400,6 +528,24 @@
           S.entities = data.entities || [];
 
           updateEntityTags(S.entities);
+          
+          // Wi-Fi Results
+          if (data.type === 'wifi_results') {
+            document.getElementById('wifi-status').textContent = 'Scan complete.';
+            document.getElementById('wifi-status').style.color = '#0fc';
+            populateWifiList(data.networks || []);
+            return;
+          }
+          if (data.type === 'wifi_join_status') {
+            document.getElementById('wifi-status').textContent = data.message || (data.success ? 'Connected successfully!' : 'Connection failed!');
+            document.getElementById('wifi-status').style.color = data.success ? '#0f6' : '#f44';
+            if (data.success) {
+               document.getElementById('wifi-join-panel').style.display = 'none';
+               // Auto-close modal after successful connection
+               setTimeout(() => closeWifiModal(), 2000);
+            }
+            return;
+          }
 
           // Navigate command (voice "close" / "go home")
           if (data.navigate === 'hub') {
@@ -427,6 +573,10 @@
         connEl.textContent = '✕ DISCONNECTED — RECONNECTING...';
         hudStatus.textContent = 'Disconnected';
         hudStatus.className = 'hud-line hud-warn';
+        if (document.getElementById('wifi-modal').style.display !== 'flex') {
+          // Subtle hint to configure networking
+          document.getElementById('wifi-btn').style.animation = 'pulse 2s infinite';
+        }
         scheduleReconnect();
       };
 
@@ -494,6 +644,93 @@
       setTimeout(() => {
         window.location.href = '/observer';
       }, 500);
+    }
+
+    // ═══════════════════════════════════════
+    //  Wi-Fi Config Modal Logic
+    // ═══════════════════════════════════════
+    let selectedSsid = '';
+
+    function openWifiModal() {
+      document.getElementById('wifi-modal').style.display = 'flex';
+      document.getElementById('wifi-btn').style.animation = 'none';
+      if (ws && S.connected) {
+         scanWifi();
+      } else {
+         document.getElementById('wifi-status').textContent = 'Please wait for Edge Daemon connection to scan networks.';
+      }
+    }
+
+    function closeWifiModal() {
+      document.getElementById('wifi-modal').style.display = 'none';
+      cancelJoin();
+    }
+
+    function scanWifi() {
+      if (!ws || !S.connected) return;
+      document.getElementById('wifi-status').textContent = 'Scanning for network frequencies... [Please Wait]';
+      document.getElementById('wifi-status').style.color = '#fa0';
+      document.getElementById('wifi-list').innerHTML = '';
+      cancelJoin();
+      ws.send(JSON.stringify({ action: 'scan_wifi' }));
+    }
+
+    function populateWifiList(networks) {
+      const listEl = document.getElementById('wifi-list');
+      listEl.innerHTML = '';
+      if (networks.length === 0) {
+        listEl.innerHTML = '<div style="padding:10px; color:#888;">No networks found</div>';
+        return;
+      }
+      networks.forEach(net => {
+        const item = document.createElement('div');
+        item.className = 'wifi-item';
+        item.onclick = () => selectWifi(net.ssid, net.security);
+        
+        let sigColor = '#0fc';
+        if (net.signal < 50) sigColor = '#fa0';
+        if (net.signal < 30) sigColor = '#f44';
+        
+        item.innerHTML = `
+          <div class="ssid">${net.ssid}</div>
+          <div class="info">
+            Sec: <span>${net.security || 'OPEN'}</span> | 
+            Sig: <span class="signal" style="color:${sigColor}">${net.signal}%</span>
+          </div>
+        `;
+        listEl.appendChild(item);
+      });
+    }
+
+    function selectWifi(ssid, sec) {
+      selectedSsid = ssid;
+      document.getElementById('wifi-join-panel').style.display = 'flex';
+      document.getElementById('wifi-join-target').textContent = `JOINING: ${ssid}`;
+      const pwdInput = document.getElementById('wifi-pwd');
+      
+      if (!sec || sec.trim() === '') {
+        pwdInput.style.display = 'none';
+        pwdInput.value = '';
+      } else {
+        pwdInput.style.display = 'block';
+        pwdInput.value = '';
+        pwdInput.focus();
+      }
+      document.getElementById('wifi-list').style.height = '120px'; // shrink list
+    }
+
+    function cancelJoin() {
+      selectedSsid = '';
+      document.getElementById('wifi-join-panel').style.display = 'none';
+      document.getElementById('wifi-list').style.height = 'auto';
+    }
+
+    function submitJoin() {
+      if (!ws || !S.connected || !selectedSsid) return;
+      document.getElementById('wifi-status').textContent = `Authenticating to ${selectedSsid}...`;
+      document.getElementById('wifi-status').style.color = '#fa0';
+      const pwd = document.getElementById('wifi-pwd').value;
+      ws.send(JSON.stringify({ action: 'join_wifi', ssid: selectedSsid, password: pwd }));
     }
   </script>
 </body>

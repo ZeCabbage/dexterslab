@@ -59,9 +59,10 @@ CHUNK_SIZE = 8000
 
 # Sentence accumulation: collect finalized segments within a short window
 # before emitting, so "launch" + "offline observer" become one transcript.
-# Reduced from 2.0s to 1.2s — safe because we now track partial activity
-# to prevent emitting while the user is still mid-sentence.
-ACCUMULATION_WINDOW = 1.2  # seconds
+# Base window at 0.8s (down from 1.2s). Nav commands bypass entirely via fast-emit.
+# Partial activity tracking prevents premature emission while user is mid-sentence.
+ACCUMULATION_WINDOW = 0.8  # seconds (default for general speech)
+ACCUMULATION_WINDOW_QUESTION = 0.5  # seconds (shorter for detected questions)
 accumulated_text = []
 last_final_time = 0
 last_partial_time = 0  # Track when partials last flowed (user speaking indicator)
@@ -107,7 +108,43 @@ def strip_phantom(text):
         words.pop()
     return " ".join(words)
 
-print(f"Vosk worker ready (chunk={CHUNK_SIZE}b, accumulation={ACCUMULATION_WINDOW}s, min_confidence={MIN_CONFIDENCE})", flush=True)
+# ── Fast-emit: navigation commands skip accumulation entirely ──
+CLOSE_COMMANDS = frozenset([
+    'go home', 'go back', 'return home', 'exit',
+    'close app', 'close application', 'go to hub',
+    'close the app', 'close the application',
+    'return to hub', 'back to hub', 'exit application', 'exit app',
+])
+
+QUESTION_STARTERS_SET = frozenset([
+    'who', 'what', 'when', 'where', 'why', 'how',
+    'is', 'are', 'was', 'were', 'will', 'would',
+    'can', 'could', 'do', 'does', 'did', 'should',
+])
+
+def is_complete_nav(text):
+    """Check if text is a complete navigation command — emit immediately."""
+    lower = text.lower().strip()
+    words = lower.split()
+    if not words:
+        return False
+    # Complete close/return patterns
+    if lower in CLOSE_COMMANDS:
+        return True
+    # "open/launch/start/show [target]" with at least one real target word
+    if words[0] in ('open', 'launch', 'start', 'show') and len(words) >= 2:
+        target_words = [w for w in words[1:] if w not in PHANTOM_WORDS]
+        return len(target_words) > 0
+    # "close/stop/kill [specific app]" — generic close already in CLOSE_COMMANDS
+    if words[0] in ('close', 'stop', 'kill') and len(words) >= 2:
+        target_words = [w for w in words[1:] if w not in PHANTOM_WORDS]
+        return len(target_words) > 0
+    # "switch to X"
+    if len(words) >= 3 and words[0] == 'switch' and words[1] == 'to':
+        return True
+    return False
+
+print(f"Vosk worker ready (chunk={CHUNK_SIZE}b, accumulation={ACCUMULATION_WINDOW}s/{ACCUMULATION_WINDOW_QUESTION}s(q), min_confidence={MIN_CONFIDENCE})", flush=True)
 
 try:
     while True:
@@ -148,6 +185,12 @@ try:
                             print(json.dumps({"text": combined, "confidence": round(avg_conf, 3)}), flush=True)
                     accumulated_text = [text]
                 last_final_time = now
+
+                # ── Fast-emit: complete nav commands skip accumulation wait ──
+                combined_check = strip_phantom(" ".join(accumulated_text))
+                if combined_check and is_complete_nav(combined_check):
+                    print(json.dumps({"text": combined_check, "fast": True}), flush=True)
+                    accumulated_text = []
         else:
             res = json.loads(rec.PartialResult())
             partial = res.get("partial", "")
@@ -161,7 +204,13 @@ try:
                 now = time.time()
                 silence_since_final = now - last_final_time
                 silence_since_partial = now - last_partial_time
-                if accumulated_text and silence_since_final > ACCUMULATION_WINDOW and silence_since_partial > ACCUMULATION_WINDOW:
+                # Dynamic window: shorter for questions, default for general speech
+                effective_window = ACCUMULATION_WINDOW
+                if accumulated_text:
+                    first_word = " ".join(accumulated_text).split()[0].lower()
+                    if first_word in QUESTION_STARTERS_SET:
+                        effective_window = ACCUMULATION_WINDOW_QUESTION
+                if accumulated_text and silence_since_final > effective_window and silence_since_partial > effective_window:
                     combined = strip_phantom(" ".join(accumulated_text))
                     if combined:  # Only emit if there's real content after stripping
                         print(json.dumps({"text": combined}), flush=True)

@@ -51,9 +51,11 @@ export type ModifierEffect =
   | { type: 'upgrade_resource_die'; resourceId: string; newDie: string } // e.g. d8 → d10
 
   // ── Defense / Stat Modifiers ──
-  | { type: 'modify_ac'; formula: string }  // e.g. "13+dex" for Draconic Resilience
+  | { type: 'modify_ac'; bonus: number }        // Flat AC bonus (stacks): Ring of Protection +1, Shield spell +5
+  | { type: 'set_ac_formula'; formula: string }  // Base AC formula (pick-best): "13+dex" Draconic Resilience, "10+dex+wis" Monk
   | { type: 'grant_resistance'; damageType: string }
   | { type: 'grant_immunity'; condition: string }
+  | { type: 'flat_damage_reduction'; value: number; damageTypes?: string[]; nonMagicalOnly?: boolean; source?: string }  // Heavy Armor Master: reduce B/P/S by 3
   | { type: 'grant_extra_hp'; formula: string }  // e.g. "class_level" for Draconic Resilience
   | { type: 'grant_speed'; value: number }
   | { type: 'grant_darkvision'; range: number }
@@ -78,9 +80,30 @@ export type ModifierEffect =
 
   // ── Ward HP (Arcane Ward — separate damage absorption pool, NOT bonus HP) ──
   | { type: 'grant_ward_hp'; name: string; formula: string; regenFormula?: string; regenTrigger?: string }
+
+  // ── Virtual Weapons (Unarmed Strikes + Natural Weapons) ──
+  // These create combat cards without requiring equipped items.
+  | { type: 'modify_unarmed_strike'; damageDie: string; useDexterity: boolean }      // Monk Martial Arts, Tavern Brawler
+  | { type: 'grant_natural_weapon'; name: string; damageDie: string; damageType: string; useDexterity?: boolean; properties?: string[] }  // Tabaxi claws, Minotaur horns, etc.
   
   // ── Passive / Narrative (no mechanical automation, just display) ──
   | { type: 'passive'; description: string };
+
+// ═══════════════════════════════════════════════════════════════
+//  EXTERNAL EFFECTS — Temporary buffs/debuffs from outside sources
+//  (party member spells, environmental hazards, magic items)
+// ═══════════════════════════════════════════════════════════════
+
+export type EffectDuration = '1_round' | '1_minute' | '10_minutes' | '1_hour' | '8_hours' | 'until_short_rest' | 'until_long_rest' | 'permanent';
+
+export interface ExternalEffect {
+  id: string;                    // Unique identifier (e.g., "eff_shield_of_faith_1713...")
+  name: string;                  // Display name (e.g., "Shield of Faith")
+  source: string;                // Who applied it (e.g., "Cleric", "Wizard", "Environment")
+  modifiers: ModifierEffect[];   // Mechanical effects that flow through the resolver
+  duration: EffectDuration;      // When this should be automatically cleaned up
+  description?: string;          // Optional flavor/rules text
+}
 
 // ═══════════════════════════════════════════════════════════════
 //  FEATURE DATA
@@ -436,6 +459,9 @@ export interface LiveCharacter {
   wildShapeForm?: WildShapeForm | null;        // Active Wild Shape form (temporary combat card)
   extraAttacks?: number;                       // Computed: max Extra Attack count (1 = 2 attacks total)
   critRange?: number;                          // Computed: minimum crit roll (default 20, Champion 19/18)
+
+  // ── External Effects (Phase 4: Floating Modifiers) ──
+  externalEffects?: ExternalEffect[];          // Temporary buffs/debuffs from outside sources
 
   // ── Universal Homebrew Engine ──
   homebrew?: HomebrewRegistry;                 // Player-created spells, items, features, subclasses

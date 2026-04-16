@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { LiveCharacter, EquipSlot, InventoryItem, ModifierEffect, ActiveModifierState, ActiveCombatToggle, StagedModifier, CustomItem, CustomSpell, CustomFeature, HomebrewRegistry } from './types';
+import { LiveCharacter, EquipSlot, InventoryItem, ModifierEffect, ActiveModifierState, ActiveCombatToggle, StagedModifier, CustomItem, CustomSpell, CustomFeature, HomebrewRegistry, ExternalEffect } from './types';
 import { getResourceScaling } from '../data/resource-scaling';
 import { THIRD_CASTER_SLOTS } from '../data/resource-scaling';
 
@@ -62,6 +62,10 @@ interface CharacterState {
   removeHomebrewItem: (id: string) => void;
   removeHomebrewSpell: (id: string) => void;
   removeHomebrewFeature: (id: string) => void;
+
+  // ── External Effects (Phase 4: Floating Modifiers) ──
+  addExternalEffect: (effect: ExternalEffect) => void;
+  removeExternalEffect: (id: string) => void;
 }
 
 export const useCharacterStore = create<CharacterState>((set, get) => ({
@@ -317,6 +321,15 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       newChar.stagedModifier = null;
     }
 
+    // 6. Clear external effects that expire on short rest
+    if (newChar.externalEffects && newChar.externalEffects.length > 0) {
+      const expiring = newChar.externalEffects.filter(e => e.duration === 'until_short_rest' || e.duration === '1_round' || e.duration === '1_minute' || e.duration === '10_minutes');
+      if (expiring.length > 0) {
+        for (const e of expiring) recoveredItems.push(`[Buff] ${e.name} faded`);
+        newChar.externalEffects = newChar.externalEffects.filter(e => e.duration !== 'until_short_rest' && e.duration !== '1_round' && e.duration !== '1_minute' && e.duration !== '10_minutes');
+      }
+    }
+
     // 6. Log the event with flavor text
     const summary = recoveredItems.length > 0
       ? recoveredItems.join('. ') + '.'
@@ -387,6 +400,15 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
     if (newChar.deathSaves?.successes > 0 || newChar.deathSaves?.failures > 0) {
       recoveredItems.push('Death saves cleared');
       newChar.deathSaves = { successes: 0, failures: 0 };
+    }
+
+    // 7. Clear ALL non-permanent external effects
+    if (newChar.externalEffects && newChar.externalEffects.length > 0) {
+      const expiring = newChar.externalEffects.filter(e => e.duration !== 'permanent');
+      if (expiring.length > 0) {
+        for (const e of expiring) recoveredItems.push(`[Buff] ${e.name} faded`);
+        newChar.externalEffects = newChar.externalEffects.filter(e => e.duration === 'permanent');
+      }
     }
 
     // 7. Log the event with flavor text
@@ -897,6 +919,32 @@ export const useCharacterStore = create<CharacterState>((set, get) => ({
       char: {
         ...char,
         homebrew: { ...hb, features: hb.features.filter(f => f.id !== id) },
+      }
+    });
+  },
+
+  // ═══════════════════════════════════════════════════════════════
+  //  EXTERNAL EFFECTS — Phase 4: Floating Modifiers
+  // ═══════════════════════════════════════════════════════════════
+
+  addExternalEffect: (effect: ExternalEffect) => {
+    const { char } = get();
+    if (!char) return;
+    set({
+      char: {
+        ...char,
+        externalEffects: [...(char.externalEffects || []), effect],
+      }
+    });
+  },
+
+  removeExternalEffect: (id: string) => {
+    const { char } = get();
+    if (!char) return;
+    set({
+      char: {
+        ...char,
+        externalEffects: (char.externalEffects || []).filter(e => e.id !== id),
       }
     });
   },

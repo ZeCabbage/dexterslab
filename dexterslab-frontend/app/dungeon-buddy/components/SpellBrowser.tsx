@@ -14,9 +14,17 @@ interface SpellBrowserProps {
   draftedSpells?: string[];
   onSpellDraft?: (spellId: string) => void;
   contextChar?: any; // LiveCharacter shape for drafts
+  // ── Spell Cap Props (enforced in draft mode) ──
+  maxCantrips?: number;
+  maxLeveledSpells?: number;
+  draftedCantrips?: number;
+  draftedLeveled?: number;
 }
 
-export default function SpellBrowser({ onClose, inline = false, draftMode = false, draftedSpells = [], onSpellDraft, contextChar }: SpellBrowserProps) {
+export default function SpellBrowser({ 
+  onClose, inline = false, draftMode = false, draftedSpells = [], onSpellDraft, contextChar,
+  maxCantrips, maxLeveledSpells, draftedCantrips = 0, draftedLeveled = 0
+}: SpellBrowserProps) {
   const store = useCharacterStore();
   const char = contextChar || store.char;
   
@@ -31,6 +39,10 @@ export default function SpellBrowser({ onClose, inline = false, draftMode = fals
   const [strictMode, setStrictMode] = useState<boolean>(true); // BG3 logic
 
   if (!char) return null;
+
+  // ── Cap enforcement helpers ──
+  const cantripsFull = maxCantrips !== undefined && draftedCantrips >= maxCantrips;
+  const leveledFull = maxLeveledSpells !== undefined && draftedLeveled >= maxLeveledSpells;
 
   const filteredSpells = allSpells.filter(spell => {
     if (levelFilter !== 'all' && spell.level.toString() !== levelFilter) return false;
@@ -127,6 +139,19 @@ export default function SpellBrowser({ onClose, inline = false, draftMode = fals
                 lockData = evaluateSpellLock(char, spell, currentlyKnown);
               }
 
+              // ── Draft mode cap enforcement ──
+              // If we're in draftMode and the spell isn't already drafted, check if the cap is reached
+              let draftCapLock: string | undefined;
+              if (draftMode && !draftedSpells.includes(spell.id)) {
+                if (spell.level === 0 && cantripsFull) {
+                  draftCapLock = `Cantrip Slots Full (${maxCantrips}/${maxCantrips})`;
+                } else if (spell.level > 0 && leveledFull) {
+                  draftCapLock = `Spell Slots Full (${maxLeveledSpells}/${maxLeveledSpells})`;
+                }
+              }
+
+              const effectiveLockReason = draftCapLock || (lockData.locked ? lockData.reason : undefined);
+
               return (
                 <SpellCard 
                   key={spell.id}
@@ -135,12 +160,14 @@ export default function SpellBrowser({ onClose, inline = false, draftMode = fals
                   isPrepared={false} // Preparing is done on the combat dashboard
                   onLearnToggle={() => {
                      if (draftMode && onSpellDraft) {
+                       // Block adding new spells if cap is reached (removing is always OK)
+                       if (draftCapLock && !draftedSpells.includes(spell.id)) return;
                        onSpellDraft(spell.id);
                      } else {
                        isKnown ? store.unlearnSpell(spell.id) : store.learnSpell(spell.id);
                      }
                   }}
-                  lockReason={lockData.locked ? lockData.reason : undefined}
+                  lockReason={effectiveLockReason}
                 />
               );
             })}
@@ -150,3 +177,4 @@ export default function SpellBrowser({ onClose, inline = false, draftMode = fals
     </div>
   );
 }
+

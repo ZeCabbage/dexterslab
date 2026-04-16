@@ -256,6 +256,28 @@ export class OracleV2 {
         } catch (err) {
             console.warn('[Oracle] Ollama pre-warm failed (will retry on first question):', err.message);
         }
+        // Keep model in VRAM with periodic pings
+        this._startKeepAlive();
+    }
+
+    _startKeepAlive() {
+        // Ping Ollama every 4 minutes to prevent gemma3:4b from being evicted from VRAM
+        this._keepAliveInterval = setInterval(async () => {
+            try {
+                await fetch('http://127.0.0.1:11434/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        model: 'gemma3:4b',
+                        prompt: 'ping',
+                        stream: false,
+                        options: { num_predict: 1 }
+                    })
+                });
+            } catch {
+                // Ollama offline — will retry next interval
+            }
+        }, 4 * 60 * 1000);
     }
 
     /**

@@ -6,6 +6,7 @@ import D20Icon from './D20Icon';
 import ResourceTracker from './ResourceTracker';
 import { PostHitModifierEntry } from '../lib/resolve-modifiers';
 import { TrackedResource } from '../lib/types';
+import { ResourcePoolOption } from '../lib/magic-system';
 
 export type CardActionCost = 'action' | 'bonus_action' | 'reaction' | 'special' | 'none';
 export type CardType = 'weapon' | 'spell' | 'feature';
@@ -45,6 +46,11 @@ export interface DungeonCardData {
   postHitModifiers?: PostHitModifierEntry[];
   spellSlotResources?: Record<string, TrackedResource>;  // spell_slot_1, spell_slot_2, etc.
   onSmite?: (modifierName: string, slotLevel: number, totalDice: string, damageType: string) => void;
+
+  // ── Resource Pool Cross-Talk (Phase 3) ──
+  // When multiple pools can pay the cost, the card halts and shows a picker.
+  resourcePoolOptions?: ResourcePoolOption[];  // Available pools for this card's cost
+  onPoolSelected?: (poolId: string) => void;   // Callback when user picks a pool
 }
 
 // ── Dice parser helper ──
@@ -75,6 +81,7 @@ export default function DungeonCard({ card }: { card: DungeonCardData }) {
   const [expanded, setExpanded] = useState(false);
   const [showSmitePanel, setShowSmitePanel] = useState(false);
   const [selectedSmiteMod, setSelectedSmiteMod] = useState<PostHitModifierEntry | null>(null);
+  const [showPoolPicker, setShowPoolPicker] = useState(false);
 
   // Styling based on action economy
   let frameColor = '#cfaa5e'; // default gold for none/special
@@ -203,6 +210,53 @@ export default function DungeonCard({ card }: { card: DungeonCardData }) {
         </div>
       )}
 
+      {/* ═══ RESOURCE POOL PICKER (Phase 3: Cross-Talk) ═══ */}
+      {showPoolPicker && card.resourcePoolOptions && card.resourcePoolOptions.length > 1 && (
+        <div style={{
+          padding: '12px', background: 'linear-gradient(180deg, rgba(85, 170, 204, 0.08), rgba(40, 80, 120, 0.06))',
+          borderTop: '1px solid #55aacc', borderBottom: '1px solid #55aacc'
+        }}>
+          <div style={{ fontSize: '11px', color: '#55aacc', fontFamily: 'Cinzel, serif', fontWeight: 'bold', marginBottom: '8px', textTransform: 'uppercase', letterSpacing: '1px' }}>
+            ✦ Choose Resource Pool
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            {card.resourcePoolOptions.map(pool => (
+              <button
+                key={pool.id}
+                onClick={() => {
+                  if (card.onPoolSelected) {
+                    card.onPoolSelected(pool.id);
+                  }
+                  setShowPoolPicker(false);
+                }}
+                style={{
+                  display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                  padding: '8px 12px', background: 'rgba(0,0,0,0.4)',
+                  border: '1px solid #55aacc', borderRadius: '6px',
+                  color: '#fff', cursor: 'pointer', fontSize: '12px',
+                  transition: 'all 0.15s ease',
+                }}
+                onMouseOver={e => { e.currentTarget.style.background = 'rgba(85, 170, 204, 0.2)'; e.currentTarget.style.borderColor = '#88ccee'; }}
+                onMouseOut={e => { e.currentTarget.style.background = 'rgba(0,0,0,0.4)'; e.currentTarget.style.borderColor = '#55aacc'; }}
+              >
+                <span style={{ fontFamily: 'Cinzel, serif', fontWeight: 'bold' }}>
+                  {pool.name}
+                </span>
+                <span style={{ color: '#8bd', fontSize: '10px' }}>
+                  ({pool.remaining} left)
+                </span>
+              </button>
+            ))}
+          </div>
+          <button
+            onClick={() => setShowPoolPicker(false)}
+            style={{ marginTop: '8px', padding: '4px 10px', background: 'transparent', border: '1px solid #666', color: '#888', borderRadius: '4px', cursor: 'pointer', fontSize: '10px', width: '100%' }}
+          >
+            Cancel
+          </button>
+        </div>
+      )}
+
       {/* ═══ POST-HIT / SMITE SLOT PICKER ═══ */}
       {showSmitePanel && selectedSmiteMod && (
         <div style={{
@@ -264,7 +318,15 @@ export default function DungeonCard({ card }: { card: DungeonCardData }) {
       <div style={{ padding: '8px', display: 'flex', gap: '8px', borderTop: `1px solid ${frameColor}44`, marginTop: 'auto', flexWrap: 'wrap' }}>
         {card.onPlay && (
           <button 
-             onClick={card.onPlay}
+             onClick={() => {
+               // Phase 3: If multiple pools exist, show picker instead of executing
+               if (card.resourcePoolOptions && card.resourcePoolOptions.length > 1 && !showPoolPicker) {
+                 setShowPoolPicker(true);
+                 return;
+               }
+               // Single pool or no pool needed — execute directly
+               card.onPlay!();
+             }}
              style={{
                flex: 1, padding: '8px', background: frameColor, color: '#000', fontWeight: 'bold', border: 'none', borderRadius: '4px', cursor: 'pointer',
                display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '6px', fontSize: '12px', transition: 'filter 0.1s'

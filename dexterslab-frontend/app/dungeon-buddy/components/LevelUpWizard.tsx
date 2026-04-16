@@ -3,11 +3,12 @@
 import React, { useState, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { useCharacterStore } from '../lib/store';
-import { CLASSES, ClassData } from '../data/srd';
+import { CLASSES, ClassData, calculateModifier } from '../data/srd';
 import SpellBrowser from './SpellBrowser';
 import { getSubclassFeaturesAtLevel, getSubclassFeaturesUpToLevel, SUBCLASS_FEATURES } from '../data/subclass-features';
 import { METAMAGIC_OPTIONS, MANEUVER_OPTIONS, FIGHTING_STYLE_OPTIONS, WARLOCK_PACT_SLOTS } from '../data/resource-scaling';
 import { ASI_LEVELS } from '../data/srd';
+import { getSpellProgression, isPrepCaster } from '../lib/magic-system';
 
 interface Props {
   onClose: () => void;
@@ -68,12 +69,27 @@ export default function LevelUpWizard({ onClose }: Props) {
   const [customDraft, setCustomDraft] = useState({ name:'', level:1, school:'Evocation', castingTime:'1 Action', range:'60 feet', components:'V, S', duration:'Instantaneous', damage:'', description:'' });
   const [addedCustomSpells, setAddedCustomSpells] = useState<any[]>([]);
 
-  // 5E Spell Learning Limits
-  // Base default: 1 spell per level for Sorcerer/Bard/Warlock/Ranger. 2 for Wizard.
-  // We use 0 for prep casters unless it's a specific cantrip level, but to simplify we'll bound them to 1 if the step appears.
-  const isPrepCaster = ['Cleric', 'Druid', 'Paladin'].includes(targetClass);
-  const maxDraftSpells = isPrepCaster ? 0 : (targetClass === 'Wizard' ? 2 : 1);
-  const numDrafted = learnedSpells.length + addedCustomSpells.length;
+  // ── 5E Spell Progression Delta Math ──
+  // Compute how many NEW cantrips and leveled spells this level grants
+  const isClassPrepCaster = isPrepCaster(targetClass);
+  const spellAbility = tClassData?.spellcastingAbility || 'int';
+  const spellAbilityMod = char ? calculateModifier(char.stats?.[spellAbility as keyof typeof char.stats] || 10) : 0;
+  const progNew = getSpellProgression(targetClass, targetClassLevel, spellAbilityMod);
+  const progOld = targetClassLevel > 1 ? getSpellProgression(targetClass, targetClassLevel - 1, spellAbilityMod) : { cantripsKnown: 0, spellsKnown: 0 };
+  const newCantripsAllowed = Math.max(0, progNew.cantripsKnown - progOld.cantripsKnown);
+  // For prep casters the "delta" is just the total prepared limit (they re-prepare everything daily)
+  // For known casters: delta = new spells known - old spells known
+  const newLeveledAllowed = isClassPrepCaster
+    ? Math.max(0, progNew.spellsKnown)  // Total prep limit (informational, not strictly capped)
+    : Math.max(0, progNew.spellsKnown - progOld.spellsKnown);
+  
+  // Count drafted spells by type
+  const allSpellDb = typeof window !== 'undefined' ? require('../lib/data/spells').SPELL_DATABASE : {};
+  const draftedCantrips = learnedSpells.filter(id => { const s = allSpellDb[id]; return s && s.level === 0; }).length
+    + addedCustomSpells.filter(s => s.level === 0).length;
+  const draftedLeveled = learnedSpells.filter(id => { const s = allSpellDb[id]; return s && s.level > 0; }).length
+    + addedCustomSpells.filter(s => s.level > 0).length;
+  const spellTypeLabel = isClassPrepCaster ? 'Prepared Spells' : 'Known Spells';
 
   // Portal mount check
   const [mounted, setMounted] = useState(false);
@@ -103,8 +119,13 @@ export default function LevelUpWizard({ onClose }: Props) {
 
   const saveCustomSpell = () => {
     if (!customDraft.name.trim()) return;
-    if (numDrafted >= maxDraftSpells && !isPrepCaster) {
-      alert(`You have already reached your limit of ${maxDraftSpells} drafted spell(s) this level.`);
+    // Guard with split cantrip/leveled caps
+    if (customDraft.level === 0 && draftedCantrips >= newCantripsAllowed) {
+      alert(`You have already reached your cantrip limit (${newCantripsAllowed}) for this level.`);
+      return;
+    }
+    if (customDraft.level > 0 && !isClassPrepCaster && draftedLeveled >= newLeveledAllowed) {
+      alert(`You have already reached your spell limit (${newLeveledAllowed}) for this level.`);
       return;
     }
     const newSpell = {
@@ -119,15 +140,18 @@ export default function LevelUpWizard({ onClose }: Props) {
   };
 
   const handleToggleDraft = (spellId: string) => {
+    // Toggle off always works
     if (learnedSpells.includes(spellId)) {
        setLearnedSpells(learnedSpells.filter(id => id !== spellId));
-    } else {
-       if (numDrafted >= maxDraftSpells && !isPrepCaster) {
-         alert(`You can only draft ${maxDraftSpells} new spell(s) at this level per 5E rules.`);
-         return;
-       }
-       setLearnedSpells([...learnedSpells, spellId]);
+       return;
     }
+    // Toggle on: enforce split caps
+    const spell = allSpellDb[spellId];
+    if (spell) {
+      if (spell.level === 0 && draftedCantrips >= newCantripsAllowed) return;
+      if (spell.level > 0 && !isClassPrepCaster && draftedLeveled >= newLeveledAllowed) return;
+    }
+    setLearnedSpells([...learnedSpells, spellId]);
   };
 
   const invokeOracleSubclass = async () => {
@@ -611,20 +635,53 @@ export default function LevelUpWizard({ onClose }: Props) {
               <div>
                  <h3 style={{ color: '#cfaa5e', fontFamily: 'Cinzel', marginBottom: '4px' }}>Expanding the Grimoire</h3>
                  <p style={{ color: '#aaa', fontSize: '14px', margin: 0 }}>
-                    {isPrepCaster 
-                      ? `As a ${targetClass}, you prepare spells daily rather than learning them permanently. You may skip this step or learn a Cantrip.` 
+                    {isClassPrepCaster 
+                      ? `As a ${targetClass}, you prepare spells daily. ${newCantripsAllowed > 0 ? `You gain ${newCantripsAllowed} new cantrip(s) this level.` : 'No new cantrips this level.'} Your total ${spellTypeLabel.toLowerCase()} limit is ${progNew.spellsKnown}.` 
                       : `As a ${targetClass}, you unlock new spells. Use the standard archive or forge a homebrew incantation.`}
                  </p>
               </div>
-              <div style={{ background: '#111', border: `1px solid ${numDrafted >= maxDraftSpells && !isPrepCaster ? '#cfaa5e' : '#444'}`, padding: '8px 16px', borderRadius: '4px', textAlign: 'center' }}>
-                 <div style={{ fontSize: '20px', fontFamily: 'Cinzel', color: numDrafted > maxDraftSpells ? '#a44' : '#cfaa5e' }}>
-                    {isPrepCaster ? '∞' : `${numDrafted} / ${maxDraftSpells}`}
-                 </div>
-                 <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase' }}>Spells Drafted</div>
-              </div>
            </div>
 
-           <div style={{ marginBottom: '16px', marginTop: '16px' }}>
+           {/* ── Split Spell Budget Counters ── */}
+           <div style={{ display: 'flex', gap: '12px', marginBottom: '16px', flexWrap: 'wrap' }}>
+             {newCantripsAllowed > 0 && (
+               <div style={{ 
+                 background: draftedCantrips >= newCantripsAllowed ? 'rgba(207,170,94,0.15)' : '#111', 
+                 border: `1px solid ${draftedCantrips >= newCantripsAllowed ? '#cfaa5e' : '#444'}`, 
+                 padding: '8px 16px', borderRadius: '4px', textAlign: 'center' 
+               }}>
+                 <div style={{ fontSize: '20px', fontFamily: 'Cinzel', color: draftedCantrips > newCantripsAllowed ? '#a44' : '#cfaa5e' }}>
+                   {draftedCantrips} / {newCantripsAllowed}
+                 </div>
+                 <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase' }}>New Cantrips</div>
+               </div>
+             )}
+             {!isClassPrepCaster && newLeveledAllowed > 0 && (
+               <div style={{ 
+                 background: draftedLeveled >= newLeveledAllowed ? 'rgba(207,170,94,0.15)' : '#111', 
+                 border: `1px solid ${draftedLeveled >= newLeveledAllowed ? '#cfaa5e' : '#444'}`, 
+                 padding: '8px 16px', borderRadius: '4px', textAlign: 'center' 
+               }}>
+                 <div style={{ fontSize: '20px', fontFamily: 'Cinzel', color: draftedLeveled > newLeveledAllowed ? '#a44' : '#cfaa5e' }}>
+                   {draftedLeveled} / {newLeveledAllowed}
+                 </div>
+                 <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase' }}>{spellTypeLabel}</div>
+               </div>
+             )}
+             {isClassPrepCaster && (
+               <div style={{ 
+                 background: '#111', border: '1px solid #444', 
+                 padding: '8px 16px', borderRadius: '4px', textAlign: 'center' 
+               }}>
+                 <div style={{ fontSize: '20px', fontFamily: 'Cinzel', color: '#cfaa5e' }}>
+                   {progNew.spellsKnown}
+                 </div>
+                 <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase' }}>Total {spellTypeLabel}</div>
+               </div>
+             )}
+           </div>
+
+           <div style={{ marginBottom: '16px' }}>
              <button onClick={() => setIsAddingCustomSpell(!isAddingCustomSpell)} style={{ width: '100%', padding: '12px', background: '#221133', color: '#b9a', border: '1px solid #b9a', borderRadius: '4px', cursor: 'pointer', fontFamily: 'Cinzel' }}>
                {isAddingCustomSpell ? 'Close Homebrew Forge' : '+ Forge Custom Spell (Homebrew)'}
              </button>
@@ -667,9 +724,17 @@ export default function LevelUpWizard({ onClose }: Props) {
                inline={true} 
                draftMode={true} 
                draftedSpells={learnedSpells} 
-               onSpellDraft={handleToggleDraft} 
+               onSpellDraft={handleToggleDraft}
+               maxCantrips={newCantripsAllowed}
+               maxLeveledSpells={isClassPrepCaster ? undefined : newLeveledAllowed}
+               draftedCantrips={draftedCantrips}
+               draftedLeveled={draftedLeveled}
              />
-             <p style={{ fontSize: '10px', color: '#666', marginTop: '8px', fontStyle: 'italic' }}>* Spells drafted here will become permanently known when you commit the level up.</p>
+             <p style={{ fontSize: '10px', color: '#666', marginTop: '8px', fontStyle: 'italic' }}>
+               {isClassPrepCaster 
+                 ? '* As a prepared caster, you can change your prepared spells after each long rest.'
+                 : '* Spells drafted here will become permanently known when you commit the level up.'}
+             </p>
            </div>
          </div>
       );

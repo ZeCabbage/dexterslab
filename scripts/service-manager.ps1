@@ -56,7 +56,10 @@ function Start-Backend {
 
 function Start-Frontend {
     Write-Log "Starting frontend server..."
-    $proc = Start-Process -FilePath "npx" -ArgumentList "next", "dev", "-p", "7777" `
+    # Use node directly with the local next CLI to avoid npx .cmd shim PID issues.
+    # npx launches through cmd.exe which exits immediately, orphaning the real process.
+    $nextCli = Join-Path $FrontendDir "node_modules\next\dist\bin\next"
+    $proc = Start-Process -FilePath "node" -ArgumentList "`"$nextCli`"", "dev", "-p", "7777" `
         -WorkingDirectory $FrontendDir `
         -WindowStyle Hidden `
         -PassThru `
@@ -64,6 +67,18 @@ function Start-Frontend {
         -RedirectStandardError "$env:USERPROFILE\.dexterslab\frontend-err.log"
     
     Write-Log "Frontend started with PID $($proc.Id)"
+    
+    # Verify the process actually bound to the port (wait up to 30s)
+    $waited = 0
+    while ($waited -lt 30) {
+        Start-Sleep -Seconds 3
+        $waited += 3
+        if (Test-Port 7777) {
+            Write-Log "Frontend verified on port 7777 after ${waited}s"
+            return $proc
+        }
+    }
+    Write-Log "WARNING: Frontend PID $($proc.Id) started but port 7777 not bound after 30s"
     return $proc
 }
 

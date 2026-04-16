@@ -22,6 +22,7 @@ import {
   TargetCondition,
   FeatData,
 } from './types';
+import { getClassFeatureModifiers } from '../data/class-feature-modifiers';
 
 // ── Conditional Damage Entry: rich structure for the Interceptor ──
 export interface ConditionalDamageEntry {
@@ -64,8 +65,10 @@ export interface ResolvedModifiers {
 
   // Defense
   bonusAC: number;
-  acFormula: string | null;    // Override formula like "13+dex"
-  bonusHP: number;             // From non-grant_extra_hp sources only (kept for future use)
+  acFormulas: string[];               // ALL competing base AC formulas (Bounded Accuracy: engine picks best)
+  acFormula: string | null;           // Legacy: single override formula (kept for backward compat, set to highest)
+  bonusHP: number;                    // From non-grant_extra_hp sources only (kept for future use)
+  flatDamageReductions: { value: number; damageTypes?: string[]; nonMagicalOnly?: boolean; source: string }[];
   bonusSpeed: number;
   grantedResistances: string[];
   grantedImmunities: string[];
@@ -114,7 +117,11 @@ export interface ResolvedModifiers {
   // Companion templates to offer
   companionTemplates: string[];
 
-  // NEW: Active toggle state summary (for UI display)
+  // Virtual Weapons (Phase 2: bodily weapons without fake inventory items)
+  unarmedStrikeOverrides: { damageDie: string; useDexterity: boolean; source: string }[];
+  naturalWeapons: { name: string; damageDie: string; damageType: string; useDexterity?: boolean; properties?: string[]; source: string }[];
+
+  // Active toggle state summary (for UI display)
   activeToggleIds: string[];
 }
 
@@ -234,8 +241,10 @@ export function resolveModifiers(char: LiveCharacter | null): ResolvedModifiers 
     bonusDamage: {},
     conditionalDamage: [],
     bonusAC: 0,
+    acFormulas: [],
     acFormula: null,
     bonusHP: 0,
+    flatDamageReductions: [],
     bonusSpeed: 0,
     grantedResistances: [],
     grantedImmunities: [],
@@ -263,6 +272,8 @@ export function resolveModifiers(char: LiveCharacter | null): ResolvedModifiers 
     thirdCasterFreeSchoolLevels: null,
     wildShapeEnhancements: [],
     companionTemplates: [],
+    unarmedStrikeOverrides: [],
+    naturalWeapons: [],
     activeToggleIds: [],
   };
 
@@ -276,6 +287,35 @@ export function resolveModifiers(char: LiveCharacter | null): ResolvedModifiers 
 
     for (const mod of feature.modifiers) {
       processModifier(mod, char, result, feature.name);
+    }
+  }
+
+  // ── Pass 1.5: Inject Class Feature Modifiers ──
+  // Core class features (Martial Arts, Unarmored Defense) are defined in
+  // srd.ts without modifiers. This pass looks up mechanical modifiers from
+  // CLASS_FEATURE_MODIFIERS and applies them, resolving scaling breakpoints
+  // (e.g., Monk Martial Arts die scales from 1d4 → 1d10).
+  //
+  // We only inject if the feature doesn't already carry its own modifiers
+  // of the same type (to avoid double-counting with homebrew overrides).
+  const classId = char.class?.toLowerCase() || '';
+  if (classId) {
+    // Deduplicate: track which modifier types we've already processed from Pass 1
+    const processedTypes = new Set<string>();
+    for (const feature of allFeatures) {
+      for (const mod of feature.modifiers || []) {
+        processedTypes.add(mod.type);
+      }
+    }
+
+    for (const feature of allFeatures) {
+      const classModifiers = getClassFeatureModifiers(classId, feature.name, char.level || 1);
+      for (const mod of classModifiers) {
+        // Skip if this modifier type was already handled by the feature's own modifiers
+        // (prevents homebrew overrides from being overwritten by SRD defaults)
+        if (processedTypes.has(mod.type)) continue;
+        processModifier(mod, char, result, feature.name);
+      }
     }
   }
 
@@ -353,6 +393,18 @@ export function resolveModifiers(char: LiveCharacter | null): ResolvedModifiers 
       if (isEquipped) continue;
       // Only process non-equipped homebrew items if they have a 'carried' passive
       // (future extensibility — for now skip non-equipped to avoid double-counting)
+    }
+  }
+
+  // ── Pass 6: Walk char.externalEffects[] (Phase 4: Floating Modifiers) ──
+  // External buffs/debuffs from party members, environmental effects, or
+  // custom temporary effects. Tagged with [Buff] prefix for clear
+  // identification in AC breakdowns and combat card tooltips.
+  const externalEffects = char.externalEffects || [];
+  for (const effect of externalEffects) {
+    if (!effect.modifiers || effect.modifiers.length === 0) continue;
+    for (const mod of effect.modifiers) {
+      processModifier(mod, char, result, `[Buff] ${effect.name}`);
     }
   }
 
@@ -466,6 +518,16 @@ function processModifier(mod: ModifierEffect, char: LiveCharacter, result: Resol
 
     // ── Defense ──
     case 'modify_ac':
+      // Flat AC bonus (stacks with everything)
+      result.bonusAC += mod.bonus;
+      break;
+    case 'set_ac_formula':
+      // Base AC formula — collected for the Bounded Accuracy engine
+      // The engine evaluates ALL formulas and picks the highest
+      if (!result.acFormulas.includes(mod.formula)) {
+        result.acFormulas.push(mod.formula);
+      }
+      // Legacy compat: also set acFormula to the last one seen
       result.acFormula = mod.formula;
       break;
     case 'grant_resistance':
@@ -486,6 +548,14 @@ function processModifier(mod: ModifierEffect, char: LiveCharacter, result: Resol
       break;
     case 'grant_darkvision':
       result.darkvisionRange = Math.max(result.darkvisionRange, mod.range);
+      break;
+    case 'flat_damage_reduction':
+      result.flatDamageReductions.push({
+        value: mod.value,
+        damageTypes: mod.damageTypes,
+        nonMagicalOnly: mod.nonMagicalOnly,
+        source: mod.source || sourceName,
+      });
       break;
 
     // ── Ward HP (Arcane Ward — separate damage absorption pool) ──
@@ -543,6 +613,25 @@ function processModifier(mod: ModifierEffect, char: LiveCharacter, result: Resol
       result.thirdCasterSpellList = mod.spellList;
       result.thirdCasterSchools = mod.allowedSchools || null;
       result.thirdCasterFreeSchoolLevels = mod.freeSchoolLevels || null;
+      break;
+
+    // ── Virtual Weapons ──
+    case 'modify_unarmed_strike':
+      result.unarmedStrikeOverrides.push({
+        damageDie: mod.damageDie,
+        useDexterity: mod.useDexterity,
+        source: sourceName,
+      });
+      break;
+    case 'grant_natural_weapon':
+      result.naturalWeapons.push({
+        name: mod.name,
+        damageDie: mod.damageDie,
+        damageType: mod.damageType,
+        useDexterity: mod.useDexterity,
+        properties: mod.properties,
+        source: sourceName,
+      });
       break;
 
     // ── Passive / narrative — no mechanical effect ──
@@ -611,27 +700,15 @@ export function getAvailableManeuvers(char: LiveCharacter, resolved?: ResolvedMo
   }));
 }
 
-/** Compute final AC considering subclass overrides */
+/** 
+ * @deprecated Use calculateAC from './ac' instead.
+ * This wrapper exists for backward compatibility only.
+ * Delegates to the Bounded Accuracy priority engine.
+ */
 export function computeAC(char: LiveCharacter, resolved?: ResolvedModifiers): number {
+  const { calculateAC } = require('./ac');
   const res = resolved || resolveModifiers(char);
-  
-  // If there's an AC formula override (e.g. Draconic Resilience: 13+DEX when no armor)
-  if (res.acFormula) {
-    const parts = res.acFormula.split('+');
-    const base = parseInt(parts[0]) || 10;
-    let mod = 0;
-    if (parts[1]) {
-      mod = calcMod(char.stats[parts[1].trim() as keyof typeof char.stats] || 10);
-    }
-    // Only use formula if not wearing armor
-    const hasArmor = char.equipped?.chest?.armorCategory;
-    if (!hasArmor) {
-      return base + mod + res.bonusAC;
-    }
-  }
-  
-  // Otherwise use standard AC calculation (handled elsewhere, just add bonus)
-  return res.bonusAC; // Returns the bonus to add to existing AC calc
+  return calculateAC(char, res);
 }
 
 /**

@@ -11,6 +11,7 @@ import {
   type RaceData, type SubraceData, type ClassData, type BackgroundData,
   type AbilityName, type SkillName,
 } from '../data/srd';
+import { getSpellProgression, isPrepCaster } from '../lib/magic-system';
 import { STARTING_EQUIPMENT_DB } from '../data/starting-equipment';
 import { WARLOCK_PACT_SLOTS } from '../data/resource-scaling';
 import { ITEM_DATABASE } from '../lib/data/items';
@@ -21,8 +22,8 @@ import SpellBrowser from '../components/SpellBrowser';
 const STEPS = [
   { label: 'Race', key: 'race' },
   { label: 'Class', key: 'class' },
-  { label: 'Spells', key: 'spells' },
   { label: 'Abilities', key: 'abilities' },
+  { label: 'Spells', key: 'spells' },
   { label: 'Background', key: 'background' },
   { label: 'Skills', key: 'skills' },
   { label: 'Equipment', key: 'equipment' },
@@ -137,15 +138,15 @@ export default function CharacterCreationWizard() {
         if (selectedClass.subclassLevel === 1 && !selectedSubclassChoice) return false;
         return true;
       }
-      case 2: 
-        if (customClassMode) return true;
-        if (!selectedClass?.spellcaster) return true;
-        return true; // we don't strictly gate on full spell cap for flexibility
-      case 3: {
+      case 2: { // Abilities (was step 3)
         if (abilityMethod === 'point_buy') return pointsLeft >= 0;
         if (abilityMethod === 'standard_array') return usedArrayValues.length === 6;
         return true;
       }
+      case 3: // Spells (was step 2)
+        if (customClassMode) return true;
+        if (!selectedClass?.spellcaster) return true;
+        return true; // Don't hard-block — caps enforce naturally via disabled buttons
       case 4: return !!selectedBackground || (customBgMode && customBgName.trim().length > 0);
       case 5: return customClassMode || selectedSkills.length === maxSkillChoices;
       case 6: return true; // Equipment just defaults to first option
@@ -235,7 +236,7 @@ export default function CharacterCreationWizard() {
         let totalCost = 0;
         let valid = true;
         for (const val of Object.values(scores)) {
-          if (val < 8 || val > 15 || pbCosts[val] === undefined) { valid = false; break; }
+          if (val < 8 || val > 20 || pbCosts[val] === undefined) { valid = false; break; }
           totalCost += pbCosts[val];
         }
         if (valid && totalCost === 27) {
@@ -333,7 +334,7 @@ export default function CharacterCreationWizard() {
     while (points > 0) {
       const validAbilities = abilities.filter(ability => {
         const val = currentBase[ability];
-        if (val >= 15) return false;
+        if (val >= 20) return false;
         const currentCost = getPointBuyCost(currentBase);
         const nextCost = getPointBuyCost({ ...currentBase, [ability]: val + 1 });
         return (nextCost - currentCost) <= points;
@@ -353,7 +354,7 @@ export default function CharacterCreationWizard() {
 
   const handlePointBuyChange = (ability: AbilityName, delta: number) => {
     const newVal = baseScores[ability] + delta;
-    if (newVal < 8 || newVal > 15) return;
+    if (newVal < 8 || newVal > 20) return;
     const testScores = { ...baseScores, [ability]: newVal };
     const cost = getPointBuyCost(testScores);
     if (cost > POINT_BUY_TOTAL) return;
@@ -863,14 +864,27 @@ export default function CharacterCreationWizard() {
          <div style={{ textAlign: 'center', padding: '64px 20px' }}>
            <h2 style={{ color: '#aaa', fontFamily: 'Cinzel', marginBottom: '16px' }}>Martial Path</h2>
            <p style={{ color: '#888' }}>As a {selectedClass?.name || 'warrior'}, you do not command arcane forces. Your might lies in steel and determination.</p>
-           <button className={styles.btnNext} onClick={() => setStep(step + 1)} style={{ marginTop: '24px' }}>Proceed to Abilities →</button>
+           <button className={styles.btnNext} onClick={() => setStep(step + 1)} style={{ marginTop: '24px' }}>Proceed to Background →</button>
          </div>
        );
     }
     
-    // Preparation spellcasters (Cleric, Druid, Paladin) don't lock their spells in stone (except cantrips)
-    // but building an initial grimoire helps.
-    const isPrep = ['cleric', 'druid', 'paladin'].includes(selectedClass.id.toLowerCase());
+    // ── Compute spell budget using 5E rules ──
+    const isPrep = isPrepCaster(selectedClass.name);
+    const spellAbility = selectedClass.spellcastingAbility || 'int';
+    const spellAbilityMod = calculateModifier(finalScores[spellAbility as AbilityName] || 10);
+    const prog = getSpellProgression(selectedClass.name, 1, spellAbilityMod);
+    
+    // Count current draft by type
+    const allSpellDb = require('../lib/data/spells').SPELL_DATABASE;
+    const draftedCantrips = draftedSpells.filter(id => {
+      const spell = allSpellDb[id];
+      return spell && spell.level === 0;
+    }).length;
+    const draftedLeveled = draftedSpells.filter(id => {
+      const spell = allSpellDb[id];
+      return spell && spell.level > 0;
+    }).length;
     
     const mockCharState: any = {
       level: 1,
@@ -880,25 +894,73 @@ export default function CharacterCreationWizard() {
       knownSpells: draftedSpells
     };
 
+    const spellTypeLabel = isPrep ? 'Prepared Spells' : 'Known Spells';
+
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
          <h2 className={styles.sectionTitle}>Draft Your Initial Grimoire</h2>
-         <p className={styles.sectionSubtitle}>Select the specific magical invocations your character possesses at Level 1.</p>
-         {isPrep && <p style={{ fontSize: '12px', color: '#cfaa5e' }}>Note: As a {selectedClass.name}, you prepare spells daily. Selection here acts as a starting convenience.</p>}
+         <p className={styles.sectionSubtitle}>
+           {isPrep 
+             ? `As a ${selectedClass.name}, you prepare spells daily from your class list. Select your initial ${spellTypeLabel.toLowerCase()} — you can swap these after each long rest.`
+             : `Select the specific magical invocations your ${selectedClass.name} knows at Level 1.`}
+         </p>
+         
+         {/* ── Spell Budget Counter ── */}
+         <div style={{ display: 'flex', gap: '16px', marginBottom: '16px', flexWrap: 'wrap' }}>
+           {prog.cantripsKnown > 0 && (
+             <div style={{ 
+               background: draftedCantrips >= prog.cantripsKnown ? 'rgba(207,170,94,0.15)' : '#111', 
+               border: `1px solid ${draftedCantrips >= prog.cantripsKnown ? '#cfaa5e' : '#333'}`, 
+               padding: '10px 20px', borderRadius: '6px', textAlign: 'center', minWidth: '140px' 
+             }}>
+               <div style={{ fontSize: '22px', fontFamily: 'Cinzel', color: draftedCantrips > prog.cantripsKnown ? '#c44' : '#cfaa5e' }}>
+                 {draftedCantrips} / {prog.cantripsKnown}
+               </div>
+               <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px' }}>Cantrips</div>
+             </div>
+           )}
+           {prog.spellsKnown > 0 && (
+             <div style={{ 
+               background: draftedLeveled >= prog.spellsKnown ? 'rgba(207,170,94,0.15)' : '#111', 
+               border: `1px solid ${draftedLeveled >= prog.spellsKnown ? '#cfaa5e' : '#333'}`, 
+               padding: '10px 20px', borderRadius: '6px', textAlign: 'center', minWidth: '140px' 
+             }}>
+               <div style={{ fontSize: '22px', fontFamily: 'Cinzel', color: draftedLeveled > prog.spellsKnown ? '#c44' : '#cfaa5e' }}>
+                 {draftedLeveled} / {prog.spellsKnown}
+               </div>
+               <div style={{ fontSize: '10px', color: '#888', textTransform: 'uppercase', letterSpacing: '0.5px' }}>{spellTypeLabel}</div>
+             </div>
+           )}
+         </div>
+
          {selectedClass.subclasses && selectedSubclassChoice && (
-            <div style={{ padding: '12px', background: 'rgba(200, 150, 50, 0.1)', border: '1px solid rgba(200, 150, 50, 0.3)', borderRadius: '4px', marginTop: '12px', fontSize: '12px', color: '#ccc' }}>
+            <div style={{ padding: '12px', background: 'rgba(200, 150, 50, 0.1)', border: '1px solid rgba(200, 150, 50, 0.3)', borderRadius: '4px', marginBottom: '12px', fontSize: '12px', color: '#ccc' }}>
               <strong>Subclass Magic:</strong> If your <em>{selectedSubclassChoice}</em> subclass grants cross-class spells (e.g. Fiend Warlocks gaining <em>Command</em>), uncheck <strong>"Show Valid Leveling Magic Only"</strong> to find and draft them.
             </div>
          )}
-         <div style={{ flex: 1, minHeight: '400px', borderTop: '1px dashed #333', marginTop: '16px', paddingTop: '16px' }}>
+         <div style={{ flex: 1, minHeight: '400px', borderTop: '1px dashed #333', paddingTop: '16px' }}>
             <SpellBrowser 
                inline={true} 
                draftMode={true} 
                draftedSpells={draftedSpells}
-               contextChar={mockCharState} 
+               contextChar={mockCharState}
+               maxCantrips={prog.cantripsKnown}
+               maxLeveledSpells={prog.spellsKnown}
+               draftedCantrips={draftedCantrips}
+               draftedLeveled={draftedLeveled}
                onSpellDraft={(id) => {
-                 if (draftedSpells.includes(id)) setDraftedSpells(draftedSpells.filter(s => s !== id));
-                 else setDraftedSpells([...draftedSpells, id]);
+                 // Toggle off always works
+                 if (draftedSpells.includes(id)) {
+                   setDraftedSpells(draftedSpells.filter(s => s !== id));
+                   return;
+                 }
+                 // Toggle on: enforce caps
+                 const spell = allSpellDb[id];
+                 if (spell) {
+                   if (spell.level === 0 && draftedCantrips >= prog.cantripsKnown) return; // cantrip cap hit
+                   if (spell.level > 0 && draftedLeveled >= prog.spellsKnown) return; // spell cap hit
+                 }
+                 setDraftedSpells([...draftedSpells, id]);
                }} 
             />
          </div>
@@ -956,7 +1018,7 @@ export default function CharacterCreationWizard() {
                 <div className={styles.abilityControls}>
                   <button className={styles.abilityBtn} onClick={() => handlePointBuyChange(key, -1)} disabled={baseScores[key] <= 8}>−</button>
                   <span style={{ color: '#444', fontSize: '0.75rem' }}>{baseScores[key]}</span>
-                  <button className={styles.abilityBtn} onClick={() => handlePointBuyChange(key, 1)} disabled={baseScores[key] >= 15}>+</button>
+                  <button className={styles.abilityBtn} onClick={() => handlePointBuyChange(key, 1)} disabled={baseScores[key] >= 20}>+</button>
                 </div>
               )}
               {abilityMethod === 'standard_array' && (
@@ -1204,7 +1266,7 @@ export default function CharacterCreationWizard() {
           </div>
           <div style={{ marginTop: '16px' }}>
             <div className={styles.summaryItem}>
-              <SectionHeader label="Ability Scores" stepIdx={3} />
+              <SectionHeader label="Ability Scores" stepIdx={2} />
               <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '8px' }}>
                 {ABILITY_NAMES.map(({ key, label }) => (
                   <span key={key} className={styles.bonusBadge}>
@@ -1225,7 +1287,7 @@ export default function CharacterCreationWizard() {
           {(draftedSpells.length > 0 || oracleCustomSpells.length > 0) && (
             <div style={{ marginTop: '16px' }}>
               <div className={styles.summaryItem}>
-                <SectionHeader label="Initial Grimoire" stepIdx={2} />
+                <SectionHeader label="Initial Grimoire" stepIdx={3} />
                 <div className={styles.summaryValueSmall}>
                   {draftedSpells.length} standard spells prepared, {oracleCustomSpells.length} custom spells forged.
                 </div>
@@ -1322,7 +1384,7 @@ export default function CharacterCreationWizard() {
       );
     }
 
-    if (step === 3 && selectedBackground) {
+    if (step === 4 && selectedBackground) {
       return (
         <>
           <h2 className={styles.previewTitle}>{selectedBackground.name}</h2>
@@ -1371,7 +1433,7 @@ export default function CharacterCreationWizard() {
             <p style={{ color: '#ccc', margin: 0, fontFamily: 'Cinzel, serif' }}>{selectedBackground.name}</p>
           </div>
         )}
-        {step >= 2 && (
+        {step >= 3 && (
           <div className={styles.previewSection}>
             <div className={styles.previewSectionTitle}>Abilities</div>
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px' }}>
@@ -1446,7 +1508,7 @@ export default function CharacterCreationWizard() {
   };
 
   const stepRenderers = [
-    renderRaceStep, renderClassStep, renderSpellsStep, renderAbilitiesStep,
+    renderRaceStep, renderClassStep, renderAbilitiesStep, renderSpellsStep,
     renderBackgroundStep, renderSkillsStep, renderEquipmentStep, renderPortraitStep, renderFinalizeStep,
   ];
 
@@ -1508,8 +1570,8 @@ export default function CharacterCreationWizard() {
           {step === 0 && !selectedRace && 'Select a race to begin'}
           {step === 0 && selectedRace && selectedRace.subraces?.length && !selectedSubrace && 'Choose a subrace to continue'}
           {step === 2 && abilityMethod === 'point_buy' && `${pointsLeft} points remaining`}
-          {step === 4 && `${maxSkillChoices - selectedSkills.length} skill${maxSkillChoices - selectedSkills.length !== 1 ? 's' : ''} remaining`}
-          {step === 6 && 'Portrait is optional — skip or generate'}
+          {step === 5 && `${maxSkillChoices - selectedSkills.length} skill${maxSkillChoices - selectedSkills.length !== 1 ? 's' : ''} remaining`}
+          {step === 7 && 'Portrait is optional — skip or generate'}
         </div>
         {step < STEPS.length - 1 ? (
           <div style={{ display: 'flex', gap: '8px' }}>

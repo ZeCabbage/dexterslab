@@ -72,7 +72,11 @@ export default function FeaturesTab() {
         case 'grant_third_caster': return { label: 'Spellcasting', color: '#b9a' };
         case 'metamagic_option': return { label: 'Metamagic', color: '#b9a' };
         case 'maneuver_option': return { label: 'Maneuver', color: '#7cc' };
-        case 'modify_ac': return { label: 'AC', color: '#66aaff' };
+        case 'modify_ac': return { label: 'AC Bonus', color: '#66aaff' };
+        case 'set_ac_formula': return { label: 'AC Formula', color: '#66aaff' };
+        case 'flat_damage_reduction': return { label: 'DR', color: '#5cc' };
+        case 'modify_unarmed_strike': return { label: 'Unarmed', color: '#e94' };
+        case 'grant_natural_weapon': return { label: 'Natural Weapon', color: '#c75' };
         case 'passive': return { label: 'Passive', color: '#888' };
         default: return { label: m.type, color: '#666' };
       }

@@ -1,0 +1,7 @@
+[Desktop Entry]
+Type=Application
+Name=Observer Hub
+Exec=bash /home/thecabbage/Desktop/dexterslab/scripts/observer-kiosk.sh
+Icon=/home/thecabbage/Desktop/dexterslab/dexterslab-frontend/public/icons/hub-icon.svg
+Terminal=false
+StartupNotify=false
