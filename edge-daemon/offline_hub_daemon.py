@@ -25,7 +25,10 @@ from datetime import datetime
 
 try:
     import websockets
-    from websockets.server import serve as ws_serve
+    try:
+        from websockets.asyncio.server import serve as ws_serve
+    except ImportError:
+        from websockets.server import serve as ws_serve
 except ImportError:
     print("[OfflineHub] websockets not installed — run: pip install websockets")
     sys.exit(1)
@@ -284,7 +287,7 @@ async def scan_wifi():
         for line in stdout.decode().strip().split('\n'):
             if not line:
                 continue
-            match = re.match(r'^(.*):(\\d+):(.*)$', line)
+            match = re.match(r'^(.*):(\d+):(.*)$', line)
             if match:
                 ssid = match.group(1).replace(r'\:', ':')
                 signal = match.group(2)
