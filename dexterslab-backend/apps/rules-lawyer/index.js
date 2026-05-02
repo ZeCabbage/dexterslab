@@ -36,6 +36,7 @@ export default class RulesLawyerApp {
       history: [],
       ignoreSTTUntil: 0
     };
+    this._chunkIndex = 0; // Tracks streaming chunk index across a response
   }
 
   getWsHandler() {
@@ -66,13 +67,52 @@ export default class RulesLawyerApp {
     }
   }
 
+  /**
+   * Speak text via streaming TTS pipeline.
+   * Splits text at sentence boundaries and sends chunks sequentially
+   * so the Pi starts speaking immediately while later sentences buffer.
+   */
   speak(text) {
     if (!text) return;
-    this.platform.hardwareBroker.speak(RulesLawyerApp.manifest.id, text);
-    // Rough estimate: ~2.5 words per sec + 2s buffer for padding & STT lag
+    const chunks = this._splitSentences(text);
+    if (chunks.length === 0) return;
+
+    for (let i = 0; i < chunks.length; i++) {
+      const isLast = (i === chunks.length - 1);
+      this.platform.hardwareBroker.speakChunk(
+        RulesLawyerApp.manifest.id,
+        chunks[i],
+        this._chunkIndex,
+        isLast
+      );
+
+      // Broadcast chunk to display clients for live text rendering
+      const chunkPacket = JSON.stringify({
+        type: 'oracle_chunk',
+        text: chunks[i],
+        chunkIndex: this._chunkIndex,
+        isLast
+      });
+      for (const client of this.wsClients) {
+        if (client.readyState === 1) client.send(chunkPacket);
+      }
+      this._chunkIndex++;
+    }
+
+    // Rough estimate for ignoreSTTUntil fallback
     const wordCount = text.split(/\s+/).length;
     const durationMs = (wordCount / 2.5) * 1000 + 2000;
     this.session.ignoreSTTUntil = Date.now() + durationMs;
+  }
+
+  /**
+   * Split text into sentence-boundary chunks.
+   * Mirrors the Oracle's _chunkSentences but works on complete text.
+   */
+  _splitSentences(text) {
+    // Split on sentence-ending punctuation followed by whitespace
+    const raw = text.split(/(?<=[.!?])\s+/);
+    return raw.filter(s => s.trim().length > 0);
   }
 
   async onActivateDisplay() {

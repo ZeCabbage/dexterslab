@@ -25,6 +25,7 @@ export default class RecordClerkApp {
   async onActivateDisplay() {
     console.log('[RecordClerk] Activating...');
     this.platform.hardwareBroker.claimTTS(RecordClerkApp.manifest.id);
+    this._chunkIndex = 0;
 
     this.subscriptions.push(
       this.platform.hardwareBroker.subscribeVideo((jpegBuffer) => {
@@ -46,7 +47,31 @@ export default class RecordClerkApp {
 
         const result = await this.engine.handleConversation(text);
         if (result && result.response) {
-          this.platform.hardwareBroker.speak(RecordClerkApp.manifest.id, result.response);
+          // Split response into sentence chunks for streaming TTS
+          const chunks = result.response.split(/(?<=[.!?])\s+/).filter(s => s.trim());
+          if (chunks.length === 0) return;
+
+          for (let i = 0; i < chunks.length; i++) {
+            const isLast = (i === chunks.length - 1);
+            this.platform.hardwareBroker.speakChunk(
+              RecordClerkApp.manifest.id,
+              chunks[i],
+              this._chunkIndex,
+              isLast
+            );
+
+            // Broadcast to display clients
+            const chunkPacket = JSON.stringify({
+              type: 'oracle_chunk',
+              text: chunks[i],
+              chunkIndex: this._chunkIndex,
+              isLast
+            });
+            for (const client of this.wsClients) {
+              if (client.readyState === 1) client.send(chunkPacket);
+            }
+            this._chunkIndex++;
+          }
         }
       })
     );
