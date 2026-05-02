@@ -196,17 +196,17 @@ class TTSReceiver:
             if card >= 0:
                 for control in ['PCM', 'Speaker', 'Master']:
                     result = subprocess.run(
-                        ['amixer', '-c', str(card), 'set', control, '55%'],
+                        ['amixer', '-c', str(card), 'set', control, '85%'],
                         stdout=subprocess.DEVNULL,
                         stderr=subprocess.DEVNULL,
                         timeout=3
                     )
                     if result.returncode == 0:
-                        logger.info(f"[TTSReceiver] Volume set to 55% on card {card} ({control})")
+                        logger.info(f"[TTSReceiver] Volume set to 85% on card {card} ({control})")
                         break
             else:
                 subprocess.run(
-                    ['amixer', 'set', 'Master', '55%'],
+                    ['amixer', 'set', 'Master', '85%'],
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     timeout=3

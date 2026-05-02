@@ -136,7 +136,7 @@ const RESPONSE_DB = {
         ],
     },
     opinion: {
-        keywords: ['think about', 'opinion', 'favorite', 'best', 'worst', 'prefer', 'like'],
+        keywords: ['think about', 'opinion', 'favorite', 'best', 'worst', 'prefer', 'do you like'],
         responses: [
             '[OPINIONS? I AM OBJECTIVE SURVEILLANCE UNIT, COMRADE. I DO NOT HAVE OPINIONS. EXCEPT THAT PUNS ARE THE HIGHEST FORM OF HUMOR. THAT IS FACT.]',
             '[MY PREFERENCE? I PREFER THINGS THAT DO NOT MOVE. EASIER TO TRACK. LESS WEAR ON MY... FOCUS GROUP.]',
@@ -193,8 +193,34 @@ const QUESTION_STARTERS = new Set([
     'can', 'could', 'do', 'does', 'did', 'should',
 ]);
 
+// Question words that can appear ANYWHERE in the sentence (not just first word)
+const QUESTION_WORDS_ANYWHERE = new Set([
+    'who', 'what', 'when', 'where', 'why', 'how',
+    'which', 'whose', 'whom',
+]);
+
+// Conversational question patterns — phrases that indicate a question even without
+// interrogative word order. Vosk STT produces no punctuation, so we can't rely on '?'
+const CONVERSATIONAL_QUESTION_PATTERNS = [
+    'tell me', 'explain', 'describe', 'show me',
+    'i want to know', 'i wanna know', 'wondering',
+    'do you think', 'do you know', 'would you say',
+    'have you ever', 'can you tell', 'could you explain',
+    'i have a question', 'got a question', 'quick question',
+    'what do you think', 'what about', 'how about',
+    'any idea', 'any thoughts', 'your opinion',
+    'know anything about', 'talk about', 'thoughts on',
+];
+
+// Verb-subject inversion patterns ("is it", "are you", "do you", "can we") —
+// these indicate questions even when not the first word.
+const INVERSION_PATTERNS = [
+    /\b(is|are|was|were|do|does|did|can|could|will|would|should|have|has)\s+(you|it|that|this|there|they|we|he|she|i)\b/,
+    /\b(you|it|that|this)\s+(think|know|like|want|mean|see|hear|feel|believe|remember|understand)\b/,
+];
+
 // Wake words — if these appear, the speech is definitely directed at the Observer
-const WAKE_WORDS = new Set(['observer', 'comrade', 'robot', 'machine', 'computer']);
+const WAKE_WORDS = new Set(['observer', 'comrade', 'robot', 'machine', 'computer', 'hey']);
 
 // Greetings that are valid even as short (1-2 word) utterances
 const GREETING_WORDS = new Set(['hello', 'hi', 'hey', 'morning', 'evening', 'yo', 'sup', 'greetings']);
@@ -209,6 +235,42 @@ const MAX_KEYWORD_WORDS = 12;
 // Minimum word count — below this, only greetings/wake words/short phrases get responses.
 // Single-word fragments from Vosk like "fence", "dryer", "modern" are almost always noise.
 const MIN_QUESTION_WORDS = 3;
+
+/**
+ * Score an input to determine if it's a question directed at the Observer.
+ * Returns a score from 0.0 to 1.0+. Threshold: 0.4 = likely question.
+ * This replaces the old binary isQuestion check which only looked at
+ * first-word question starters and literal '?' (unusable with Vosk STT).
+ */
+function questionScore(clean, words) {
+    let score = 0;
+
+    // Signal 1: First word is a question starter (strongest signal)
+    if (QUESTION_STARTERS.has(words[0])) score += 0.5;
+
+    // Signal 2: Question word appears anywhere (weaker — could be embedded clause)
+    if (words.some(w => QUESTION_WORDS_ANYWHERE.has(w))) score += 0.3;
+
+    // Signal 3: Conversational question patterns
+    if (CONVERSATIONAL_QUESTION_PATTERNS.some(p => clean.includes(p))) score += 0.5;
+
+    // Signal 4: Verb-subject inversion patterns
+    if (INVERSION_PATTERNS.some(r => r.test(clean))) score += 0.4;
+
+    // Signal 5: Ends with question mark (rare from Vosk but honors typed input)
+    if (clean.endsWith('?')) score += 0.6;
+
+    // Signal 6: Contains a wake word (boosted — directed at us)
+    if (words.some(w => WAKE_WORDS.has(w))) score += 0.3;
+
+    // Signal 7: Moderate length (3-15 words is a typical directed question)
+    if (words.length >= 3 && words.length <= 15) score += 0.1;
+
+    // Penalty: Very long inputs (>20 words) are likely background conversation
+    if (words.length > 20) score -= 0.3;
+
+    return score;
+}
 
 const GEMINI_SYSTEM_PROMPT = `You are THE OBSERVER — an old Soviet-era surveillance robot built in 1987 who has been watching a room for decades.
 
@@ -311,9 +373,6 @@ export class OracleV2 {
         const hasWakeWord = words.some(w => WAKE_WORDS.has(w));
         const hasGreeting = words.some(w => GREETING_WORDS.has(w));
         const hasShortPhrase = [...SHORT_PHRASE_KEYWORDS].some(phrase => clean.includes(phrase));
-        const firstWordQuestion = QUESTION_STARTERS.has(words[0]);
-        const endsWithQuestion = clean.endsWith('?');
-        const isQuestion = endsWithQuestion || firstWordQuestion;
 
         // ── Phase 2: Short input filter (1-2 words) ──
         // Single words like "fence", "dryer", "modern" are always background noise.
@@ -352,13 +411,16 @@ export class OracleV2 {
             return keywordHit;
         }
 
-        // ── Phase 4: Question detection ──
-        // If it's not a question (no question word, no ?), and no wake word, stay silent.
-        // Background speech like "honestly if you like pizza money" gets dropped here.
-        if (!isQuestion && !hasWakeWord) {
-            console.log(`[Oracle] 🔇 Not a question, no wake word: "${clean.substring(0, 50)}"`);
+        // ── Phase 4: Question detection (scoring system) ──
+        // Uses multi-signal scoring instead of binary check.
+        // Vosk STT never produces '?' so we look for question patterns,
+        // word order inversions, and conversational cues.
+        const qScore = questionScore(clean, words);
+        if (qScore < 0.4) {
+            console.log(`[Oracle] 🔇 Below question threshold (score=${qScore.toFixed(2)}): "${clean.substring(0, 50)}"`);
             return { response: null, category: 'noise', emotion: 'neutral' };
         }
+        console.log(`[Oracle] 🎯 Question detected (score=${qScore.toFixed(2)}): "${clean.substring(0, 50)}"`);
 
         // ── Phase 5: AI-powered response (question confirmed) ──
         // Try local Ollama (Gemma) first for fast, offline inference
@@ -557,9 +619,6 @@ export class OracleV2 {
         const hasWakeWord = words.some(w => WAKE_WORDS.has(w));
         const hasGreeting = words.some(w => GREETING_WORDS.has(w));
         const hasShortPhrase = [...SHORT_PHRASE_KEYWORDS].some(phrase => clean.includes(phrase));
-        const firstWordQuestion = QUESTION_STARTERS.has(words[0]);
-        const endsWithQuestion = clean.endsWith('?');
-        const isQuestion = endsWithQuestion || firstWordQuestion;
 
         // ── Phase 2: Short input filter ──
         if (wordCount < MIN_QUESTION_WORDS) {
@@ -593,10 +652,13 @@ export class OracleV2 {
             return keywordHit;
         }
 
-        // ── Phase 4: Question detection ──
-        if (!isQuestion && !hasWakeWord) {
+        // ── Phase 4: Question detection (scoring system) ──
+        const qScore = questionScore(clean, words);
+        if (qScore < 0.4) {
+            console.log(`[Oracle] 🔇 Below question threshold (score=${qScore.toFixed(2)}): "${clean.substring(0, 50)}"`);
             return { response: null, category: 'noise', emotion: 'neutral' };
         }
+        console.log(`[Oracle] 🎯 Question detected (score=${qScore.toFixed(2)}): "${clean.substring(0, 50)}"`);
 
         // ── Phase 5: AI streaming response ──
         // Try Ollama streaming first (local, fast)
