@@ -38,9 +38,9 @@ export class AudioIngressServer {
       if (this.activeClient) {
         // ── Stale Connection Detection ──
         // Cloudflare Tunnel can drop the connection silently.
-        // If the "active" client hasn't sent data in 15s, it's dead.
+        // If the "active" client hasn't sent data in 10s, it's dead.
         const staleMs = Date.now() - this._lastDataAt;
-        const isStale = this.activeClient.readyState !== 1 || staleMs > 15000;
+        const isStale = this.activeClient.readyState !== 1 || staleMs > 10000;
 
         if (isStale) {
           console.warn(`[AudioIngress] ♻ Replacing stale audio client (last data ${Math.round(staleMs/1000)}s ago, readyState=${this.activeClient.readyState})`);

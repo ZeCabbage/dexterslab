@@ -42,10 +42,14 @@ export class TTSCommander {
 
       if (this.client) {
         // ── Stale Connection Detection ──
-        // Cloudflare Tunnel can drop connections silently.
-        // If the existing client is no longer OPEN, replace it.
-        if (this.client.readyState !== 1) {
-          console.warn(`[TTSCommander] ♻ Replacing stale TTS client (readyState=${this.client.readyState})`);
+        // Cloudflare Tunnel can drop connections silently, and the Pi's
+        // kiosk browser can create phantom WS connections that stay "open"
+        // but never send data. Use last-activity timestamp to detect stale.
+        const staleMs = Date.now() - (this._lastClientActivity || 0);
+        const isStale = this.client.readyState !== 1 || staleMs > 10000;
+
+        if (isStale) {
+          console.warn(`[TTSCommander] ♻ Replacing stale TTS client (readyState=${this.client.readyState}, lastActivity=${Math.round(staleMs/1000)}s ago)`);
           try { this.client.terminate(); } catch {}
           this.client = null;
         } else {
@@ -56,6 +60,7 @@ export class TTSCommander {
       }
 
       this.client = ws;
+      this._lastClientActivity = Date.now();
       console.log(`[TTSCommander] 🔊 Pi TTS receiver connected from ${ip}`);
 
       ws.on('close', () => {
@@ -74,6 +79,7 @@ export class TTSCommander {
 
       // Pi sends ack/status messages back — used for feedback loop prevention
       ws.on('message', (data) => {
+        this._lastClientActivity = Date.now();
         try {
           const msg = JSON.parse(data.toString());
           if (msg.type === 'tts_ack') {
