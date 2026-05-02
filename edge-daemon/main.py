@@ -58,21 +58,28 @@ def main():
     logger.info(f"  Backend: {config.pc_backend_url}")
     logger.info("═══════════════════════════════════════")
 
-    video = VideoStreamer(config)
-    audio = AudioStreamer(config)
+    # ── Staggered startup ──
+    # Connect in priority order with delays to prevent Cloudflare
+    # Tunnel from being overwhelmed by 3 simultaneous WebSocket upgrades.
+    # TTS first (0s) → Audio (2s delay) → Video (4s delay)
     tts = TTSReceiver(config)
+    audio = AudioStreamer(config, initial_delay=2.0)
+    video = VideoStreamer(config, initial_delay=4.0)
     health = HealthServer(config, video, audio, tts)
 
-    video.start()
-    audio.start()
+    logger.info("[Boot] Starting TTS receiver (priority 1, no delay)...")
     tts.start()
+    logger.info("[Boot] Starting Audio streamer (priority 2, 2s delay)...")
+    audio.start()
+    logger.info("[Boot] Starting Video streamer (priority 3, 4s delay)...")
+    video.start()
     try:
         health.start()
     except Exception as e:
         logger.error(f"[HealthServer] Failed to start (non-fatal): {e}")
         logger.error("[HealthServer] Continuing without health endpoint — services still running")
 
-    logger.info("All services started.")
+    logger.info("All services started (staggered connection in progress).")
 
     from diagnostics import attach as attach_diagnostics
     attach_diagnostics(video, audio, tts)
@@ -102,7 +109,7 @@ def main():
                     except Exception:
                         pass
                     time.sleep(2)
-                    video = VideoStreamer(config)
+                    video = VideoStreamer(config, initial_delay=2.0)
                     video.start()
                     fail_counts['video'] = 0
                     logger.info("[Watchdog] Video service restarted")
@@ -132,7 +139,7 @@ def main():
                     except Exception:
                         pass
                     time.sleep(3)  # Wait for device to fully release
-                    audio = AudioStreamer(config)
+                    audio = AudioStreamer(config, initial_delay=1.0)
                     audio.start()
                     # Re-attach to health server
                     health.audio = audio

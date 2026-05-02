@@ -1,4 +1,5 @@
 import { LiveCharacter, SpellData } from './types';
+import { THIRD_CASTER_CANTRIPS, THIRD_CASTER_SPELLS_KNOWN } from '../data/resource-scaling';
 
 // ── Prep Caster Detection ──
 // These classes prepare spells daily from their full class list.
@@ -9,17 +10,31 @@ export function isPrepCaster(className: string): boolean {
   return PREP_CASTER_IDS.includes(className.toLowerCase());
 }
 
+// ── Third-Caster Subclass Detection ──
+// These subclasses grant spellcasting to otherwise non-caster classes at level 3.
+const THIRD_CASTER_SUBCLASSES: Record<string, string[]> = {
+  'fighter': ['eldritch knight'],
+  'rogue': ['arcane trickster'],
+};
+
+export function isThirdCaster(className: string, subclass?: string | null): boolean {
+  if (!subclass) return false;
+  const valid = THIRD_CASTER_SUBCLASSES[className.toLowerCase()];
+  return !!valid && valid.includes(subclass.toLowerCase());
+}
+
 // ── Spell Progression Calculator ──
 // Returns cantrip/spell caps and max spell level for a class at a given level.
 // abilityMod: the spellcasting ability modifier (INT for Wizard, WIS for Cleric/Druid, CHA for Paladin/Bard/etc.)
 //   — used by prep casters to compute prepared limit = level + abilityMod (min 1)
 //   — ignored for "spells known" casters (Bard, Sorcerer, Warlock, Ranger)
-export function getSpellProgression(className: string, level: number, abilityMod: number = 0) {
+// subclass: optional subclass name — enables third-caster progression for Fighter/Rogue
+export function getSpellProgression(className: string, level: number, abilityMod: number = 0, subclass?: string | null) {
   const normClass = className.toLowerCase();
   
   let cantripsKnown = 0;
   let spellsKnown = 0;
-  let maxSpellLevel = 1;
+  let maxSpellLevel = 0;
   const isPrep = isPrepCaster(normClass);
 
   if (['wizard', 'cleric', 'druid'].includes(normClass)) {
@@ -42,8 +57,14 @@ export function getSpellProgression(className: string, level: number, abilityMod
     cantripsKnown = 0;
     spellsKnown = level < 2 ? 0 : Math.floor(level / 2) + 2;
     maxSpellLevel = Math.max(1, Math.ceil(level / 4));
+  } else if (isThirdCaster(normClass, subclass)) {
+    // Third-caster subclasses (Eldritch Knight, Arcane Trickster)
+    // Spellcasting starts at level 3
+    cantripsKnown = THIRD_CASTER_CANTRIPS[level] || 0;
+    spellsKnown = THIRD_CASTER_SPELLS_KNOWN[level] || 0;
+    maxSpellLevel = level < 3 ? 0 : level < 7 ? 1 : level < 13 ? 2 : level < 19 ? 3 : 4;
   } else {
-    // Non-casters (Fighter, Rogue, Barbarian, Monk)
+    // Non-casters (Fighter, Rogue, Barbarian, Monk without casting subclass)
     cantripsKnown = 0;
     spellsKnown = 0;
     maxSpellLevel = 0;
@@ -58,8 +79,10 @@ export function getSpellProgression(className: string, level: number, abilityMod
 export function evaluateSpellLock(char: LiveCharacter | null, spell: SpellData, currentKnownSpells: SpellData[]): { locked: boolean, reason?: string } {
   if (!char) return { locked: true, reason: 'No active character' };
 
-  // 1. Is the character even a spellcaster?
-  if (!char.spellcaster) {
+  // 1. Is the character even a spellcaster? (base class OR third-caster subclass)
+  const charSubclass = char.subclasses?.[char.class] || char.subclass || null;
+  const thirdCaster = isThirdCaster(char.class, charSubclass);
+  if (!char.spellcaster && !thirdCaster) {
     return { locked: true, reason: `Requires Spellcasting Class` };
   }
 
@@ -88,12 +111,17 @@ export function evaluateSpellLock(char: LiveCharacter | null, spell: SpellData, 
      isClassMatch = true;
   }
 
+  // For third-casters (EK uses Wizard list, AT uses Wizard list), allow Wizard spells
+  if (!isClassMatch && thirdCaster && spell.classes.map((c: string) => c.toLowerCase()).includes('wizard')) {
+    isClassMatch = true;
+  }
+
   if (!isClassMatch && spell.classes.length > 0) { // If classes is empty, assume homebrew universal
     return { locked: true, reason: `Requires ${spell.classes.join(' or ')}` };
   }
 
   // 3. Are they a high enough level to cast this?
-  const prog = getSpellProgression(char.class, char.level);
+  const prog = getSpellProgression(char.class, char.level, 0, charSubclass);
   if (spell.level > prog.maxSpellLevel) {
     return { locked: true, reason: `Requires Level ${spell.level * 2 - 1} ${char.class}` }; // Rough max level inversion
   }

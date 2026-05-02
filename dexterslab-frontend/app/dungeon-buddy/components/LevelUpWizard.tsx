@@ -8,7 +8,7 @@ import SpellBrowser from './SpellBrowser';
 import { getSubclassFeaturesAtLevel, getSubclassFeaturesUpToLevel, SUBCLASS_FEATURES } from '../data/subclass-features';
 import { METAMAGIC_OPTIONS, MANEUVER_OPTIONS, FIGHTING_STYLE_OPTIONS, WARLOCK_PACT_SLOTS } from '../data/resource-scaling';
 import { ASI_LEVELS } from '../data/srd';
-import { getSpellProgression, isPrepCaster } from '../lib/magic-system';
+import { getSpellProgression, isPrepCaster, isThirdCaster } from '../lib/magic-system';
 
 interface Props {
   onClose: () => void;
@@ -63,7 +63,10 @@ export default function LevelUpWizard({ onClose }: Props) {
   const [selectedLandType, setSelectedLandType] = useState<string>('');
 
   // State: Spells Step
-  const needsSpells = !!tClassData?.spellcaster;
+  // Check both base spellcaster AND third-caster subclasses (Eldritch Knight, Arcane Trickster)
+  const charSubclass = char?.subclasses?.[targetClass] || char?.subclass || null;
+  const isThirdCasterClass = isThirdCaster(targetClass, charSubclass);
+  const needsSpells = !!tClassData?.spellcaster || (isThirdCasterClass && targetClassLevel >= 3);
   const [learnedSpells, setLearnedSpells] = useState<string[]>([]);
   const [isAddingCustomSpell, setIsAddingCustomSpell] = useState(false);
   const [customDraft, setCustomDraft] = useState({ name:'', level:1, school:'Evocation', castingTime:'1 Action', range:'60 feet', components:'V, S', duration:'Instantaneous', damage:'', description:'' });
@@ -72,10 +75,11 @@ export default function LevelUpWizard({ onClose }: Props) {
   // ── 5E Spell Progression Delta Math ──
   // Compute how many NEW cantrips and leveled spells this level grants
   const isClassPrepCaster = isPrepCaster(targetClass);
-  const spellAbility = tClassData?.spellcastingAbility || 'int';
+  // Third-casters use INT as their spellcasting ability
+  const spellAbility = isThirdCasterClass ? 'int' : (tClassData?.spellcastingAbility || 'int');
   const spellAbilityMod = char ? calculateModifier(char.stats?.[spellAbility as keyof typeof char.stats] || 10) : 0;
-  const progNew = getSpellProgression(targetClass, targetClassLevel, spellAbilityMod);
-  const progOld = targetClassLevel > 1 ? getSpellProgression(targetClass, targetClassLevel - 1, spellAbilityMod) : { cantripsKnown: 0, spellsKnown: 0 };
+  const progNew = getSpellProgression(targetClass, targetClassLevel, spellAbilityMod, charSubclass);
+  const progOld = targetClassLevel > 1 ? getSpellProgression(targetClass, targetClassLevel - 1, spellAbilityMod, charSubclass) : { cantripsKnown: 0, spellsKnown: 0 };
   const newCantripsAllowed = Math.max(0, progNew.cantripsKnown - progOld.cantripsKnown);
   // For prep casters the "delta" is just the total prepared limit (they re-prepare everything daily)
   // For known casters: delta = new spells known - old spells known

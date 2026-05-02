@@ -15,6 +15,7 @@ import logging
 import subprocess
 import threading
 import ssl
+import random
 
 try:
     import websockets
@@ -67,7 +68,7 @@ class TTSReceiver:
         loop.close()
 
     def _playback_worker(self):
-        """Dedicated thread that processes TTS chunks sequentially.
+        """Dedicated thread that processes TTS chunks and raw PCM sequentially.
         While one chunk plays, the next is already waiting in the queue.
         This gives near-seamless back-to-back speech."""
         logger.info("[TTSReceiver] Playback worker started")
@@ -76,6 +77,14 @@ class TTSReceiver:
                 item = self._chunk_queue.get(timeout=1.0)
                 if item is None:
                     break  # Poison pill — shutdown
+
+                # Check if this is raw PCM audio (from Gemini Live)
+                if isinstance(item, tuple) and len(item) == 2 and isinstance(item[0], bytes):
+                    pcm_data, sample_rate = item
+                    logger.info(f"[TTSReceiver] 🔊 Playing raw PCM ({len(pcm_data)} bytes, {sample_rate}Hz)")
+                    self._play_raw_pcm(pcm_data, sample_rate)
+                    continue
+
                 text, chunk_index, is_last, ws_ref = item
                 logger.info(f"[TTSReceiver] 🔊 Playing chunk {chunk_index}: \"{text[:50]}\"")
                 self._speak(text)
@@ -175,16 +184,21 @@ class TTSReceiver:
                         elif cmd_type == "tts_raw_audio":
                             # ── Gemini Live raw PCM audio ──
                             # Pre-synthesized audio from Gemini Live API.
-                            # Play directly without Piper TTS synthesis.
+                            # Queue for playback worker (non-blocking) so we
+                            # can keep receiving more audio chunks.
                             import base64 as b64
                             audio_b64 = data.get("audio", "")
                             sample_rate = data.get("sampleRate", 24000)
                             if audio_b64:
                                 try:
                                     pcm_data = b64.b64decode(audio_b64)
-                                    self._play_raw_pcm(pcm_data, sample_rate)
+                                    self._chunk_queue.put_nowait(
+                                        (pcm_data, sample_rate)
+                                    )
+                                except __import__('queue').Full:
+                                    logger.warning("[TTSReceiver] Raw audio queue full — dropping chunk")
                                 except Exception as e:
-                                    logger.error(f"[TTSReceiver] Raw audio playback error: {e}")
+                                    logger.error(f"[TTSReceiver] Raw audio decode error: {e}")
 
                         else:
                             logger.warning(f"[TTSReceiver] Unknown command type: {cmd_type}")
@@ -192,9 +206,11 @@ class TTSReceiver:
             except (Exception,) as e:
                 if not self._running:
                     break
-                logger.warning(f"[TTSReceiver] Connection failed ({e}). Reconnecting in {backoff}s")
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 5)  # Cap at 5s for fast recovery
+                jitter = random.uniform(0, 1.0)
+                wait = backoff + jitter
+                logger.warning(f"[TTSReceiver] Connection failed ({e}). Reconnecting in {wait:.1f}s")
+                await asyncio.sleep(wait)
+                backoff = min(backoff * 2, 10)
 
     # ── Piper TTS config ──
     PIPER_BIN = '/home/deploy/dexterslab-edge/venv/bin/piper'

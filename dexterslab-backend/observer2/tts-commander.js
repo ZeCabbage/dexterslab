@@ -41,27 +41,39 @@ export class TTSCommander {
       const ip = req.socket.remoteAddress;
 
       if (this.client) {
-        // ── Stale Connection Detection ──
-        // Cloudflare Tunnel can drop connections silently, and the Pi's
-        // kiosk browser can create phantom WS connections that stay "open"
-        // but never send data. Use last-activity timestamp to detect stale.
+        // ── Always Replace ──
+        // Cloudflare Tunnel can drop connections silently.
+        // TTS is a receive-only channel — Pi rarely sends data.
+        // ALWAYS replace — never reject a new connection.
         const staleMs = Date.now() - (this._lastClientActivity || 0);
-        const isStale = this.client.readyState !== 1 || staleMs > 10000;
+        const isStale = this.client.readyState !== 1 || staleMs > 5000;
 
         if (isStale) {
           console.warn(`[TTSCommander] ♻ Replacing stale TTS client (readyState=${this.client.readyState}, lastActivity=${Math.round(staleMs/1000)}s ago)`);
-          try { this.client.terminate(); } catch {}
-          this.client = null;
         } else {
-          console.warn(`[TTSCommander] Rejected duplicate TTS client from ${ip} — existing client is alive`);
-          ws.close(1008, 'TTS receiver already connected');
-          return;
+          console.warn(`[TTSCommander] ♻ Replacing active TTS client for new connection from ${ip} (lastActivity=${Math.round(staleMs/1000)}s ago)`);
         }
+        // Auto-unmute if we were speaking to the old client
+        if (this.isSpeaking) {
+          clearTimeout(this._speakSafetyTimeout);
+          clearTimeout(this._cooldownTimeout);
+          this._pendingChunks = 0;
+          this._streamingActive = false;
+          this.isSpeaking = false;
+          console.warn('[TTSCommander] ⚡ Auto-unmuted STT — TTS client replaced');
+        }
+        try { this.client.terminate(); } catch {}
+        this.client = null;
       }
 
       this.client = ws;
       this._lastClientActivity = Date.now();
       console.log(`[TTSCommander] 🔊 Pi TTS receiver connected from ${ip}`);
+
+      // Track WS pong responses as heartbeat (since TTS clients don't send data regularly)
+      ws.on('pong', () => {
+        this._lastClientActivity = Date.now();
+      });
 
       ws.on('close', () => {
         if (this.client === ws) {

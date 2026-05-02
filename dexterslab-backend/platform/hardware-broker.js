@@ -212,6 +212,12 @@ export class HardwareBroker {
 
     console.log(`[HardwareBroker] Voice mode: ${this._voiceMode} → ${mode}`);
 
+    // Clear any existing auto-fallback timer
+    if (this._geminiHealthTimer) {
+      clearInterval(this._geminiHealthTimer);
+      this._geminiHealthTimer = null;
+    }
+
     if (mode === 'gemini-live') {
       // Start Gemini Live session
       const apiKey = process.env.GEMINI_API_KEY;
@@ -221,12 +227,13 @@ export class HardwareBroker {
       }
 
       this._geminiVoiceCallbacks = callbacks;
+      this._geminiTurnAudioBuffer = [];  // Buffer audio chunks per turn
 
       this._geminiVoice = new GeminiVoice({
         apiKey,
         onAudioResponse: (base64Audio, mimeType) => {
-          // Forward Gemini's audio response to Pi speaker as raw PCM
-          this._sendRawAudioToPi(base64Audio);
+          // Buffer audio chunks for the current turn
+          this._geminiTurnAudioBuffer.push(base64Audio);
         },
         onInputTranscript: (text) => {
           console.log(`[GeminiLive] 🎤 User: "${text}"`);
@@ -242,17 +249,35 @@ export class HardwareBroker {
           }
         },
         onTurnComplete: () => {
+          // Flush buffered audio as one payload to Pi
+          this._flushGeminiAudioBuffer();
           if (this._geminiVoiceCallbacks.onTurnComplete) {
             this._geminiVoiceCallbacks.onTurnComplete();
           }
         },
         onError: (err) => {
           console.error('[GeminiLive] Session error:', err.message || err);
+        },
+        onConnectionLost: () => {
+          console.warn('[GeminiLive] ⚠ Connection lost — audio will route to local STT until reconnected');
+          // Don't auto-switch mode yet — GeminiVoice auto-reconnects in 3s.
+          // The audio_frame handler already checks isConnected() before feeding.
+        },
+        onReconnected: () => {
+          console.log('[GeminiLive] ✅ Reconnected — resuming Gemini audio pipeline');
         }
       });
 
       await this._geminiVoice.connect();
       this._voiceMode = 'gemini-live';
+
+      // Health monitor — if Gemini stays disconnected for 30s, fall back to local
+      this._geminiHealthTimer = setInterval(() => {
+        if (this._voiceMode === 'gemini-live' && this._geminiVoice && !this._geminiVoice.isConnected()) {
+          console.warn('[HardwareBroker] ⚠ Gemini Live disconnected >30s — falling back to local STT');
+          this.setVoiceMode('local');
+        }
+      }, 30000);
 
     } else {
       // Switch back to local mode
@@ -261,8 +286,42 @@ export class HardwareBroker {
         this._geminiVoice = null;
       }
       this._geminiVoiceCallbacks = {};
+      this._geminiTurnAudioBuffer = [];
       this._voiceMode = 'local';
     }
+  }
+
+  /**
+   * Flush buffered Gemini audio chunks as one payload to the Pi speaker.
+   * Concatenating chunks reduces aplay startup overhead on the Pi.
+   */
+  _flushGeminiAudioBuffer() {
+    if (!this._geminiTurnAudioBuffer || this._geminiTurnAudioBuffer.length === 0) return;
+    if (!this.ttsCommander.isConnected()) {
+      console.warn('[HardwareBroker] Cannot flush audio — Pi TTS not connected');
+      this._geminiTurnAudioBuffer = [];
+      return;
+    }
+
+    try {
+      // Concatenate all base64 chunks into one PCM buffer
+      const buffers = this._geminiTurnAudioBuffer.map(b64 => Buffer.from(b64, 'base64'));
+      const combined = Buffer.concat(buffers);
+      const combinedB64 = combined.toString('base64');
+      
+      console.log(`[HardwareBroker] Flushing ${this._geminiTurnAudioBuffer.length} audio chunks (${combined.length} bytes) to Pi`);
+
+      this.ttsCommander.client.send(JSON.stringify({
+        type: 'tts_raw_audio',
+        audio: combinedB64,
+        sampleRate: 24000,  // Gemini Live outputs 24kHz PCM
+        format: 'pcm_s16le'
+      }));
+    } catch (err) {
+      console.error('[HardwareBroker] Failed to send buffered audio to Pi:', err.message);
+    }
+
+    this._geminiTurnAudioBuffer = [];
   }
 
   /**

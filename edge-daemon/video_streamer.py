@@ -17,6 +17,7 @@ import time
 import logging
 import asyncio
 import ssl
+import random
 
 try:
     import websockets
@@ -33,13 +34,14 @@ EOI = b'\xff\xd9'
 
 
 class VideoStreamer:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, initial_delay: float = 0):
         self.config = config
         self._process = None
         self._capture_thread = None
         self._ws_thread = None
         self._running = False
         self._frame_queue = None
+        self._initial_delay = initial_delay  # Staggered startup
 
     def start(self):
         if self._running:
@@ -173,6 +175,11 @@ class VideoStreamer:
         uri = f"wss://{self.config.pc_backend_url}/ws/video"
         backoff = 1
 
+        # Staggered startup — wait before first connection attempt
+        if self._initial_delay > 0:
+            logger.info(f"[VideoStreamer] Waiting {self._initial_delay}s before connecting (staggered startup)")
+            await asyncio.sleep(self._initial_delay)
+
         # Create SSL context that trusts default CAs (for wss://)
         ssl_ctx = ssl.create_default_context()
 
@@ -203,6 +210,8 @@ class VideoStreamer:
             except (Exception,) as e:
                 if not self._running:
                     break
-                logger.warning(f"[VideoStreamer] Connection failed ({e}). Reconnecting in {backoff}s")
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 5)  # Cap at 5s for fast recovery
+                jitter = random.uniform(0, 1.0)
+                wait = backoff + jitter
+                logger.warning(f"[VideoStreamer] Connection failed ({e}). Reconnecting in {wait:.1f}s")
+                await asyncio.sleep(wait)
+                backoff = min(backoff * 2, 10)

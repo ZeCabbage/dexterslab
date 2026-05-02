@@ -58,6 +58,8 @@ export class GeminiVoice {
     this.onOutputTranscript = options.onOutputTranscript || (() => {});
     this.onTurnComplete = options.onTurnComplete || (() => {});
     this.onError = options.onError || ((err) => console.error('[GeminiVoice] Error:', err));
+    this.onConnectionLost = options.onConnectionLost || (() => {});
+    this.onReconnected = options.onReconnected || (() => {});
 
     this.session = null;
     this._ai = null;
@@ -65,6 +67,8 @@ export class GeminiVoice {
     this._connected = false;
     this._reconnecting = false;
     this._audioChunkCount = 0;
+    this._lastServerMessageAt = 0;  // For health monitoring
+    this._wasConnected = false;     // Track if we had a previous connection
   }
 
   /**
@@ -91,12 +95,19 @@ export class GeminiVoice {
         config: config,
         callbacks: {
           onopen: () => {
+            const wasReconnect = this._wasConnected;
             this._connected = true;
             this._reconnecting = false;
             this._audioChunkCount = 0;
+            this._lastServerMessageAt = Date.now();
+            this._wasConnected = true;
             console.log('[GeminiVoice] 🟢 Gemini Live session connected');
+            if (wasReconnect) {
+              this.onReconnected();
+            }
           },
           onmessage: (message) => {
+            this._lastServerMessageAt = Date.now();
             this._handleMessage(message);
           },
           onerror: (e) => {
@@ -104,8 +115,12 @@ export class GeminiVoice {
             this.onError(e);
           },
           onclose: (e) => {
+            const wasConnected = this._connected;
             this._connected = false;
             console.log(`[GeminiVoice] 🔴 Session closed: ${e?.reason || 'unknown'}`);
+            if (wasConnected) {
+              this.onConnectionLost();
+            }
             // Auto-reconnect after 3 seconds
             if (!this._reconnecting) {
               this._reconnecting = true;

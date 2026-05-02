@@ -14,7 +14,7 @@ import {
 import { getSpellProgression, isPrepCaster } from '../lib/magic-system';
 import { STARTING_EQUIPMENT_DB } from '../data/starting-equipment';
 import { WARLOCK_PACT_SLOTS } from '../data/resource-scaling';
-import { ITEM_DATABASE } from '../lib/data/items';
+import { ITEM_DATABASE, PACK_CONTENTS } from '../lib/data/items';
 import { useCharacterStore } from '../lib/store';
 import Tooltip from '../components/Tooltip';
 import SpellBrowser from '../components/SpellBrowser';
@@ -444,12 +444,13 @@ export default function CharacterCreationWizard() {
     const startingHp = calculateStartingHp(effectiveClass as any, conMod);
     const allSkills = [...new Set([...lockedSkills, ...selectedSkills])];
 
+    // ── Build starting inventory (all gear goes to backpack, packs are expanded) ──
     const gearIds = Object.values(draftGearSelections).flat();
-    const inventory = gearIds.map((itemId: string, i: number) => {
-      const dbItem = ITEM_DATABASE[itemId];
-      if (!dbItem) return null;
+    let itemCounter = 0;
+    const makeItem = (dbItem: any) => {
+      itemCounter++;
       return {
-        id: `inst_${Date.now()}_${i}`,
+        id: `inst_${Date.now()}_${itemCounter}`,
         name: dbItem.name || 'Unknown Item',
         qty: dbItem.qty || 1,
         weight: dbItem.weight || 0,
@@ -457,26 +458,35 @@ export default function CharacterCreationWizard() {
         slot: dbItem.slot || null,
         type: dbItem.type || 'gear',
         description: dbItem.description || '',
-        // ── Armor fields ──
         armorClass: dbItem.armorClass,
         armorCategory: dbItem.armorCategory,
-        // ── Weapon fields (critical for CombatTab damage & proficiency) ──
         damage: dbItem.damage,
         damageType: dbItem.damageType,
         properties: dbItem.properties ? [...dbItem.properties] : undefined,
         weaponCategory: dbItem.weaponCategory,
         actionCost: dbItem.actionCost,
       };
-    }).filter(Boolean);
-    const equipped: Record<string, any> = { head: null, chest: null, cloak: null, mainHand: null, offHand: null, gloves: null, boots: null, ring1: null, ring2: null, amulet: null };
-    // Auto-equip the first item for each slot; extras stay in the backpack
-    const startingInventory = inventory.filter((i: any) => {
-      if (i.slot && !equipped[i.slot]) {
-        equipped[i.slot] = i;
-        return false; // Equipped — remove from backpack
+    };
+
+    const startingInventory: any[] = [];
+    for (const itemId of gearIds) {
+      // If this is a pack, expand it into individual items
+      if (PACK_CONTENTS[itemId]) {
+        for (const entry of PACK_CONTENTS[itemId]) {
+          const component = ITEM_DATABASE[entry.itemId];
+          if (component) {
+            startingInventory.push(makeItem({ ...component, qty: entry.qty }));
+          }
+        }
+        continue; // Don't add the pack itself
       }
-      return true; // No slot, or slot already filled — keep in backpack
-    });
+      // Normal item
+      const dbItem = ITEM_DATABASE[itemId];
+      if (dbItem) startingInventory.push(makeItem(dbItem));
+    }
+
+    // Equipment slots start empty — player equips from inventory
+    const equipped: Record<string, any> = { head: null, chest: null, cloak: null, mainHand: null, offHand: null, gloves: null, boots: null, ring1: null, ring2: null, amulet: null };
 
     // ── Homebrew Registry: Route Oracle output into proper structures ──
     const homebrewSpells = oracleCustomSpells.map((cs: any) => ({

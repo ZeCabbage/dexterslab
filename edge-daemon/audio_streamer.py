@@ -16,7 +16,7 @@ import asyncio
 import time
 import json
 import ssl
-import sys
+import random
 
 try:
     import websockets
@@ -29,13 +29,14 @@ logger = logging.getLogger(__name__)
 
 
 class AudioStreamer:
-    def __init__(self, config: Config):
+    def __init__(self, config: Config, initial_delay: float = 0):
         self.config = config
         self._running = False
         self._capture_thread = None
         self._ws_thread = None
         self._queue = queue.Queue(maxsize=50)
         self._pyaudio = pyaudio.PyAudio()
+        self._initial_delay = initial_delay  # Staggered startup
 
     def start(self):
         if self._running:
@@ -159,6 +160,11 @@ class AudioStreamer:
         uri = f"wss://{self.config.pc_backend_url}/ws/audio"
         backoff = 1
 
+        # Staggered startup — wait before first connection attempt
+        if self._initial_delay > 0:
+            logger.info(f"[AudioStreamer] Waiting {self._initial_delay}s before connecting (staggered startup)")
+            await asyncio.sleep(self._initial_delay)
+
         # SSL context for wss://
         ssl_ctx = ssl.create_default_context()
 
@@ -181,18 +187,19 @@ class AudioStreamer:
                             raise ValueError(f"Expected format_requirements, got {reqs.get('type')}")
 
                         if reqs.get('sampleRate') != self.config.audio_sample_rate:
-                            logger.fatal(f"[AudioStreamer] AUDIO FORMAT MISMATCH: Server requires sampleRate {reqs.get('sampleRate')}, but config has {self.config.audio_sample_rate}")
-                            sys.exit(1)
+                            logger.error(f"[AudioStreamer] AUDIO FORMAT MISMATCH: Server requires sampleRate {reqs.get('sampleRate')}, but config has {self.config.audio_sample_rate}")
+                            raise ValueError("Sample rate mismatch")
                         if reqs.get('channels') != self.config.audio_channels:
-                            logger.fatal(f"[AudioStreamer] AUDIO FORMAT MISMATCH: Server requires channels {reqs.get('channels')}, but config has {self.config.audio_channels}")
-                            sys.exit(1)
+                            logger.error(f"[AudioStreamer] AUDIO FORMAT MISMATCH: Server requires channels {reqs.get('channels')}, but config has {self.config.audio_channels}")
+                            raise ValueError("Channel count mismatch")
 
                         await ws.send(json.dumps({"type": "format_ack"}))
                         logger.info("[AudioStreamer] Format negotiation successful")
 
                     except Exception as e:
-                        logger.fatal(f"[AudioStreamer] Failed format negotiation: {e}")
-                        sys.exit(1)
+                        logger.warning(f"[AudioStreamer] Format negotiation failed: {e}. Will retry...")
+                        # Don't sys.exit — just close and reconnect
+                        continue
 
                     backoff = 1
                     idle_count = 0
@@ -215,6 +222,8 @@ class AudioStreamer:
             except (websockets.exceptions.ConnectionClosed, OSError) as e:
                 if not self._running:
                     break
-                logger.warning(f"[AudioStreamer] Connection dropped ({e}). Reconnecting in {backoff}s")
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * 2, 5)  # Cap at 5s, not 30s — fast recovery
+                jitter = random.uniform(0, 1.0)
+                wait = backoff + jitter
+                logger.warning(f"[AudioStreamer] Connection dropped ({e}). Reconnecting in {wait:.1f}s")
+                await asyncio.sleep(wait)
+                backoff = min(backoff * 2, 10)

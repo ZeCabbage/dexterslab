@@ -38,20 +38,20 @@ export class AudioIngressServer {
       if (this.activeClient) {
         // ── Stale Connection Detection ──
         // Cloudflare Tunnel can drop the connection silently.
-        // If the "active" client hasn't sent data in 10s, it's dead.
+        // Audio sends data every ~100ms, so 5s of silence is definitely dead.
+        // ALWAYS replace stale connections — never reject the new one,
+        // since the new connection is the Pi's latest attempt to reconnect.
         const staleMs = Date.now() - this._lastDataAt;
-        const isStale = this.activeClient.readyState !== 1 || staleMs > 10000;
+        const isStale = this.activeClient.readyState !== 1 || staleMs > 5000;
 
         if (isStale) {
           console.warn(`[AudioIngress] ♻ Replacing stale audio client (last data ${Math.round(staleMs/1000)}s ago, readyState=${this.activeClient.readyState})`);
-          try { this.activeClient.terminate(); } catch {}
-          this.activeClient = null;
-          this.events.emit('client_disconnected');
         } else {
-          console.warn(`[AudioIngress] Rejected duplicate audio client from ${ip} (active client alive, last data ${Math.round(staleMs/1000)}s ago)`);
-          ws.close(1008, 'Audio stream already active');
-          return;
+          console.warn(`[AudioIngress] ♻ Replacing active audio client for new connection from ${ip} (last data ${Math.round(staleMs/1000)}s ago)`);
         }
+        try { this.activeClient.terminate(); } catch {}
+        this.activeClient = null;
+        this.events.emit('client_disconnected');
       }
 
       this.activeClient = ws;
