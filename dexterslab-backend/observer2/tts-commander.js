@@ -67,6 +67,17 @@ export class TTSCommander {
         if (this.client === ws) {
           this.client = null;
           console.log('[TTSCommander] 🔊 Pi TTS receiver disconnected');
+          // ── Critical: Auto-unmute STT on disconnect ──
+          // If the Pi disconnects while we were speaking, acks will never arrive.
+          // Without this, isSpeaking stays true for the full safety timeout (deaf).
+          if (this.isSpeaking) {
+            clearTimeout(this._speakSafetyTimeout);
+            clearTimeout(this._cooldownTimeout);
+            this._pendingChunks = 0;
+            this._streamingActive = false;
+            this.isSpeaking = false;
+            console.warn('[TTSCommander] ⚡ Auto-unmuted STT — TTS client lost during speech');
+          }
         }
       });
 
@@ -74,6 +85,15 @@ export class TTSCommander {
         console.error('[TTSCommander] WebSocket error:', err.message);
         if (this.client === ws) {
           this.client = null;
+          // Auto-unmute on error too
+          if (this.isSpeaking) {
+            clearTimeout(this._speakSafetyTimeout);
+            clearTimeout(this._cooldownTimeout);
+            this._pendingChunks = 0;
+            this._streamingActive = false;
+            this.isSpeaking = false;
+            console.warn('[TTSCommander] ⚡ Auto-unmuted STT — TTS client error during speech');
+          }
         }
       });
 
@@ -145,10 +165,10 @@ export class TTSCommander {
       clearTimeout(this._cooldownTimeout);
       this._speakSafetyTimeout = setTimeout(() => {
         if (this.isSpeaking) {
-          console.warn('[TTSCommander] ⚠️ No ack after 30s — auto-unmuting STT');
+          console.warn('[TTSCommander] ⚠️ No ack after 8s — auto-unmuting STT');
           this.isSpeaking = false;
         }
-      }, 30000);
+      }, 8000);
 
       this.client.send(JSON.stringify({ type: 'tts', text }));
       return true;
@@ -195,16 +215,16 @@ export class TTSCommander {
         this._pendingChunks = 0;
         console.log('[TTSCommander] 🔇 STT muted — streaming TTS started');
 
-        // Safety timeout: auto-unmute after 45s if Pi never finishes
+        // Safety timeout: auto-unmute after 10s if Pi never finishes
         clearTimeout(this._speakSafetyTimeout);
         this._speakSafetyTimeout = setTimeout(() => {
           if (this.isSpeaking) {
-            console.warn('[TTSCommander] ⚠️ No stream completion after 45s — auto-unmuting STT');
+            console.warn('[TTSCommander] ⚠️ No stream completion after 10s — auto-unmuting STT');
             this.isSpeaking = false;
             this._streamingActive = false;
             this._pendingChunks = 0;
           }
-        }, 45000);
+        }, 10000);
       }
 
       this._pendingChunks++;

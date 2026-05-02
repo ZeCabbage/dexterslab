@@ -469,13 +469,13 @@ export default function CharacterCreationWizard() {
       };
     }).filter(Boolean);
     const equipped: Record<string, any> = { head: null, chest: null, cloak: null, mainHand: null, offHand: null, gloves: null, boots: null, ring1: null, ring2: null, amulet: null };
-    // We filter the inventory so anything that starts equipped is removed from the backpack entirely
+    // Auto-equip the first item for each slot; extras stay in the backpack
     const startingInventory = inventory.filter((i: any) => {
-      if (i.slot) {
+      if (i.slot && !equipped[i.slot]) {
         equipped[i.slot] = i;
-        return false;
+        return false; // Equipped — remove from backpack
       }
-      return true;
+      return true; // No slot, or slot already filled — keep in backpack
     });
 
     // ── Homebrew Registry: Route Oracle output into proper structures ──

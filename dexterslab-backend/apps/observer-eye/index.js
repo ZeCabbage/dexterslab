@@ -39,9 +39,40 @@ export default class ObserverEyeApp {
       })
     );
     
-    // Subscribe to STT transcripts — but skip navigation commands
-    // VoiceNavigator publishes 'voice.navigation' when it consumes a command.
-    // We track that flag and skip oracle processing for those transcripts.
+    // ── Gemini Live Voice Pipeline (Online) ──
+    // Switch to Gemini Live for real-time audio-native conversation.
+    // This replaces the Vosk STT → Oracle → Piper TTS chain entirely.
+    await this.platform.hardwareBroker.setVoiceMode('gemini-live', {
+      onInputTranscript: (text) => {
+        // Broadcast user's speech to display clients
+        const packet = JSON.stringify({ type: 'user_question', text });
+        for (const client of this.wsClients) {
+          if (client.readyState === 1) client.send(packet);
+        }
+      },
+      onOutputTranscript: (text) => {
+        // Broadcast Gemini's response text to display clients
+        const packet = JSON.stringify({
+          type: 'oracle_chunk',
+          text,
+          chunkIndex: 0,
+          isLast: true
+        });
+        for (const client of this.wsClients) {
+          if (client.readyState === 1) client.send(packet);
+        }
+      },
+      onTurnComplete: () => {
+        // Signal display clients that the response is complete
+        const packet = JSON.stringify({ type: 'oracle_complete' });
+        for (const client of this.wsClients) {
+          if (client.readyState === 1) client.send(packet);
+        }
+      }
+    });
+
+    // ── Fallback: Local STT → Oracle pipeline ──
+    // Only fires if Gemini Live is disconnected (voice mode falls back to 'local')
     let lastNavTimestamp = 0;
     this.subscriptions.push(
       this.platform.bus.subscribe('voice.navigation', (data) => {
@@ -51,6 +82,9 @@ export default class ObserverEyeApp {
 
     this.subscriptions.push(
       this.platform.hardwareBroker.subscribeSTT((text) => {
+        // Skip if in Gemini Live mode (shouldn't fire, but safety check)
+        if (this.platform.hardwareBroker.getVoiceMode() === 'gemini-live') return;
+
         // If VoiceNavigator just consumed this command, skip oracle
         const elapsed = Date.now() - lastNavTimestamp;
         if (elapsed < 500) {
@@ -64,21 +98,17 @@ export default class ObserverEyeApp {
           if (client.readyState === 1) client.send(questionPacket);
         }
 
-        // ── Streaming Oracle Pipeline ──
-        // Each sentence chunk is sent to TTS and display clients as it arrives,
-        // rather than waiting for the full AI response.
+        // ── Streaming Oracle Pipeline (local fallback) ──
         const MUTE_RESPONSES = ['[NOTED, COMRADE.]', '[NOTED. CONTINUE]', '[ACKNOWLEDGED]', '[STAND BY]', '[PROCESSING]', '[FILE UPDATED]'];
 
         this.engine.handleOracleQuestionStreaming(text, (chunkText, chunkIndex, isLast) => {
           if (!chunkText || !chunkText.trim()) return;
 
-          // Don't speak generic fallback responses
           if (MUTE_RESPONSES.includes(chunkText)) {
             console.log(`[ObserverEye] Suppressing TTS for generic response: ${chunkText}`);
             return;
           }
 
-          // Send chunk to Pi TTS (starts speaking this sentence immediately)
           this.platform.hardwareBroker.speakChunk(
             ObserverEyeApp.manifest.id,
             chunkText,
@@ -86,7 +116,6 @@ export default class ObserverEyeApp {
             isLast
           );
 
-          // Broadcast chunk to display clients for live text rendering
           const chunkPacket = JSON.stringify({
             type: 'oracle_chunk',
             text: chunkText,
@@ -127,6 +156,9 @@ export default class ObserverEyeApp {
     console.log('[ObserverEye] Deactivating...');
     this.engine.stop();
     this.platform.hardwareBroker.releaseTTS(ObserverEyeApp.manifest.id);
+    
+    // Switch back to local voice mode for other apps
+    await this.platform.hardwareBroker.setVoiceMode('local');
     
     for (const unsub of this.subscriptions) {
       unsub();

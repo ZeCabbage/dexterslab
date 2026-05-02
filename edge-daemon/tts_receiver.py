@@ -172,6 +172,20 @@ class TTSReceiver:
                                 except Exception:
                                     pass
 
+                        elif cmd_type == "tts_raw_audio":
+                            # ── Gemini Live raw PCM audio ──
+                            # Pre-synthesized audio from Gemini Live API.
+                            # Play directly without Piper TTS synthesis.
+                            import base64 as b64
+                            audio_b64 = data.get("audio", "")
+                            sample_rate = data.get("sampleRate", 24000)
+                            if audio_b64:
+                                try:
+                                    pcm_data = b64.b64decode(audio_b64)
+                                    self._play_raw_pcm(pcm_data, sample_rate)
+                                except Exception as e:
+                                    logger.error(f"[TTSReceiver] Raw audio playback error: {e}")
+
                         else:
                             logger.warning(f"[TTSReceiver] Unknown command type: {cmd_type}")
 
@@ -333,3 +347,55 @@ class TTSReceiver:
                 timeout=10
             )
 
+    def _play_raw_pcm(self, pcm_data: bytes, sample_rate: int = 24000):
+        """Play pre-synthesized PCM audio from Gemini Live API.
+
+        Receives raw 16-bit signed little-endian PCM and plays it directly
+        via aplay without any TTS synthesis step.
+        """
+        logger.info(f"[TTSReceiver] Playing raw PCM audio ({len(pcm_data)} bytes, {sample_rate}Hz)")
+        try:
+            card = self.config.audio_output_card
+
+            # Set volume
+            if card >= 0:
+                for control in ['PCM', 'Speaker', 'Master']:
+                    result = subprocess.run(
+                        ['amixer', '-c', str(card), 'set', control, '85%'],
+                        stdout=subprocess.DEVNULL,
+                        stderr=subprocess.DEVNULL,
+                        timeout=3
+                    )
+                    if result.returncode == 0:
+                        break
+            else:
+                subprocess.run(
+                    ['amixer', 'set', 'Master', '85%'],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    timeout=3
+                )
+
+            alsa_device = f"plughw:{card},0" if card >= 0 else "default"
+
+            # Play raw PCM directly via aplay
+            # Format: signed 16-bit little-endian, mono, at given sample rate
+            aplay_proc = subprocess.Popen(
+                [
+                    'aplay', '-D', alsa_device,
+                    '-f', 'S16_LE',
+                    '-r', str(sample_rate),
+                    '-c', '1',
+                    '-t', 'raw',
+                    '-'
+                ],
+                stdin=subprocess.PIPE,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            aplay_proc.communicate(input=pcm_data, timeout=30)
+
+        except subprocess.TimeoutExpired:
+            logger.warning("[TTSReceiver] Raw PCM playback timed out")
+        except Exception as e:
+            logger.error(f"[TTSReceiver] Raw PCM playback error: {e}")

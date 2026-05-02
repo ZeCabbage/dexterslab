@@ -4,6 +4,7 @@ import { VideoIngressServer } from '../observer2/video-ingress.js';
 import { AudioIngressServer } from '../observer2/audio-ingress.js';
 import { TTSCommander } from '../observer2/tts-commander.js';
 import { STTEngine } from '../observer2/stt-engine.js';
+import { GeminiVoice } from '../observer2/gemini-voice.js';
 
 export class HardwareBroker {
   constructor(options = {}) {
@@ -15,6 +16,12 @@ export class HardwareBroker {
     this.sttSubscribers = new Set();
 
     this.ttsClaims = null; // appId that currently owns TTS
+
+    // Voice pipeline mode: 'local' (Vosk STT → Oracle → Piper TTS)
+    //                   or 'gemini-live' (Gemini Live API audio-native)
+    this._voiceMode = 'local';
+    this._geminiVoice = null;
+    this._geminiVoiceCallbacks = {};  // app-level transcript/turn callbacks
 
     this.videoEvents = new EventEmitter();
     this.audioEvents = new EventEmitter();
@@ -58,10 +65,16 @@ export class HardwareBroker {
     });
 
     this.audioEvents.on('audio_frame', (pcmBuffer) => {
-      // Feed STT
-      this.sttEngine.feed(pcmBuffer);
+      // Route audio based on voice mode
+      if (this._voiceMode === 'gemini-live' && this._geminiVoice?.isConnected()) {
+        // Online mode: feed audio directly to Gemini Live API
+        this._geminiVoice.feedAudio(pcmBuffer);
+      } else {
+        // Local mode (or Gemini not connected): feed STT engine
+        this.sttEngine.feed(pcmBuffer);
+      }
 
-      // Feed raw audio subscribers
+      // Feed raw audio subscribers (always, regardless of mode)
       for (const sub of this.audioSubscribers) {
         try {
           sub(pcmBuffer);
@@ -179,6 +192,101 @@ export class HardwareBroker {
       tts_speaking: this.ttsCommander.isSpeaking,
       video_stream_active: this.videoIngress.isActive(),
       video_fps: this.videoIngress.getFramesPerSecond(),
+      voice_mode: this._voiceMode,
+      gemini_live_connected: this._geminiVoice?.isConnected() || false,
     };
+  }
+
+  // ── Voice Mode Switching ──
+
+  /**
+   * Switch the voice pipeline mode.
+   * @param {'local'|'gemini-live'} mode - The voice pipeline to activate
+   * @param {object} [callbacks] - App-level callbacks for Gemini Live events
+   * @param {function} [callbacks.onInputTranscript] - Called with (text) for user speech
+   * @param {function} [callbacks.onOutputTranscript] - Called with (text) for AI response
+   * @param {function} [callbacks.onTurnComplete] - Called when AI finishes speaking
+   */
+  async setVoiceMode(mode, callbacks = {}) {
+    if (mode === this._voiceMode) return;
+
+    console.log(`[HardwareBroker] Voice mode: ${this._voiceMode} → ${mode}`);
+
+    if (mode === 'gemini-live') {
+      // Start Gemini Live session
+      const apiKey = process.env.GEMINI_API_KEY;
+      if (!apiKey) {
+        console.error('[HardwareBroker] Cannot start Gemini Live — GEMINI_API_KEY not set');
+        return;
+      }
+
+      this._geminiVoiceCallbacks = callbacks;
+
+      this._geminiVoice = new GeminiVoice({
+        apiKey,
+        onAudioResponse: (base64Audio, mimeType) => {
+          // Forward Gemini's audio response to Pi speaker as raw PCM
+          this._sendRawAudioToPi(base64Audio);
+        },
+        onInputTranscript: (text) => {
+          console.log(`[GeminiLive] 🎤 User: "${text}"`);
+          bus.publish('voice.command', { text, timestamp: Date.now(), source: 'gemini-live' });
+          if (this._geminiVoiceCallbacks.onInputTranscript) {
+            this._geminiVoiceCallbacks.onInputTranscript(text);
+          }
+        },
+        onOutputTranscript: (text) => {
+          console.log(`[GeminiLive] 🤖 Observer: "${text}"`);
+          if (this._geminiVoiceCallbacks.onOutputTranscript) {
+            this._geminiVoiceCallbacks.onOutputTranscript(text);
+          }
+        },
+        onTurnComplete: () => {
+          if (this._geminiVoiceCallbacks.onTurnComplete) {
+            this._geminiVoiceCallbacks.onTurnComplete();
+          }
+        },
+        onError: (err) => {
+          console.error('[GeminiLive] Session error:', err.message || err);
+        }
+      });
+
+      await this._geminiVoice.connect();
+      this._voiceMode = 'gemini-live';
+
+    } else {
+      // Switch back to local mode
+      if (this._geminiVoice) {
+        this._geminiVoice.disconnect();
+        this._geminiVoice = null;
+      }
+      this._geminiVoiceCallbacks = {};
+      this._voiceMode = 'local';
+    }
+  }
+
+  /**
+   * Send raw PCM audio from Gemini Live to the Pi speaker.
+   * Uses a special 'tts_raw_audio' message type that the Pi plays directly
+   * without Piper TTS synthesis (audio is already synthesized by Gemini).
+   */
+  _sendRawAudioToPi(base64Audio) {
+    if (!this.ttsCommander.isConnected()) return;
+
+    try {
+      this.ttsCommander.client.send(JSON.stringify({
+        type: 'tts_raw_audio',
+        audio: base64Audio,
+        sampleRate: 24000,  // Gemini Live outputs 24kHz PCM
+        format: 'pcm_s16le'
+      }));
+    } catch (err) {
+      // Connection may have dropped
+      console.error('[HardwareBroker] Failed to send raw audio to Pi:', err.message);
+    }
+  }
+
+  getVoiceMode() {
+    return this._voiceMode;
   }
 }
