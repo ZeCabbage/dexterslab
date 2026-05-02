@@ -81,25 +81,50 @@ class VideoStreamer:
         import queue
         restarts = 0
 
-        while self._running and restarts <= 3:
-            cmd = [
-                'ffmpeg',
-                '-f', 'v4l2',
-                '-input_format', 'mjpeg',
-                '-video_size', f"{self.config.camera_width}x{self.config.camera_height}",
-                '-framerate', str(self.config.camera_fps),
-                '-i', self.config.camera_device,
-                '-vcodec', 'copy',
-                '-f', 'image2pipe',
-                '-'
-            ]
+        while self._running and restarts <= 10:
+            # Find camera device (may have changed after USB reset)
+            camera_device = self._find_camera_device()
 
-            logger.info(f"[VideoStreamer] Starting ffmpeg capture from {self.config.camera_device}")
+            # ── Ensure camera device is free before starting ffmpeg ──
+            if not self._wait_for_camera(camera_device):
+                restarts += 1
+                continue
+
+            input_format = self._detect_camera_format(camera_device)
+            if input_format == 'mjpeg':
+                # Camera supports MJPEG natively — copy directly (zero CPU)
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-f', 'v4l2',
+                    '-input_format', 'mjpeg',
+                    '-video_size', f"{self.config.camera_width}x{self.config.camera_height}",
+                    '-framerate', str(self.config.camera_fps),
+                    '-i', camera_device,
+                    '-vcodec', 'copy',
+                    '-f', 'image2pipe',
+                    '-'
+                ]
+            else:
+                # Camera only supports YUYV — re-encode to MJPEG
+                cmd = [
+                    'ffmpeg', '-y',
+                    '-f', 'v4l2',
+                    '-input_format', 'yuyv422',
+                    '-video_size', f"{self.config.camera_width}x{self.config.camera_height}",
+                    '-framerate', str(self.config.camera_fps),
+                    '-i', camera_device,
+                    '-vcodec', 'mjpeg',
+                    '-q:v', '5',  # Quality (2=best, 31=worst) — 5 is good balance
+                    '-f', 'image2pipe',
+                    '-'
+                ]
+
+            logger.info(f"[VideoStreamer] Starting ffmpeg capture from {camera_device} (format={input_format})")
             try:
                 self._process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.DEVNULL,
+                    stderr=subprocess.PIPE,  # Capture stderr for debugging
                 )
             except FileNotFoundError:
                 logger.error("[VideoStreamer] ffmpeg not found on PATH")
@@ -119,19 +144,140 @@ class VideoStreamer:
             except Exception as e:
                 logger.error(f"[VideoStreamer] Read error: {e}")
 
-            self._process.wait()
+            # ── Proper cleanup before restart ──
+            # Read any stderr output for debugging
+            try:
+                stderr_out = self._process.stderr.read(2048) if self._process.stderr else b''
+                if stderr_out:
+                    logger.warning(f"[VideoStreamer] ffmpeg stderr: {stderr_out.decode(errors='replace').strip()[-200:]}")
+            except Exception:
+                pass
+
+            # Ensure ffmpeg is fully dead before we release the camera
+            try:
+                self._process.terminate()
+                self._process.wait(timeout=3)
+            except Exception:
+                try:
+                    self._process.kill()
+                    self._process.wait(timeout=2)
+                except Exception:
+                    pass
+
+            # Close pipes to fully release file descriptors
+            for pipe in [self._process.stdout, self._process.stderr]:
+                try:
+                    if pipe:
+                        pipe.close()
+                except Exception:
+                    pass
 
             if not self._running:
                 break
 
             restarts += 1
-            if restarts <= 3:
-                logger.warning(f"[VideoStreamer] ffmpeg exited (code {self._process.returncode}) — restarting in 5s")
+            if restarts <= 10:
+                exit_code = self._process.returncode
+                logger.warning(f"[VideoStreamer] ffmpeg exited (code {exit_code}) — restarting in 5s")
+                # Wait for camera device to fully release
                 time.sleep(5)
 
-        if self._running and restarts > 3:
+        if self._running and restarts > 10:
             logger.error("[VideoStreamer] Fatal: max restarts exceeded")
             self._running = False
+
+    def _find_camera_device(self):
+        """Find the actual camera device. USB cameras can change /dev/videoN after resets."""
+        import os
+        import glob
+
+        configured = self.config.camera_device
+
+        # First, check if configured device exists
+        if os.path.exists(configured):
+            logger.info(f"[VideoStreamer] Using configured camera device: {configured}")
+            return configured
+
+        # Configured device missing — scan for any video capture device
+        logger.warning(f"[VideoStreamer] {configured} not found — scanning for camera...")
+
+        for dev in sorted(glob.glob('/dev/video*')):
+            try:
+                # Check if this device supports video capture
+                result = subprocess.run(
+                    ['v4l2-ctl', '--device', dev, '--all'],
+                    capture_output=True, text=True, timeout=3
+                )
+                if 'Video Capture' in result.stdout and result.returncode == 0:
+                    # Try to verify it's a real camera (has YUYV or MJPG)
+                    fmt_result = subprocess.run(
+                        ['v4l2-ctl', '--device', dev, '--list-formats'],
+                        capture_output=True, text=True, timeout=3
+                    )
+                    if 'YUYV' in fmt_result.stdout or 'MJPG' in fmt_result.stdout:
+                        logger.info(f"[VideoStreamer] Found camera at {dev}")
+                        return dev
+            except Exception:
+                continue
+
+        logger.error(f"[VideoStreamer] No camera device found!")
+        return configured  # Return configured device as fallback
+
+    def _wait_for_camera(self, device, timeout=15):
+        """Wait for the camera device to be available (not held by another process).
+        Kill any orphan ffmpeg processes holding it."""
+        import os
+
+        if not os.path.exists(device):
+            logger.warning(f"[VideoStreamer] {device} does not exist — waiting for USB recovery...")
+            for i in range(timeout):
+                if not self._running:
+                    return False
+                time.sleep(1)
+                if os.path.exists(device):
+                    logger.info(f"[VideoStreamer] {device} appeared after {i+1}s")
+                    break
+            else:
+                logger.error(f"[VideoStreamer] {device} did not appear within {timeout}s")
+                return False
+
+        # Check if another process holds the camera
+        try:
+            result = subprocess.run(
+                ['fuser', device],
+                capture_output=True, text=True, timeout=3
+            )
+            pids = result.stdout.strip()
+            if pids:
+                logger.warning(f"[VideoStreamer] {device} held by PIDs: {pids} — killing orphan ffmpeg...")
+                # Only kill ffmpeg processes, not other things that might have the device
+                subprocess.run(['pkill', '-9', '-f', f'ffmpeg.*{device}'],
+                             capture_output=True, timeout=3)
+                time.sleep(3)  # Wait for device release after kill
+        except Exception as e:
+            logger.warning(f"[VideoStreamer] fuser check failed ({e}) — proceeding anyway")
+
+        return True
+
+    def _detect_camera_format(self, device):
+        """Detect if the camera supports MJPEG natively, otherwise fall back to YUYV."""
+        try:
+            result = subprocess.run(
+                ['v4l2-ctl', '--device', device, '--list-formats'],
+                capture_output=True, text=True, timeout=5
+            )
+            if 'MJPG' in result.stdout:
+                logger.info(f"[VideoStreamer] Camera ({device}) supports MJPEG natively")
+                return 'mjpeg'
+            elif 'YUYV' in result.stdout:
+                logger.info(f"[VideoStreamer] Camera ({device}) supports YUYV only — will re-encode to MJPEG")
+                return 'yuyv422'
+            else:
+                logger.warning(f"[VideoStreamer] Camera ({device}) unknown format — trying YUYV")
+                return 'yuyv422'
+        except Exception as e:
+            logger.warning(f"[VideoStreamer] Could not detect camera format ({e}) — defaulting to YUYV")
+            return 'yuyv422'
 
     def _extract_and_queue_frames(self, buf, queue_module):
         """Extract complete JPEG frames from buffer and put them in the queue."""
