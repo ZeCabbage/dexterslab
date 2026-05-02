@@ -74,6 +74,17 @@ export class HardwareBroker {
     // 3. Start STT
     this.sttEngine.start();
     this.sttEngine.on('transcript', (text) => {
+      // ── Speaker→Mic Feedback Gate ──
+      // When TTS is playing on the Pi speaker, the mic picks up the robot's
+      // own voice. Vosk transcribes it, and without this gate, the transcript
+      // would trigger another Oracle query → infinite feedback loop.
+      // The TTSCommander tracks isSpeaking = true from speak() until
+      // tts_ack + 1.5s cooldown (echo decay).
+      if (this.ttsCommander.isSpeaking) {
+        console.log(`[STT] 🔇 Suppressed during TTS: "${text.substring(0, 40)}"`);
+        return;
+      }
+
       console.log('[STT] Transcript:', text);
       bus.publish('voice.command', { text, timestamp: Date.now() });
 
@@ -143,10 +154,29 @@ export class HardwareBroker {
     return false;
   }
 
+  /**
+   * Send a TTS chunk as part of a streaming response.
+   * @param {string} appId - App that holds the TTS claim
+   * @param {string} text - Sentence fragment to speak
+   * @param {number} chunkIndex - Sequential index
+   * @param {boolean} isLast - Whether this is the final chunk
+   */
+  speakChunk(appId, text, chunkIndex, isLast) {
+    if (this.ttsClaims !== appId) {
+      console.warn(`[HardwareBroker] App ${appId} attempted to speakChunk, but does not own TTS`);
+      return false;
+    }
+    if (this.ttsCommander) {
+      return this.ttsCommander.speakChunk(text, chunkIndex, isLast);
+    }
+    return false;
+  }
+
   getPlatformStatus() {
     return {
       pi_audio_connected: this.audioIngress.isClientConnected(),
       pi_tts_connected: this.ttsCommander.isConnected(),
+      tts_speaking: this.ttsCommander.isSpeaking,
       video_stream_active: this.videoIngress.isActive(),
       video_fps: this.videoIngress.getFramesPerSecond(),
     };

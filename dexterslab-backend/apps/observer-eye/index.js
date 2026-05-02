@@ -64,15 +64,41 @@ export default class ObserverEyeApp {
           if (client.readyState === 1) client.send(questionPacket);
         }
 
-        this.engine.handleOracleQuestion(text).then((result) => {
-          if (result && result.response) {
-            // Don't speak generic fallback responses — they cause speaker→mic feedback loops
-            const MUTE_RESPONSES = ['[NOTED, COMRADE.]', '[NOTED. CONTINUE]', '[ACKNOWLEDGED]', '[STAND BY]', '[PROCESSING]', '[FILE UPDATED]'];
-            if (MUTE_RESPONSES.includes(result.response)) {
-              console.log(`[ObserverEye] Suppressing TTS for generic response: ${result.response}`);
-              return;
-            }
-            this.platform.hardwareBroker.speak(ObserverEyeApp.manifest.id, result.response);
+        // ── Streaming Oracle Pipeline ──
+        // Each sentence chunk is sent to TTS and display clients as it arrives,
+        // rather than waiting for the full AI response.
+        const MUTE_RESPONSES = ['[NOTED, COMRADE.]', '[NOTED. CONTINUE]', '[ACKNOWLEDGED]', '[STAND BY]', '[PROCESSING]', '[FILE UPDATED]'];
+
+        this.engine.handleOracleQuestionStreaming(text, (chunkText, chunkIndex, isLast) => {
+          if (!chunkText || !chunkText.trim()) return;
+
+          // Don't speak generic fallback responses
+          if (MUTE_RESPONSES.includes(chunkText)) {
+            console.log(`[ObserverEye] Suppressing TTS for generic response: ${chunkText}`);
+            return;
+          }
+
+          // Send chunk to Pi TTS (starts speaking this sentence immediately)
+          this.platform.hardwareBroker.speakChunk(
+            ObserverEyeApp.manifest.id,
+            chunkText,
+            chunkIndex,
+            isLast
+          );
+
+          // Broadcast chunk to display clients for live text rendering
+          const chunkPacket = JSON.stringify({
+            type: 'oracle_chunk',
+            text: chunkText,
+            chunkIndex,
+            isLast
+          });
+          for (const client of this.wsClients) {
+            if (client.readyState === 1) client.send(chunkPacket);
+          }
+        }).then((result) => {
+          if (result && result.category === 'noise') {
+            console.log(`[ObserverEye] Silent — noise filtered: "${text.substring(0, 40)}"`);
           }
         }).catch(() => {});
       })
@@ -124,6 +150,10 @@ export default class ObserverEyeApp {
               this.engine.handleCommand(msg.command);
             } else if (msg.type === 'oracle') {
               this.engine.handleOracleQuestion(msg.text).then(result => {
+                if (result && result.category === 'noise') {
+                  // Noise — don't even send a response to the display client
+                  return;
+                }
                 ws.send(JSON.stringify({ type: 'oracle_response', ...result }));
                 // Also speak the response on Pi speaker (like STT flow does)
                 if (result && result.response) {

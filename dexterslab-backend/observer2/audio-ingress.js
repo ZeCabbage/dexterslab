@@ -11,6 +11,12 @@
  *   2. Server sends format_requirements (sampleRate, channels, format)
  *   3. Pi responds with format_ack
  *   4. Pi streams raw PCM buffers as binary WS messages
+ *
+ * Stale Connection Handling:
+ *   Cloudflare Tunnel can silently drop WebSocket connections without
+ *   sending a close frame. When the Pi reconnects, the old connection
+ *   appears "open" but is actually dead. We detect this by tracking
+ *   last_data_at timestamps and replacing stale connections.
  */
 
 export class AudioIngressServer {
@@ -19,6 +25,7 @@ export class AudioIngressServer {
     this.events = eventEmitter;
     this.activeClient = null;
     this.formatNegotiated = false;
+    this._lastDataAt = 0;  // Timestamp of last received data
   }
 
   async start() {
@@ -29,13 +36,27 @@ export class AudioIngressServer {
       const ip = req.socket.remoteAddress;
 
       if (this.activeClient) {
-        console.warn(`[AudioIngress] Rejected duplicate audio client from ${ip}`);
-        ws.close(1008, 'Audio stream already active');
-        return;
+        // ── Stale Connection Detection ──
+        // Cloudflare Tunnel can drop the connection silently.
+        // If the "active" client hasn't sent data in 15s, it's dead.
+        const staleMs = Date.now() - this._lastDataAt;
+        const isStale = this.activeClient.readyState !== 1 || staleMs > 15000;
+
+        if (isStale) {
+          console.warn(`[AudioIngress] ♻ Replacing stale audio client (last data ${Math.round(staleMs/1000)}s ago, readyState=${this.activeClient.readyState})`);
+          try { this.activeClient.terminate(); } catch {}
+          this.activeClient = null;
+          this.events.emit('client_disconnected');
+        } else {
+          console.warn(`[AudioIngress] Rejected duplicate audio client from ${ip} (active client alive, last data ${Math.round(staleMs/1000)}s ago)`);
+          ws.close(1008, 'Audio stream already active');
+          return;
+        }
       }
 
       this.activeClient = ws;
       this.formatNegotiated = false;
+      this._lastDataAt = Date.now();
       console.log(`[AudioIngress] 🎤 Pi audio client connected from ${ip}`);
 
       ws.send(JSON.stringify({
@@ -48,6 +69,8 @@ export class AudioIngressServer {
       this.events.emit('client_connected');
 
       ws.on('message', (data) => {
+        this._lastDataAt = Date.now();
+
         if (!this.formatNegotiated) {
           try {
             const msg = JSON.parse(data.toString());

@@ -1,7 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="64" fill="#111" stroke="#88f" stroke-width="6"/>
-  <path d="M40 128 Q128 40 216 128 Q128 216 40 128" fill="none" stroke="#88f" stroke-width="12"/>
-  <circle cx="128" cy="128" r="45" fill="#88f"/>
-  <circle cx="128" cy="128" r="15" fill="#111"/>
-  <path d="M128 40 L128 20 M128 216 L128 236 M40 128 L20 128 M216 128 L236 128" stroke="#88f" stroke-width="6" opacity="0.5"/>
+  <defs>
+    <filter id="neon" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="8" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Background hex base -->
+  <path d="M128 10 L230 69 L230 187 L128 246 L26 187 L26 69 Z" fill="#050a1f" stroke="#88f" stroke-width="4" stroke-opacity="0.3"/>
+  
+  <g filter="url(#neon)">
+    <path d="M30 128 Q128 20 226 128 Q128 236 30 128" fill="none" stroke="#88f" stroke-width="8"/>
+    <circle cx="128" cy="128" r="45" fill="none" stroke="#88f" stroke-width="4"/>
+    <circle cx="128" cy="128" r="18" fill="#88f"/>
+    <circle cx="128" cy="128" r="6" fill="#000"/>
+    <line x1="83" y1="128" x2="173" y2="128" stroke="#88f" stroke-width="2" stroke-dasharray="4 8"/>
+    <line x1="128" y1="83" x2="128" y2="173" stroke="#88f" stroke-width="2" stroke-dasharray="4 8"/>
+  </g>
 </svg>

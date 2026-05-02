@@ -193,9 +193,22 @@ const QUESTION_STARTERS = new Set([
     'can', 'could', 'do', 'does', 'did', 'should',
 ]);
 
+// Wake words — if these appear, the speech is definitely directed at the Observer
+const WAKE_WORDS = new Set(['observer', 'comrade', 'robot', 'machine', 'computer']);
+
+// Greetings that are valid even as short (1-2 word) utterances
+const GREETING_WORDS = new Set(['hello', 'hi', 'hey', 'morning', 'evening', 'yo', 'sup', 'greetings']);
+
+// Short phrase keywords — multi-word phrases that should match even in short inputs
+const SHORT_PHRASE_KEYWORDS = new Set(['i love you', 'love you', 'love u', 'who are you', 'what are you', 'go away', 'turn off', 'shut up', 'good boy', 'thank you', 'tell me', 'about me', 'can you', 'think about', 'how old']);
+
 // Max word count for keyword matching — longer inputs are likely background noise,
 // not direct questions to the Observer. Real user speech is typically short.
 const MAX_KEYWORD_WORDS = 12;
+
+// Minimum word count — below this, only greetings/wake words/short phrases get responses.
+// Single-word fragments from Vosk like "fence", "dryer", "modern" are almost always noise.
+const MIN_QUESTION_WORDS = 3;
 
 const GEMINI_SYSTEM_PROMPT = `You are THE OBSERVER — an old Soviet-era surveillance robot built in 1987 who has been watching a room for decades.
 
@@ -289,32 +302,65 @@ export class OracleV2 {
     async ask(rawText, systemPrompt = null) {
         const askStart = Date.now();
         const clean = rawText.trim().toLowerCase();
-        if (!clean) return { response: '[SILENCE NOTED, COMRADE. EVEN MY MICROPHONE IS BORED.]', category: 'oracle', emotion: 'neutral' };
+        if (!clean) return { response: null, category: 'noise', emotion: 'neutral' };
 
-        // ── Special-case keyword check (bypasses question filter) ──
+        const words = clean.split(/\s+/);
+        const wordCount = words.length;
+
+        // ── Phase 1: Classify the input ──
+        const hasWakeWord = words.some(w => WAKE_WORDS.has(w));
+        const hasGreeting = words.some(w => GREETING_WORDS.has(w));
+        const hasShortPhrase = [...SHORT_PHRASE_KEYWORDS].some(phrase => clean.includes(phrase));
+        const firstWordQuestion = QUESTION_STARTERS.has(words[0]);
+        const endsWithQuestion = clean.endsWith('?');
+        const isQuestion = endsWithQuestion || firstWordQuestion;
+
+        // ── Phase 2: Short input filter (1-2 words) ──
+        // Single words like "fence", "dryer", "modern" are always background noise.
+        // Only respond to short inputs if they are greetings, wake words, or known phrases.
+        if (wordCount < MIN_QUESTION_WORDS) {
+            if (hasGreeting) {
+                // Short greeting: "hello", "hi", "hey observer" — respond
+                const keywordHit = this._keywordMatch(clean);
+                if (keywordHit) {
+                    console.log(`[Oracle] 👋 Greeting in ${Date.now() - askStart}ms: "${clean}"`);
+                    return keywordHit;
+                }
+            }
+            if (hasWakeWord && wordCount >= 2) {
+                // "hey observer", "comrade hello" — treat as address
+                console.log(`[Oracle] 🔔 Wake word address: "${clean}"`);
+                return { response: '[DA, COMRADE. I AM LISTENING. MY CIRCUITS ARE... ALL EARS. WELL, ALL MICROPHONES.]', category: 'oracle', emotion: 'curious' };
+            }
+            if (hasShortPhrase) {
+                // "i love you", "who are you" — respond
+                const keywordHit = this._keywordMatch(clean);
+                if (keywordHit) {
+                    console.log(`[Oracle] ⚡ Short phrase hit in ${Date.now() - askStart}ms: "${clean}"`);
+                    return keywordHit;
+                }
+            }
+            // Everything else under 3 words is noise — stay silent
+            console.log(`[Oracle] 🔇 Noise filtered (${wordCount} words): "${clean}"`);
+            return { response: null, category: 'noise', emotion: 'neutral' };
+        }
+
+        // ── Phase 3: 3+ word inputs — keyword match with word boundaries ──
         const keywordHit = this._keywordMatch(clean);
         if (keywordHit) {
-            console.log(`[Oracle] ⚡ Keyword hit in ${Date.now() - askStart}ms`);
+            console.log(`[Oracle] ⚡ Keyword hit in ${Date.now() - askStart}ms: "${clean}"`);
             return keywordHit;
         }
 
-        // Check if it's a question — strict detection to avoid responding to background noise
-        const words = clean.split(/\s+/);
-        const firstWordQuestion = QUESTION_STARTERS.has(words[0]);
-        const isQuestion = clean.endsWith('?') || firstWordQuestion;
-
-        // If it doesn't start with a question word or end with ?, it's not for us
-        if (!isQuestion) {
-            return { response: '[NOTED, COMRADE.]', category: 'oracle', emotion: 'neutral' };
+        // ── Phase 4: Question detection ──
+        // If it's not a question (no question word, no ?), and no wake word, stay silent.
+        // Background speech like "honestly if you like pizza money" gets dropped here.
+        if (!isQuestion && !hasWakeWord) {
+            console.log(`[Oracle] 🔇 Not a question, no wake word: "${clean.substring(0, 50)}"`);
+            return { response: null, category: 'noise', emotion: 'neutral' };
         }
 
-        // Try keyword match first (instant, no API call)
-        const keywordResult = this._keywordMatch(clean);
-        if (keywordResult) {
-            console.log(`[Oracle] ⚡ Keyword hit in ${Date.now() - askStart}ms`);
-            return keywordResult;
-        }
-
+        // ── Phase 5: AI-powered response (question confirmed) ──
         // Try local Ollama (Gemma) first for fast, offline inference
         try {
             const ollamaStart = Date.now();
@@ -341,7 +387,7 @@ export class OracleV2 {
             }
         }
 
-        // Fallback to general responses
+        // Fallback to general responses (only for confirmed questions)
         const response = GENERAL_RESPONSES[Math.floor(Math.random() * GENERAL_RESPONSES.length)];
         return { response, category: 'oracle', emotion: 'neutral' };
     }
@@ -361,7 +407,10 @@ export class OracleV2 {
     }
 
     /**
-     * Keyword-based instant response.
+     * Keyword-based instant response with word-boundary matching.
+     * Multi-word keywords (e.g., "who are you") use substring match.
+     * Single-word keywords use word-boundary regex to prevent false positives
+     * like "whatever" matching "what" or "alive" matching "live".
      */
     _keywordMatch(text) {
         const clean = text.toLowerCase();
@@ -374,7 +423,20 @@ export class OracleV2 {
 
         for (const [category, data] of Object.entries(RESPONSE_DB)) {
             for (const kw of data.keywords) {
-                if (clean.includes(kw)) {
+                let matched = false;
+
+                if (kw.includes(' ')) {
+                    // Multi-word keyword: substring match is fine
+                    // e.g., "who are you", "i love you", "tell me"
+                    matched = clean.includes(kw);
+                } else {
+                    // Single-word keyword: require word boundary
+                    // Prevents "whatever" matching "what", "alive" matching "live"
+                    const regex = new RegExp(`\\b${kw}\\b`);
+                    matched = regex.test(clean);
+                }
+
+                if (matched) {
                     // Anti-repeat: avoid last used index for this category
                     const lastIdx = this._lastUsed[category] ?? -1;
                     let idx;
@@ -467,5 +529,298 @@ export class OracleV2 {
         }
 
         return null;
+    }
+
+    // ══════════════════════════════════════════
+    // STREAMING — Token-by-token with sentence chunking
+    // ══════════════════════════════════════════
+
+    /**
+     * Answer a question with streaming response.
+     * Keyword matches return immediately (single chunk).
+     * AI responses stream sentence-by-sentence via onChunk callback.
+     *
+     * @param {string} rawText - The raw user speech
+     * @param {string} [systemPrompt] - Context-enriched prompt for AI
+     * @param {function} onChunk - Called with (textChunk, chunkIndex, isLast)
+     * @returns {Promise<{response: string, category: string, emotion: string}>}
+     */
+    async askStreaming(rawText, systemPrompt = null, onChunk = () => {}) {
+        const askStart = Date.now();
+        const clean = rawText.trim().toLowerCase();
+        if (!clean) return { response: null, category: 'noise', emotion: 'neutral' };
+
+        const words = clean.split(/\s+/);
+        const wordCount = words.length;
+
+        // ── Phase 1: Classify the input (identical to ask()) ──
+        const hasWakeWord = words.some(w => WAKE_WORDS.has(w));
+        const hasGreeting = words.some(w => GREETING_WORDS.has(w));
+        const hasShortPhrase = [...SHORT_PHRASE_KEYWORDS].some(phrase => clean.includes(phrase));
+        const firstWordQuestion = QUESTION_STARTERS.has(words[0]);
+        const endsWithQuestion = clean.endsWith('?');
+        const isQuestion = endsWithQuestion || firstWordQuestion;
+
+        // ── Phase 2: Short input filter ──
+        if (wordCount < MIN_QUESTION_WORDS) {
+            if (hasGreeting) {
+                const keywordHit = this._keywordMatch(clean);
+                if (keywordHit) {
+                    onChunk(keywordHit.response, 0, true);
+                    return keywordHit;
+                }
+            }
+            if (hasWakeWord && wordCount >= 2) {
+                const resp = { response: '[DA, COMRADE. I AM LISTENING. MY CIRCUITS ARE... ALL EARS. WELL, ALL MICROPHONES.]', category: 'oracle', emotion: 'curious' };
+                onChunk(resp.response, 0, true);
+                return resp;
+            }
+            if (hasShortPhrase) {
+                const keywordHit = this._keywordMatch(clean);
+                if (keywordHit) {
+                    onChunk(keywordHit.response, 0, true);
+                    return keywordHit;
+                }
+            }
+            return { response: null, category: 'noise', emotion: 'neutral' };
+        }
+
+        // ── Phase 3: Keyword match ──
+        const keywordHit = this._keywordMatch(clean);
+        if (keywordHit) {
+            console.log(`[Oracle] ⚡ Keyword hit (streaming) in ${Date.now() - askStart}ms: "${clean}"`);
+            onChunk(keywordHit.response, 0, true);
+            return keywordHit;
+        }
+
+        // ── Phase 4: Question detection ──
+        if (!isQuestion && !hasWakeWord) {
+            return { response: null, category: 'noise', emotion: 'neutral' };
+        }
+
+        // ── Phase 5: AI streaming response ──
+        // Try Ollama streaming first (local, fast)
+        try {
+            const ollamaStart = Date.now();
+            const ollamaResult = await this._ollamaAskStreaming(systemPrompt || rawText, onChunk);
+            if (ollamaResult) {
+                console.log(`[Oracle] 🤖🌊 Ollama streamed in ${Date.now() - ollamaStart}ms (total: ${Date.now() - askStart}ms)`);
+                return ollamaResult;
+            }
+        } catch (err) {
+            console.error('[Oracle] Ollama streaming failed:', err.message);
+        }
+
+        // Fallback: Gemini streaming
+        if (this.genai) {
+            try {
+                const geminiStart = Date.now();
+                const geminiResult = await this._geminiAskStreaming(systemPrompt || rawText, onChunk);
+                if (geminiResult) {
+                    console.log(`[Oracle] ☁️🌊 Gemini streamed in ${Date.now() - geminiStart}ms (total: ${Date.now() - askStart}ms)`);
+                    return geminiResult;
+                }
+            } catch (err) {
+                console.error('[Oracle] Gemini streaming failed:', err.message);
+            }
+        }
+
+        // Final fallback: general response (single chunk)
+        const response = GENERAL_RESPONSES[Math.floor(Math.random() * GENERAL_RESPONSES.length)];
+        onChunk(response, 0, true);
+        return { response, category: 'oracle', emotion: 'neutral' };
+    }
+
+    /**
+     * Stream tokens from Ollama, chunking at sentence boundaries.
+     * Calls onChunk(text, index, isLast) for each sentence fragment.
+     * Returns the full assembled result.
+     */
+    async _ollamaAskStreaming(text, onChunk) {
+        const prompt = `<start_of_turn>user\nSYSTEM: ${GEMINI_SYSTEM_PROMPT}\n\nUSER QUESTION: ${text}<end_of_turn>\n<start_of_turn>model\n`;
+
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 15000);
+
+        try {
+            const response = await fetch('http://127.0.0.1:11434/api/generate', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                signal: controller.signal,
+                body: JSON.stringify({
+                    model: 'gemma3:4b',
+                    prompt: prompt,
+                    stream: true,
+                    options: {
+                        temperature: 0.9,
+                        num_predict: 80
+                    }
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error(`HTTP error! status: ${response.status}`);
+            }
+
+            // Parse NDJSON stream from Ollama
+            let fullText = '';
+            let chunkBuffer = '';
+            let chunkIndex = 0;
+            const reader = response.body;
+
+            // Node.js fetch returns a ReadableStream — read it line by line
+            let lineBuffer = '';
+            for await (const rawChunk of reader) {
+                const text_data = typeof rawChunk === 'string' ? rawChunk : rawChunk.toString();
+                lineBuffer += text_data;
+
+                let newlineIdx;
+                while ((newlineIdx = lineBuffer.indexOf('\n')) !== -1) {
+                    const line = lineBuffer.substring(0, newlineIdx).trim();
+                    lineBuffer = lineBuffer.substring(newlineIdx + 1);
+
+                    if (!line) continue;
+                    try {
+                        const parsed = JSON.parse(line);
+                        const token = parsed.response || '';
+                        fullText += token;
+                        chunkBuffer += token;
+
+                        // Check if we have a sentence boundary to emit
+                        const chunks = this._chunkSentences(chunkBuffer);
+                        if (chunks.ready.length > 0) {
+                            for (const sentence of chunks.ready) {
+                                onChunk(sentence, chunkIndex, false);
+                                chunkIndex++;
+                            }
+                            chunkBuffer = chunks.remainder;
+                        }
+
+                        // If Ollama signals done, flush remaining
+                        if (parsed.done) {
+                            if (chunkBuffer.trim()) {
+                                onChunk(chunkBuffer.trim(), chunkIndex, true);
+                                chunkIndex++;
+                            } else if (chunkIndex > 0) {
+                                // Re-emit the last chunk as final
+                                // (the onChunk handler should handle duplicates gracefully)
+                            }
+                        }
+                    } catch (e) {
+                        // Skip malformed JSON lines
+                    }
+                }
+            }
+
+            // Handle any remaining buffer after stream ends
+            if (chunkBuffer.trim()) {
+                onChunk(chunkBuffer.trim(), chunkIndex, true);
+            } else if (chunkIndex > 0) {
+                // Signal completion if we haven't already
+                onChunk('', chunkIndex, true);
+            }
+
+            fullText = fullText.trim();
+            if (fullText) {
+                let formatted = fullText;
+                if (!formatted.startsWith('[')) formatted = `[${formatted}`;
+                if (!formatted.endsWith(']')) formatted = `${formatted}]`;
+                return { response: formatted, category: 'oracle_local_stream', emotion: 'curious' };
+            }
+        } catch (err) {
+            throw err;
+        } finally {
+            clearTimeout(timeout);
+        }
+
+        return null;
+    }
+
+    /**
+     * Stream from Gemini API with sentence chunking.
+     */
+    async _geminiAskStreaming(text, onChunk) {
+        try {
+            const stream = await this.genai.models.generateContentStream({
+                model: 'gemini-2.5-flash',
+                contents: text,
+                config: {
+                    systemInstruction: GEMINI_SYSTEM_PROMPT,
+                    temperature: 0.9,
+                    maxOutputTokens: 150,
+                },
+            });
+
+            let fullText = '';
+            let chunkBuffer = '';
+            let chunkIndex = 0;
+
+            for await (const chunk of stream) {
+                const token = chunk.text || '';
+                fullText += token;
+                chunkBuffer += token;
+
+                const chunks = this._chunkSentences(chunkBuffer);
+                if (chunks.ready.length > 0) {
+                    for (const sentence of chunks.ready) {
+                        onChunk(sentence, chunkIndex, false);
+                        chunkIndex++;
+                    }
+                    chunkBuffer = chunks.remainder;
+                }
+            }
+
+            // Flush remainder
+            if (chunkBuffer.trim()) {
+                onChunk(chunkBuffer.trim(), chunkIndex, true);
+            } else if (chunkIndex > 0) {
+                onChunk('', chunkIndex, true);
+            }
+
+            fullText = fullText.trim();
+            if (fullText) {
+                let formatted = fullText;
+                if (!formatted.startsWith('[')) formatted = `[${formatted}`;
+                if (!formatted.endsWith(']')) formatted = `${formatted}]`;
+                return { response: formatted, category: 'oracle_gemini_stream', emotion: 'curious' };
+            }
+        } catch (err) {
+            throw err;
+        }
+
+        return null;
+    }
+
+    /**
+     * Split text buffer at sentence boundaries.
+     * Returns { ready: string[], remainder: string }
+     * 
+     * Splits on: . ! ? — ] followed by a space or end-of-string.
+     * Keeps the delimiter with the sentence it terminates.
+     */
+    _chunkSentences(buffer) {
+        const ready = [];
+        let remainder = buffer;
+
+        // Match sentence-ending punctuation followed by whitespace
+        // This regex finds positions where we can split
+        const sentencePattern = /([.!?—\]]+)\s+/g;
+        let lastEnd = 0;
+        let match;
+
+        while ((match = sentencePattern.exec(remainder)) !== null) {
+            const sentenceEnd = match.index + match[1].length;
+            const sentence = remainder.substring(lastEnd, sentenceEnd).trim();
+            if (sentence) {
+                ready.push(sentence);
+            }
+            lastEnd = match.index + match[0].length; // skip the whitespace too
+        }
+
+        if (lastEnd > 0) {
+            remainder = remainder.substring(lastEnd);
+        }
+
+        return { ready, remainder };
     }
 }

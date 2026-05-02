@@ -2,57 +2,64 @@
   {
     "name": "OBSERVER HUB",
     "route": "/observer",
-    "description": "Voice-controlled command center for the circular display — system control, version switching, diagnostics",
+    "description": "Voice-controlled command center for the circular display \u2014 system control, version switching, diagnostics",
     "status": "active",
-    "icon": "▣"
+    "icon": "\u25a3"
   },
   {
     "name": "OBSERVER EYE V2",
     "route": "/observer/eye-v2",
-    "description": "PC-powered photorealistic eye — thin client architecture, server-side tracking \u0026 behavior",
+    "description": "PC-powered photorealistic eye \u2014 thin client architecture, server-side tracking \u0026 behavior",
     "status": "wip",
-    "icon": "◉"
+    "icon": "\u25c9"
   },
   {
     "name": "OFFLINE OBSERVER",
     "route": "/offline-observer.html",
     "description": "Standalone edge daemon V1 observer (Local Face Tracking \u0026 Vosk STT via ws://127.0.0.1:8892)",
     "status": "active",
-    "icon": "⣿"
+    "icon": "\u28ff"
   },
   {
     "name": "RULES LAWYER",
     "route": "/observer/rules-lawyer",
-    "description": "LLM-powered board game rules assistant — 32-bit character, voice I/O, game-themed persona",
+    "description": "LLM-powered board game rules assistant \u2014 32-bit character, voice I/O, game-themed persona",
     "status": "active",
-    "icon": "§"
+    "icon": "\u00a7"
   },
   {
     "name": "INBOX BUDDY",
     "route": "/inbox-buddy",
-    "description": "Gmail assistant — inbox cleanup, VIP alerts, security scans, weekly reports",
+    "description": "Gmail assistant \u2014 inbox cleanup, VIP alerts, security scans, weekly reports",
     "status": "wip",
-    "icon": "✉"
+    "icon": "\u2709"
   },
   {
     "name": "The Record Clerk",
     "route": "/record-clerk",
     "description": "Digital assistant for Dandelion Records",
     "status": "wip",
-    "icon": "⊚"
+    "icon": "\u229a"
   },
   {
     "name": "DUNGEON BUDDY",
     "route": "/dungeon-buddy",
     "description": "D\u0026D 5E Campaign Manager - Grim Dark character creator and progress tracker.",
     "status": "wip",
-    "icon": "🐉"
+    "icon": "\ud83d\udc09"
   },
   {
     "name": "DOGGIE DUKES",
     "route": "/doggie-dukes",
-    "description": "Underground dog betting simulation — real breeds, personality quirks, and simulated credits",
+    "description": "Underground dog betting simulation \u2014 real breeds, personality quirks, and simulated credits",
     "status": "wip",
-    "icon": "🐕"
+    "icon": "\ud83d\udc15"
+  },
+  {
+    "name": "JULIAN WHACKER",
+    "route": "/julian-whacker",
+    "description": "Whack-a-mole but the moles are acne-covered Julians \u2014 smash them all before time runs out",
+    "status": "wip",
+    "icon": "\ud83d\udd28"
   }
 ]

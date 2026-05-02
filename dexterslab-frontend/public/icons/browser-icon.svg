@@ -1,8 +1,22 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
-  <rect width="256" height="256" rx="64" fill="#111" stroke="#0cf" stroke-width="6"/>
-  <circle cx="128" cy="128" r="70" fill="none" stroke="#0cf" stroke-width="12"/>
-  <circle cx="128" cy="128" r="40" fill="#0cf"/>
-  <path d="M128 58 L168 128 L128 198" fill="none" stroke="#0cf" stroke-width="10"/>
-  <path d="M128 58 L88 128 L128 198" fill="none" stroke="#0cf" stroke-width="10"/>
-  <path d="M58 128 L198 128" fill="none" stroke="#0cf" stroke-width="10"/>
+  <defs>
+    <filter id="neon" x="-50%" y="-50%" width="200%" height="200%">
+      <feGaussianBlur stdDeviation="7" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  <!-- Background hex base -->
+  <path d="M128 10 L230 69 L230 187 L128 246 L26 187 L26 69 Z" fill="#001a1f" stroke="#0cf" stroke-width="4" stroke-opacity="0.3"/>
+  
+  <g filter="url(#neon)">
+    <circle cx="128" cy="128" r="75" fill="none" stroke="#0cf" stroke-width="8"/>
+    <circle cx="128" cy="128" r="35" fill="#0cf"/>
+    <path d="M128 53 L175 128 L128 203" fill="none" stroke="#0cf" stroke-width="6"/>
+    <path d="M128 53 L81 128 L128 203" fill="none" stroke="#0cf" stroke-width="6"/>
+    <path d="M53 128 L203 128" fill="none" stroke="#0cf" stroke-width="6"/>
+    <circle cx="128" cy="128" r="10" fill="#000"/>
+  </g>
 </svg>

@@ -26,6 +26,7 @@ export class VideoIngressServer {
     this.fpsInterval = null;
     this.active = false;
     this.totalFrames = 0;
+    this._lastFrameAt = 0;  // For stale connection detection
   }
 
   start() {
@@ -38,12 +39,26 @@ export class VideoIngressServer {
       const ip = req.socket.remoteAddress;
 
       if (this.client) {
-        console.warn(`[VideoIngress] Rejected duplicate video client from ${ip} — stream already active`);
-        ws.close(1008, 'Video stream already active');
-        return;
+        // ── Stale Connection Detection ──
+        // Cloudflare Tunnel can drop connections silently.
+        // If the existing client is no longer OPEN or hasn't sent a frame
+        // in 10s (at 15fps we'd expect ~150 frames), it's dead.
+        const staleMs = Date.now() - this._lastFrameAt;
+        const isStale = this.client.readyState !== 1 || staleMs > 10000;
+
+        if (isStale) {
+          console.warn(`[VideoIngress] ♻ Replacing stale video client (last frame ${Math.round(staleMs/1000)}s ago, readyState=${this.client.readyState})`);
+          try { this.client.terminate(); } catch {}
+          this.client = null;
+        } else {
+          console.warn(`[VideoIngress] Rejected duplicate video client from ${ip} — existing client is alive`);
+          ws.close(1008, 'Video stream already active');
+          return;
+        }
       }
 
       this.client = ws;
+      this._lastFrameAt = Date.now();
       console.log(`[VideoIngress] 📹 Pi video client connected from ${ip}`);
 
       ws.on('message', (data) => {
@@ -69,6 +84,7 @@ export class VideoIngressServer {
 
         this.framesReceivedLastSecond++;
         this.totalFrames++;
+        this._lastFrameAt = Date.now();
         this.events.emit('frame', data);
       });
 

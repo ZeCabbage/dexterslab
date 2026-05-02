@@ -59,10 +59,11 @@ CHUNK_SIZE = 8000
 
 # Sentence accumulation: collect finalized segments within a short window
 # before emitting, so "launch" + "offline observer" become one transcript.
-# Base window at 0.8s (down from 1.2s). Nav commands bypass entirely via fast-emit.
+# Increased to 1.8s to capture full sentences with natural pauses.
 # Partial activity tracking prevents premature emission while user is mid-sentence.
-ACCUMULATION_WINDOW = 0.8  # seconds (default for general speech)
-ACCUMULATION_WINDOW_QUESTION = 0.5  # seconds (shorter for detected questions)
+ACCUMULATION_WINDOW = 1.8  # seconds (default for general speech)
+ACCUMULATION_WINDOW_QUESTION = 0.6  # seconds (shorter for detected questions — faster emission)
+MIN_PARTIAL_SILENCE = 0.6  # seconds: user must stop speaking for this long before we emit
 accumulated_text = []
 last_final_time = 0
 last_partial_time = 0  # Track when partials last flowed (user speaking indicator)
@@ -210,7 +211,7 @@ try:
                     first_word = " ".join(accumulated_text).split()[0].lower()
                     if first_word in QUESTION_STARTERS_SET:
                         effective_window = ACCUMULATION_WINDOW_QUESTION
-                if accumulated_text and silence_since_final > effective_window and silence_since_partial > effective_window:
+                if accumulated_text and silence_since_final > effective_window and silence_since_partial > MIN_PARTIAL_SILENCE:
                     combined = strip_phantom(" ".join(accumulated_text))
                     if combined:  # Only emit if there's real content after stripping
                         print(json.dumps({"text": combined}), flush=True)

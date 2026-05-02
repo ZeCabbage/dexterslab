@@ -33,7 +33,7 @@ PC Backend → (WS /ws/observer2)→ Pi Chromium → WebGL eye renderer
 ### Technology Choices (not up for debate)
 - Video: ffmpeg + MJPEG copy piped to WebSocket (via Cloudflare Tunnel)
 - STT: Vosk on PC — NO Google Speech API
-- TTS: espeak-ng on Pi — NO browser SpeechSynthesis
+- TTS: Piper TTS on Pi (en_GB-cori-medium, neural female voice) — espeak-ng as fallback
 - Networking: Cloudflare Tunnel — NO Tailscale, NO raw LAN IPs
 - SSH: Ed25519 keys, cloudflared access ssh for Pi, ForwardAgent no
 

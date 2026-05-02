@@ -598,15 +598,27 @@ const AMBIENT_PHRASES = [
 
 function oracleResponse(text) {
   const clean = text.trim().toLowerCase();
-  if (!clean) return { response: '[SILENCE NOTED]', category: 'oracle' };
+  if (!clean) return { response: null, category: 'noise' };
 
   const words = clean.split(/\s+/);
+  if (words.length < 3) {
+    // Short input — only respond to greetings
+    const greets = new Set(['hello', 'hi', 'hey', 'morning', 'evening', 'yo']);
+    if (!words.some(w => greets.has(w))) return { response: null, category: 'noise' };
+  }
+
   const isQuestion = clean.endsWith('?') || QUESTION_STARTERS.has(words[0]);
-  if (!isQuestion) return { response: '[NOTED. CONTINUE]', category: 'oracle' };
+  if (!isQuestion && words.length >= 3) return { response: null, category: 'noise' };
 
   for (const [, data] of Object.entries(RESPONSE_DB)) {
     for (const kw of data.keywords) {
-      if (clean.includes(kw)) {
+      let matched = false;
+      if (kw.includes(' ')) {
+        matched = clean.includes(kw);
+      } else {
+        matched = new RegExp(`\\b${kw}\\b`).test(clean);
+      }
+      if (matched) {
         const resp = data.responses[Math.floor(Math.random() * data.responses.length)];
         return { response: resp, category: 'oracle' };
       }
@@ -620,7 +632,9 @@ function oracleResponse(text) {
 app.post('/api/oracle', (req, res) => {
   const { text } = req.body;
   if (!text) return res.status(400).json({ error: 'No text provided' });
-  res.json(oracleResponse(text));
+  const result = oracleResponse(text);
+  if (!result.response) return res.status(204).end();
+  res.json(result);
 });
 
 app.get('/api/oracle/ambient', (_req, res) => {
@@ -638,6 +652,9 @@ app.post('/api/observer2/oracle', async (req, res) => {
     const obApp = appManager.getApp('observer-eye');
     if (obApp) {
       const result = await obApp.engine.handleOracleQuestion(text);
+      if (result.category === 'noise' || !result.response) {
+        return res.status(204).end();
+      }
       res.json(result);
     } else {
       res.json({ response: '[SYSTEM ERROR: App Not Found]', category: 'oracle', emotion: 'neutral' });
