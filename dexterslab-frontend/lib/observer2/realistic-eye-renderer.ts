@@ -536,10 +536,11 @@ export class RealisticEyeRenderer {
         const now = performance.now() / 1000;
         const shaderTime = now - this.startTime;
 
-        // Smooth pupil dilation — fast enough to see recognition/startle bursts
+        // Light dilation smoothing — backend spring handles main interpolation,
+        // this just prevents any visual stutter from network jitter
         const dt = this.lastRenderTime > 0 ? Math.min(now - this.lastRenderTime, 0.1) : 0.016;
         this.lastRenderTime = now;
-        const dilationSpeed = 5.0; // units/sec — responsive pupil reaction
+        const dilationSpeed = 8.0; // units/sec — fast pass-through, backend does the real work
         this.smoothDilation += (state.dilation - this.smoothDilation) * Math.min(1, dt * dilationSpeed);
 
         const blinkOverride = this._updateTransition(now);

@@ -183,9 +183,21 @@ export class EyeStateMachine {
         this._broadcastFn = null;
 
         // ── Last gaze output from behavior model ──
-        this._lastGaze = { x: 0, y: 0, dilation: 1.0, emotion: 'neutral', visible: false, entityCount: 0, saccadeX: 0, saccadeY: 0 };
+        this._lastGaze = {
+            x: 0, y: 0, targetX: 0, targetY: 0,
+            dilation: 1.0, targetDilation: 1.0,
+            emotion: 'neutral', visible: false, entityCount: 0,
+            saccadeX: 0, saccadeY: 0
+        };
         this._attentionZone = null;
         this._occupancy = new Map();
+
+        // ── Velocity-damped spring state ──
+        // Single-authority smoothing: all position interpolation happens here at 60fps.
+        // BehaviorModel outputs raw targets; we add velocity for organic acceleration.
+        this._springVx = 0;   // current velocity X (px/tick)
+        this._springVy = 0;   // current velocity Y (px/tick)
+        this._lastTickTime = 0;
     }
 
     /**
@@ -737,46 +749,69 @@ export class EyeStateMachine {
             this._sentinelActive = false;
         }
 
-        // ── Compute final iris position ──
+        // ── Compute final iris position via velocity-damped spring ──
+        // Single-authority smoothing: BehaviorModel gives raw targets,
+        // all interpolation happens here at 60fps for buttery movement.
+        //
+        // The spring model tracks velocity. On each tick:
+        //   1. Compute error (distance to target)
+        //   2. Apply spring force (proportional to error) → acceleration
+        //   3. Apply damping (proportional to velocity) → prevents oscillation
+        //   4. Integrate velocity → position
+        //
+        // This creates natural eye movement: fast acceleration toward target,
+        // smooth deceleration as it arrives. Unlike lerp (constant % of remaining
+        // distance), the spring overshoots slightly then settles — like a real eye.
+
+        const SPRING_STIFFNESS = 0.35;   // How aggressively the eye chases the target
+        const SPRING_DAMPING = 0.72;     // How quickly oscillation dies (0.7-0.8 = critically damped)
+        const SNAP_THRESHOLD = 0.5;      // Below this distance, snap to target (prevent sub-pixel jitter)
+
         let finalX, finalY;
         if (gaze.visible) {
-            // TRACKING: Critically-damped spring model for organic eye movement.
-            // Instead of a flat lerp (which creates uniform deceleration), the spring
-            // accelerates into motion and decelerates smoothly — like a real eye muscle.
-            const targetX = gaze.x + gaze.saccadeX;
-            const targetY = gaze.y + gaze.saccadeY;
-            const dxEye = targetX - this.state.ix;
-            const dyEye = targetY - this.state.iy;
-            const eyeDist = Math.sqrt(dxEye * dxEye + dyEye * dyEye);
+            // Use RAW targets from BehaviorModel (not the pre-smoothed .x/.y)
+            const targetX = (gaze.targetX !== undefined ? gaze.targetX : gaze.x) + gaze.saccadeX;
+            const targetY = (gaze.targetY !== undefined ? gaze.targetY : gaze.y) + gaze.saccadeY;
 
-            // Adaptive stiffness: larger displacements get faster response
-            // Small moves (< 5px): gentle 0.18 — organic micro-tracking
-            // Medium moves (5-40px): responsive 0.25-0.40
-            // Large saccades (> 40px): snap 0.45-0.55
-            let trackSmooth;
-            if (eyeDist < 5) {
-                trackSmooth = 0.18;  // Micro-glide: almost imperceptible
-            } else if (eyeDist < 40) {
-                trackSmooth = 0.18 + (eyeDist - 5) / 35 * 0.22;  // Linear ramp
-            } else {
-                trackSmooth = Math.min(0.55, 0.40 + (eyeDist - 40) / 60 * 0.15);
+            // Spring physics
+            const errX = targetX - this.state.ix;
+            const errY = targetY - this.state.iy;
+
+            // Spring force (proportional to error) + damping (proportional to velocity)
+            this._springVx = this._springVx * SPRING_DAMPING + errX * SPRING_STIFFNESS;
+            this._springVy = this._springVy * SPRING_DAMPING + errY * SPRING_STIFFNESS;
+
+            // Integrate position
+            finalX = this.state.ix + this._springVx;
+            finalY = this.state.iy + this._springVy;
+
+            // Snap when close enough (prevents eternal sub-pixel drift)
+            const remainDist = Math.sqrt(errX * errX + errY * errY);
+            if (remainDist < SNAP_THRESHOLD) {
+                finalX = targetX;
+                finalY = targetY;
+                this._springVx = 0;
+                this._springVy = 0;
             }
-
-            finalX = lerp(this.state.ix, targetX, trackSmooth);
-            finalY = lerp(this.state.iy, targetY, trackSmooth);
         } else if (this._sentinelActive) {
-            // SENTINEL: sweep scan when nothing detected
+            // SENTINEL: sweep scan — use soft lerp (no spring needed for slow sweeps)
             finalX = lerp(this.state.ix, this._sentinelTargetX, 0.04);
             finalY = lerp(this.state.iy, this._sentinelTargetY, 0.04);
+            this._springVx = 0;
+            this._springVy = 0;
         } else {
             // NO FACE: decay to center slowly
             finalX = lerp(this.state.ix, 0, 0.03);
             finalY = lerp(this.state.iy, 0, 0.03);
+            this._springVx = 0;
+            this._springVy = 0;
         }
 
-        // ── Dilation — faster pupil response for visible reactions ──
-        let finalDilation;
-        finalDilation = lerp(this.state.dilation, gaze.visible ? gaze.dilation : 1.0, 0.18);
+        // ── Dilation — use raw target for responsive pupil reactions ──
+        const targetDil = gaze.visible
+            ? (gaze.targetDilation !== undefined ? gaze.targetDilation : gaze.dilation)
+            : 1.0;
+        let finalDilation = lerp(this.state.dilation, targetDil, 0.22);
 
         // ── Blink: combine natural blink + sleep ──
         const totalBlink = Math.min(1.0, Math.max(this._blinkPhase, this._sleepPhase));

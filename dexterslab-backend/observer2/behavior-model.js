@@ -326,6 +326,10 @@ export class BehaviorModel {
         return {
             x: this.currentX,
             y: this.currentY,
+            // Raw un-smoothed targets for single-authority smoothing in EyeStateMachine
+            targetX: this.targetX,
+            targetY: this.targetY,
+            targetDilation: this.targetDilation,
             dilation: this.currentDilation,
             emotion: this.emotion,
             visible,
