@@ -48,7 +48,7 @@ class VideoStreamer:
             return
 
         import queue
-        self._frame_queue = queue.Queue(maxsize=30)
+        self._frame_queue = queue.Queue(maxsize=5)
         self._running = True
 
         self._capture_thread = threading.Thread(target=self._capture_loop, daemon=True)
@@ -85,10 +85,12 @@ class VideoStreamer:
             # Find camera device (may have changed after USB reset)
             camera_device = self._find_camera_device()
 
-            # ── Ensure camera device is free before starting ffmpeg ──
-            if not self._wait_for_camera(camera_device):
-                restarts += 1
-                continue
+            # ── Only check for orphans on first start, not on restarts ──
+            # Restarts happen after proper cleanup, so camera should be free.
+            if restarts == 0:
+                if not self._wait_for_camera(camera_device):
+                    restarts += 1
+                    continue
 
             input_format = self._detect_camera_format(camera_device)
             if input_format == 'mjpeg':
@@ -225,39 +227,64 @@ class VideoStreamer:
 
     def _wait_for_camera(self, device, timeout=15):
         """Wait for the camera device to be available (not held by another process).
-        Kill any orphan ffmpeg processes holding it."""
+        Kill any orphan ffmpeg processes holding it (but NOT our own child process)."""
         import os
 
         if not os.path.exists(device):
-            logger.warning(f"[VideoStreamer] {device} does not exist — waiting for USB recovery...")
+            logger.warning(f"[VideoStreamer] {device} does not exist — attempting USB reset...")
+            # Try USB reset to recover the device
+            self._try_usb_reset()
             for i in range(timeout):
                 if not self._running:
                     return False
                 time.sleep(1)
                 if os.path.exists(device):
                     logger.info(f"[VideoStreamer] {device} appeared after {i+1}s")
+                    time.sleep(1)  # Extra settle time after USB recovery
                     break
             else:
                 logger.error(f"[VideoStreamer] {device} did not appear within {timeout}s")
                 return False
 
         # Check if another process holds the camera
+        # Skip this check if our own ffmpeg just ran (it's already dead at this point)
+        our_pid = self._process.pid if self._process and self._process.poll() is None else None
         try:
             result = subprocess.run(
                 ['fuser', device],
                 capture_output=True, text=True, timeout=3
             )
-            pids = result.stdout.strip()
-            if pids:
-                logger.warning(f"[VideoStreamer] {device} held by PIDs: {pids} — killing orphan ffmpeg...")
-                # Only kill ffmpeg processes, not other things that might have the device
-                subprocess.run(['pkill', '-9', '-f', f'ffmpeg.*{device}'],
-                             capture_output=True, timeout=3)
+            pids = result.stdout.strip().split()
+            # Filter out our own PID
+            orphan_pids = [p for p in pids if p.strip() and p.strip() != str(our_pid)]
+            if orphan_pids:
+                logger.warning(f"[VideoStreamer] {device} held by orphan PIDs: {orphan_pids} — killing...")
+                for pid in orphan_pids:
+                    try:
+                        subprocess.run(['kill', '-9', pid.strip()], capture_output=True, timeout=3)
+                    except Exception:
+                        pass
                 time.sleep(3)  # Wait for device release after kill
         except Exception as e:
-            logger.warning(f"[VideoStreamer] fuser check failed ({e}) — proceeding anyway")
+            pass  # fuser may fail if device is free — that's fine
 
         return True
+
+    def _try_usb_reset(self):
+        """Attempt to reset the USB camera to recover from I/O errors."""
+        try:
+            result = subprocess.run(
+                ['usbreset', '2b46:bd01'],  # Centerm Camera vendor:product ID
+                capture_output=True, text=True, timeout=10
+            )
+            if result.returncode == 0:
+                logger.info("[VideoStreamer] USB camera reset successful")
+            else:
+                logger.warning(f"[VideoStreamer] USB reset failed: {result.stderr.strip()}")
+        except FileNotFoundError:
+            logger.warning("[VideoStreamer] usbreset not available — cannot reset USB camera")
+        except Exception as e:
+            logger.warning(f"[VideoStreamer] USB reset error: {e}")
 
     def _detect_camera_format(self, device):
         """Detect if the camera supports MJPEG natively, otherwise fall back to YUYV."""
@@ -340,11 +367,13 @@ class VideoStreamer:
                 ) as ws:
                     logger.info(f"[VideoStreamer] Connected to {uri}")
                     backoff = 1
+                    _frames_sent = 0
+                    _frames_dropped = 0
+                    _last_stats = time.time()
 
                     while self._running:
                         try:
                             frame = self._frame_queue.get(timeout=0.5)
-                            await ws.send(frame)
                         except queue_module.Empty:
                             # No frames for 500ms — send a text keepalive
                             try:
@@ -352,6 +381,34 @@ class VideoStreamer:
                             except Exception:
                                 break
                             continue
+
+                        # ── Queue drain: skip stale frames, send only the latest ──
+                        # If multiple frames accumulated while we were sending,
+                        # drop intermediate frames and send only the newest.
+                        dropped = 0
+                        while not self._frame_queue.empty():
+                            try:
+                                frame = self._frame_queue.get_nowait()
+                                dropped += 1
+                            except queue_module.Empty:
+                                break
+
+                        _frames_dropped += dropped
+
+                        try:
+                            await ws.send(frame)
+                            _frames_sent += 1
+                        except Exception:
+                            break
+
+                        # Log throughput every 10 seconds
+                        now = time.time()
+                        if now - _last_stats >= 10:
+                            fps = _frames_sent / (now - _last_stats)
+                            logger.info(f"[VideoStreamer] 📊 {fps:.1f} fps sent, {_frames_dropped} frames dropped in last {now - _last_stats:.0f}s")
+                            _frames_sent = 0
+                            _frames_dropped = 0
+                            _last_stats = now
 
             except (Exception,) as e:
                 if not self._running:
