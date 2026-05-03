@@ -126,7 +126,8 @@ class VideoStreamer:
                 self._process = subprocess.Popen(
                     cmd,
                     stdout=subprocess.PIPE,
-                    stderr=subprocess.PIPE,  # Capture stderr for debugging
+                    stderr=subprocess.DEVNULL,  # DEVNULL prevents pipe-full deadlock
+                    # ALSA warnings fill stderr pipe (65KB), blocking ffmpeg entirely
                 )
             except FileNotFoundError:
                 logger.error("[VideoStreamer] ffmpeg not found on PATH")
@@ -135,10 +136,21 @@ class VideoStreamer:
             logger.info("[VideoStreamer] ffmpeg running, extracting JPEG frames from stdout")
 
             # Read stdout and extract JPEG frames using SOI/EOI markers
+            # Use select() + os.read() for non-blocking reads with stall detection
+            import select
+            import os as _os
             buf = b''
+            STALL_TIMEOUT = 10  # seconds — kill ffmpeg if no data for this long
+            stdout_fd = self._process.stdout.fileno()
             try:
                 while self._running:
-                    chunk = self._process.stdout.read(4096)
+                    # Wait for data with timeout — detects camera stalls
+                    ready, _, _ = select.select([stdout_fd], [], [], STALL_TIMEOUT)
+                    if not ready:
+                        # No data for STALL_TIMEOUT seconds — camera stalled
+                        logger.warning(f"[VideoStreamer] Camera stall detected (no data for {STALL_TIMEOUT}s) — restarting ffmpeg")
+                        break
+                    chunk = _os.read(stdout_fd, 65536)  # Large reads for throughput
                     if not chunk:
                         break
                     buf += chunk
@@ -147,32 +159,27 @@ class VideoStreamer:
                 logger.error(f"[VideoStreamer] Read error: {e}")
 
             # ── Proper cleanup before restart ──
-            # Read any stderr output for debugging
-            try:
-                stderr_out = self._process.stderr.read(2048) if self._process.stderr else b''
-                if stderr_out:
-                    logger.warning(f"[VideoStreamer] ffmpeg stderr: {stderr_out.decode(errors='replace').strip()[-200:]}")
-            except Exception:
-                pass
 
-            # Ensure ffmpeg is fully dead before we release the camera
+            # Step 1: Kill ffmpeg — try SIGTERM first for clean device release
             try:
                 self._process.terminate()
                 self._process.wait(timeout=3)
-            except Exception:
+            except subprocess.TimeoutExpired:
+                # SIGTERM didn't work — force kill
                 try:
                     self._process.kill()
                     self._process.wait(timeout=2)
                 except Exception:
                     pass
+            except Exception:
+                pass
 
-            # Close pipes to fully release file descriptors
-            for pipe in [self._process.stdout, self._process.stderr]:
-                try:
-                    if pipe:
-                        pipe.close()
-                except Exception:
-                    pass
+            # Step 2: Close stdout pipe to release file descriptor
+            try:
+                if self._process.stdout:
+                    self._process.stdout.close()
+            except Exception:
+                pass
 
             if not self._running:
                 break
