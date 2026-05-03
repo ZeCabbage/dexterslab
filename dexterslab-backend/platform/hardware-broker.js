@@ -227,13 +227,17 @@ export class HardwareBroker {
       }
 
       this._geminiVoiceCallbacks = callbacks;
-      this._geminiTurnAudioBuffer = [];  // Buffer audio chunks per turn
+      this._geminiStreamingChunks = 0;  // Track chunks per turn for logging
 
       this._geminiVoice = new GeminiVoice({
         apiKey,
         onAudioResponse: (base64Audio, mimeType) => {
-          // Buffer audio chunks for the current turn
-          this._geminiTurnAudioBuffer.push(base64Audio);
+          // ── STREAM IMMEDIATELY ──
+          // Forward each audio chunk to the Pi speaker as it arrives.
+          // This is the key latency optimization — the Pi starts playing
+          // while Gemini is still generating the rest of the response.
+          this._sendRawAudioToPi(base64Audio);
+          this._geminiStreamingChunks++;
         },
         onInputTranscript: (text) => {
           console.log(`[GeminiLive] 🎤 User: "${text}"`);
@@ -249,8 +253,11 @@ export class HardwareBroker {
           }
         },
         onTurnComplete: () => {
-          // Flush buffered audio as one payload to Pi
-          this._flushGeminiAudioBuffer();
+          // Log streaming stats — audio was already sent chunk-by-chunk
+          if (this._geminiStreamingChunks > 0) {
+            console.log(`[GeminiLive] ✅ Turn complete — streamed ${this._geminiStreamingChunks} audio chunks to Pi`);
+            this._geminiStreamingChunks = 0;
+          }
           if (this._geminiVoiceCallbacks.onTurnComplete) {
             this._geminiVoiceCallbacks.onTurnComplete();
           }
@@ -286,7 +293,7 @@ export class HardwareBroker {
         this._geminiVoice = null;
       }
       this._geminiVoiceCallbacks = {};
-      this._geminiTurnAudioBuffer = [];
+      this._geminiStreamingChunks = 0;
       this._voiceMode = 'local';
     }
   }

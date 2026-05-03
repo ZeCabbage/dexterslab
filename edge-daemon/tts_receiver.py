@@ -47,6 +47,9 @@ class TTSReceiver:
 
     def stop(self):
         self._running = False
+        # Close streaming aplay if active
+        if hasattr(self, '_close_streaming_aplay'):
+            self._close_streaming_aplay()
         # Signal the playback worker to stop
         if hasattr(self, '_chunk_queue'):
             try:
@@ -364,54 +367,83 @@ class TTSReceiver:
             )
 
     def _play_raw_pcm(self, pcm_data: bytes, sample_rate: int = 24000):
-        """Play pre-synthesized PCM audio from Gemini Live API.
+        """Stream pre-synthesized PCM audio from Gemini Live to the speaker.
 
-        Receives raw 16-bit signed little-endian PCM and plays it directly
-        via aplay without any TTS synthesis step.
+        Uses a persistent aplay process that stays open between chunks.
+        This eliminates subprocess spawn overhead and enables true streaming —
+        the speaker starts playing within milliseconds of the first chunk arriving.
         """
-        logger.info(f"[TTSReceiver] Playing raw PCM audio ({len(pcm_data)} bytes, {sample_rate}Hz)")
-        try:
-            card = self.config.audio_output_card
+        # Ensure we have a running aplay process for this sample rate
+        if (not hasattr(self, '_streaming_aplay') or
+                self._streaming_aplay is None or
+                self._streaming_aplay.poll() is not None or
+                getattr(self, '_streaming_rate', 0) != sample_rate):
+            # Close any existing process
+            self._close_streaming_aplay()
+            # Start a new persistent aplay
+            try:
+                card = self.config.audio_output_card
+                alsa_device = f"plughw:{card},0" if card >= 0 else "default"
 
-            # Set volume
-            if card >= 0:
-                for control in ['PCM', 'Speaker', 'Master']:
-                    result = subprocess.run(
-                        ['amixer', '-c', str(card), 'set', control, '85%'],
-                        stdout=subprocess.DEVNULL,
-                        stderr=subprocess.DEVNULL,
-                        timeout=3
-                    )
-                    if result.returncode == 0:
-                        break
-            else:
-                subprocess.run(
-                    ['amixer', 'set', 'Master', '85%'],
+                # Set volume once
+                if card >= 0:
+                    for control in ['PCM', 'Speaker', 'Master']:
+                        result = subprocess.run(
+                            ['amixer', '-c', str(card), 'set', control, '85%'],
+                            stdout=subprocess.DEVNULL,
+                            stderr=subprocess.DEVNULL,
+                            timeout=3
+                        )
+                        if result.returncode == 0:
+                            break
+
+                self._streaming_aplay = subprocess.Popen(
+                    [
+                        'aplay', '-D', alsa_device,
+                        '-f', 'S16_LE',
+                        '-r', str(sample_rate),
+                        '-c', '1',
+                        '-t', 'raw',
+                        '--buffer-size', '4096',
+                        '-'
+                    ],
+                    stdin=subprocess.PIPE,
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
-                    timeout=3
                 )
+                self._streaming_rate = sample_rate
+                logger.info(f"[TTSReceiver] 🔊 Opened streaming aplay ({sample_rate}Hz → {alsa_device})")
+            except Exception as e:
+                logger.error(f"[TTSReceiver] Failed to start streaming aplay: {e}")
+                self._streaming_aplay = None
+                return
 
-            alsa_device = f"plughw:{card},0" if card >= 0 else "default"
-
-            # Play raw PCM directly via aplay
-            # Format: signed 16-bit little-endian, mono, at given sample rate
-            aplay_proc = subprocess.Popen(
-                [
-                    'aplay', '-D', alsa_device,
-                    '-f', 'S16_LE',
-                    '-r', str(sample_rate),
-                    '-c', '1',
-                    '-t', 'raw',
-                    '-'
-                ],
-                stdin=subprocess.PIPE,
-                stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-            )
-            aplay_proc.communicate(input=pcm_data, timeout=30)
-
-        except subprocess.TimeoutExpired:
-            logger.warning("[TTSReceiver] Raw PCM playback timed out")
+        # Pipe this chunk to the running aplay — it plays immediately
+        try:
+            self._streaming_aplay.stdin.write(pcm_data)
+            self._streaming_aplay.stdin.flush()
+        except (BrokenPipeError, OSError) as e:
+            logger.warning(f"[TTSReceiver] Streaming aplay pipe broken ({e}) — will reopen on next chunk")
+            self._close_streaming_aplay()
         except Exception as e:
-            logger.error(f"[TTSReceiver] Raw PCM playback error: {e}")
+            logger.error(f"[TTSReceiver] Streaming write error: {e}")
+            self._close_streaming_aplay()
+
+    def _close_streaming_aplay(self):
+        """Close the persistent aplay process if it exists."""
+        if hasattr(self, '_streaming_aplay') and self._streaming_aplay is not None:
+            try:
+                self._streaming_aplay.stdin.close()
+            except Exception:
+                pass
+            try:
+                self._streaming_aplay.terminate()
+                self._streaming_aplay.wait(timeout=2)
+            except Exception:
+                try:
+                    self._streaming_aplay.kill()
+                except Exception:
+                    pass
+            self._streaming_aplay = None
+            logger.info("[TTSReceiver] Closed streaming aplay")
+
