@@ -536,10 +536,10 @@ export class RealisticEyeRenderer {
         const now = performance.now() / 1000;
         const shaderTime = now - this.startTime;
 
-        // Smooth pupil dilation — interpolate for organic feel
+        // Smooth pupil dilation — fast enough to see recognition/startle bursts
         const dt = this.lastRenderTime > 0 ? Math.min(now - this.lastRenderTime, 0.1) : 0.016;
         this.lastRenderTime = now;
-        const dilationSpeed = 3.0; // units/sec — natural pupil response
+        const dilationSpeed = 5.0; // units/sec — responsive pupil reaction
         this.smoothDilation += (state.dilation - this.smoothDilation) * Math.min(1, dt * dilationSpeed);
 
         const blinkOverride = this._updateTransition(now);

@@ -45,8 +45,8 @@ const DWELL_MIN = 2.0;               // min seconds on primary target
 const DWELL_MAX = 4.0;               // max seconds on primary target
 const GLANCE_DURATION = 0.6;         // seconds for a quick glance
 const GLANCE_CHANCE = 0.3;           // probability of glancing at secondary per dwell cycle
-const TRANSITION_SMOOTH = 0.08;      // smooth factor during transitions
-const TRACKING_SMOOTH = 0.12;        // smooth factor while locked on target
+const TRANSITION_SMOOTH = 0.14;      // smooth factor during transitions
+const TRACKING_SMOOTH = 0.22;        // smooth factor while locked on target
 const RECOGNITION_DILATION = 1.4;    // dilation burst when new entity appears
 const LOST_GRACE_FRAMES = 8;         // frames before declaring entity lost
 
@@ -186,7 +186,7 @@ export class GazeController {
         const smooth = this.isGlancing ? TRANSITION_SMOOTH : TRACKING_SMOOTH;
         this.currentX += (this.targetX - this.currentX) * smooth;
         this.currentY += (this.targetY - this.currentY) * smooth;
-        this.currentDilation += (this.targetDilation - this.currentDilation) * 0.1;
+        this.currentDilation += (this.targetDilation - this.currentDilation) * 0.15;
 
         return {
             x: this.currentX,

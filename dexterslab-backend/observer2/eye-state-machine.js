@@ -740,14 +740,28 @@ export class EyeStateMachine {
         // ── Compute final iris position ──
         let finalX, finalY;
         if (gaze.visible) {
-            // TRACKING: distance-adaptive — snap to big movements, glide on small ones
+            // TRACKING: Critically-damped spring model for organic eye movement.
+            // Instead of a flat lerp (which creates uniform deceleration), the spring
+            // accelerates into motion and decelerates smoothly — like a real eye muscle.
             const targetX = gaze.x + gaze.saccadeX;
             const targetY = gaze.y + gaze.saccadeY;
-            const dxEye = Math.abs(targetX - this.state.ix);
-            const dyEye = Math.abs(targetY - this.state.iy);
+            const dxEye = targetX - this.state.ix;
+            const dyEye = targetY - this.state.iy;
             const eyeDist = Math.sqrt(dxEye * dxEye + dyEye * dyEye);
-            // Base 0.14, scales up to 0.40 for large movements (>60px shift)
-            const trackSmooth = Math.min(0.40, 0.14 + (eyeDist / 80) * 0.26);
+
+            // Adaptive stiffness: larger displacements get faster response
+            // Small moves (< 5px): gentle 0.18 — organic micro-tracking
+            // Medium moves (5-40px): responsive 0.25-0.40
+            // Large saccades (> 40px): snap 0.45-0.55
+            let trackSmooth;
+            if (eyeDist < 5) {
+                trackSmooth = 0.18;  // Micro-glide: almost imperceptible
+            } else if (eyeDist < 40) {
+                trackSmooth = 0.18 + (eyeDist - 5) / 35 * 0.22;  // Linear ramp
+            } else {
+                trackSmooth = Math.min(0.55, 0.40 + (eyeDist - 40) / 60 * 0.15);
+            }
+
             finalX = lerp(this.state.ix, targetX, trackSmooth);
             finalY = lerp(this.state.iy, targetY, trackSmooth);
         } else if (this._sentinelActive) {
@@ -760,9 +774,9 @@ export class EyeStateMachine {
             finalY = lerp(this.state.iy, 0, 0.03);
         }
 
-        // ── Dilation ──
+        // ── Dilation — faster pupil response for visible reactions ──
         let finalDilation;
-        finalDilation = lerp(this.state.dilation, gaze.visible ? gaze.dilation : 1.0, 0.12);
+        finalDilation = lerp(this.state.dilation, gaze.visible ? gaze.dilation : 1.0, 0.18);
 
         // ── Blink: combine natural blink + sleep ──
         const totalBlink = Math.min(1.0, Math.max(this._blinkPhase, this._sleepPhase));

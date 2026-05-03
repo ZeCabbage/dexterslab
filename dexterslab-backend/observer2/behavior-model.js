@@ -21,16 +21,16 @@ const DWELL_MIN = 2.0;              // min seconds on primary target
 const DWELL_MAX = 4.5;              // max seconds on primary target
 const GLANCE_DURATION = 0.5;        // quick glance duration
 const GLANCE_CHANCE = 0.35;         // probability of glancing at secondary
-const TRACKING_SMOOTH = 0.18;       // smooth factor while locked — responsive pan speed
-const TRANSITION_SMOOTH = 0.12;     // smooth factor during transitions — snappier target switches
+const TRACKING_SMOOTH = 0.28;       // smooth factor while locked — responsive, snappy tracking
+const TRANSITION_SMOOTH = 0.18;     // smooth factor during transitions — quick but visible move
 const RECOGNITION_DILATION = 1.5;   // dilation burst for new entity
 const STARTLE_DILATION = 1.8;       // dilation burst for sudden motion
 const STARTLE_MOTION_THRESHOLD = 0.12; // total motion jump to trigger startle (more sensitive)
 
 // Microsaccade config
-const SACCADE_INTERVAL_MIN = 200;   // ms between microsaccades
-const SACCADE_INTERVAL_MAX = 500;
-const SACCADE_AMPLITUDE = 4.0;      // pixels — visible micro-movements for lifelike feel
+const SACCADE_INTERVAL_MIN = 180;   // ms between microsaccades
+const SACCADE_INTERVAL_MAX = 450;
+const SACCADE_AMPLITUDE = 3.5;      // pixels — visible micro-movements for lifelike feel
 
 // Pupil breathing rhythm
 const PUPIL_BREATH_SPEED = 0.12;    // Hz — slower, more organic
@@ -257,17 +257,17 @@ export class BehaviorModel {
         this.targetDilation = baseDilation + breathOffset;
 
         // ── Distance-adaptive smooth interpolation ──
-        // Big movements snap fast (alert), small movements glide (natural)
+        // Big movements snap fast (alert response), small movements glide (organic feel)
         const dx = this.targetX - this.currentX;
         const dy = this.targetY - this.currentY;
         const dist = Math.sqrt(dx * dx + dy * dy);
         const baseSmooth = this.isGlancing ? TRANSITION_SMOOTH : TRACKING_SMOOTH;
-        // Scale: large displacements (>40px) get up to 2.5x the smooth factor
-        const distBoost = Math.min(2.5, 1.0 + (dist / 50) * 1.5);
-        const smooth = Math.min(0.45, baseSmooth * distBoost);
+        // Scale: large displacements (>30px) get up to 3x the smooth factor for snappy saccades
+        const distBoost = Math.min(3.0, 1.0 + (dist / 35) * 2.0);
+        const smooth = Math.min(0.65, baseSmooth * distBoost);
         this.currentX += dx * smooth;
         this.currentY += dy * smooth;
-        this.currentDilation += (this.targetDilation - this.currentDilation) * 0.18;  // responsive dilation
+        this.currentDilation += (this.targetDilation - this.currentDilation) * 0.22;  // responsive dilation
 
         // Expire emotion
         if (now > this.emotionEndTime && this.emotion !== 'neutral') {
@@ -314,8 +314,8 @@ export class BehaviorModel {
             this.nextSaccadeTime = now + interval / 1000;
         }
 
-        // Exponential decay
-        this.saccadeDecay *= 0.85;
+        // Exponential decay — fast falloff for crisp micro-movements
+        this.saccadeDecay *= 0.80;
         if (this.saccadeDecay < 0.01) {
             this.saccadeX = 0;
             this.saccadeY = 0;
